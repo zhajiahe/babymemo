@@ -127,7 +127,7 @@ curl -i https://baby.example.com/api/bootstrap/status
 curl -i https://baby.example.com/api/state
 ```
 
-预期：`/api/health` 为 200 且 `ok=true`，`bootstrap/status` 中 `sessionConfigured`、`encryptionConfigured` 为 `true`；未登录时 `/api/state` 返回 `401 LOGIN_REQUIRED`。之后初始化、登录和私有数据 CRUD 必须通过部署者的浏览器人工验收。不要为了自动验收将初始化密钥、家庭密码写入 curl、Shell History 或日志。
+预期：`/api/health` 为 200 且 `ok=true`，`bootstrap/status` 中 `sessionConfigured`、`encryptionConfigured` 为 `true`；未登录时 `/api/state` 返回 `401 LOGIN_REQUIRED`。之后初始化、登录和私有数据 CRUD 必须通过部署者的浏览器人工验收。不要为了自动验收将家庭密码写入 curl、Shell History 或日志。
 
 验收记录建议至少覆盖：家庭初始化、退出与重新登录、已有记录保留、宝宝切换、成长记录/里程碑 CRUD、图片上传/读取/删除、iPhone Safari 大图片与 MOV 上传、多分片网络失败、OpenRouter 模型测试、微信扫码/启停及 Durable Object 轮询状态。报告必须明确区分“脚本构建通过”“公开健康检查通过”和“真人/真实设备端到端验收通过”。
 

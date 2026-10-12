@@ -3,9 +3,9 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
 const auth=read('src/auth.ts'),api=read('src/worker.ts'),ui=read('src/App.tsx');
-const wf=read('.github/workflows/deploy.yml'),smoke=read('scripts/smoke-check.mjs'),env=read('.dev.vars.example');
+const wf=read('.github/workflows/deploy.yml'),smoke=read('scripts/smoke-check.mjs'),env=read('.dev.vars.example'),pkg=read('package.json');
 test('first-run setup removes bootstrap secret from all active entrypoints',()=>{
- for(const source of [auth,api,ui,wf,smoke,env])assert.doesNotMatch(source,/BOOTSTRAP_SECRET|bootstrapSecret|bootstrapConfigured/);
+ for(const source of [auth,api,ui,wf,smoke,env,pkg])assert.doesNotMatch(source,/BOOTSTRAP_SECRET|bootstrapSecret|bootstrapConfigured/);
  assert.match(ui,/ready\.sessionConfigured/);
  assert.match(ui,/ready\.encryptionConfigured/);
  assert.match(api,/app\.post\('\/api\/bootstrap'/);
