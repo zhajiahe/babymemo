@@ -13,3 +13,4 @@ ALTER TABLE milestones ADD COLUMN source_message_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS growth_source_message ON growth_records(source_message_id);
 CREATE UNIQUE INDEX IF NOT EXISTS milestones_source_message ON milestones(source_message_id);
 ALTER TABLE wechat_messages ADD COLUMN reply_text TEXT;
+ALTER TABLE wechat_messages ADD COLUMN client_id TEXT;
