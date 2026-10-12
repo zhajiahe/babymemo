@@ -32,7 +32,9 @@ test('server endpoints preserve private access and original media',()=>{
  assert.match(worker,/image\/jpeg/);
  assert.match(worker,/THUMBNAIL_TOO_LARGE/);
  assert.match(worker,/R2|c\.env\.MEDIA\.put/);
- assert.match(worker,/await c\.env\.MEDIA\.delete\(\[row\.object_key,thumbKey\(id\)\]\)/);
+ assert.match(worker,/UPDATE media SET deleted_at/);
+ assert.match(worker,/async function purgeDeleted/);
+ assert.match(worker,/env\.MEDIA\.delete\(\[row\.object_key,thumbKey\(row\.id\)\]\)/);
  assert.match(worker,/app\.get\('\/api\/media\/:id\/content'/);
  assert.match(migration,/ALTER TABLE media_uploads ADD COLUMN fingerprint/);
 });
