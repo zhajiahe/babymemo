@@ -17,7 +17,7 @@ test('first-owner write remains atomic and one-time',()=>{
  assert.match(auth,/catch\(e\)\{if\(await owner\(c\.env\)\)throw Error\('ALREADY_INITIALIZED'\)/);
  assert.match(api,/!sameOrigin\(c\)/);
  assert.match(api,/!await authenticated\(c\)/);
- assert.match(auth,/input\.password\.length<10/);
+ assert.match(auth,/input\.password\.length<6/);
  assert.match(auth,/SESSION_SECRET_NOT_CONFIGURED/);
  assert.match(auth,/DATA_KEY_NOT_CONFIGURED/);
 });

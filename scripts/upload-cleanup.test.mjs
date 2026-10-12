@@ -10,7 +10,7 @@ function fixture({completed=false,failAbort=false,changed=false}={}){
    DB:{prepare(sql){return {
      bind(...args){return {
        async all(){if(sql.startsWith('SELECT * FROM'))return {results:[row]};return {results:[{partNumber:1,etag:'etag'}]};},
-       async first(){if(changed && sql.includes('COALESCE'))return null;return sql.includes('SELECT id FROM media')?null:{id:'m1'};},
+       async first(){if(changed && sql.includes('COALESCE'))return null;return sql.startsWith('SELECT id FROM media WHERE')?null:{id:'m1'};},
        async run(){state.deleted=true}
      }}
    }},async batch(){state.saved++}},
