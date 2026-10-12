@@ -117,7 +117,7 @@ export async function handleWechatPhotoMessage(env:Env,raw:Json,messageId:string
    .map((item:any)=>item.text_item.text).join(' ').trim();
   const found=babies.results.filter(b=>b.name&&caption.includes(b.name));
   if(found.length>1)return '这张照片的文字中提到了多位宝宝，请每次只指定一位宝宝。';
-  let baby=found[0];
+  let baby:Baby|undefined=found[0];
   if(!baby){
     if(babies.results.length===1)baby=babies.results[0];
     else{
