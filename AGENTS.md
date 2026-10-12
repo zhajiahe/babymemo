@@ -132,7 +132,14 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 
 ## 微信照片接入
 
-- `src/wechat-media.mjs` 独立实现官方 CDN 域名白名单、AES-128-ECB 解密、20 MiB 下载上限、格式签名识别、R2/D1 入库和幂等恢复；`src/wechat.ts` 只负责绑定微信消息路由。
+- `src/wechat-media.mjs` 独立实现官方 CDN 域名白名单、AES-128-ECB 解密、50 MiB 下载上限及视频 R2 Multipart、格式签名识别、R2/D1 入库和幂等恢复；`src/wechat.ts` 只负责绑定微信消息路由。
 - 不直接把 CDN URL 当相册地址，禁止开放公共 R2、删除原始媒体、日志输出解密密钥或 CDN 完整查询参数。
-- 图片消息不发给 OpenRouter 识图；多宝宝必须在图片附文明确宝宝或配置持久化默认宝宝，缺少目标时拒绝入库。
+- 图片和视频消息不发给 OpenRouter 识图；多宝宝必须在图片附文明确宝宝或配置持久化默认宝宝，缺少目标时拒绝入库。
 - CDN 协议不稳定；真实微信图片仍需现场发送验收，不得将模拟解密/Worker E2E 通过表述成 iOS 微信实测成功。
+
+
+## 指令模型容错与多轮边界
+
+- `src/openrouter-retry.mjs` 的重试只覆盖模型调用，不可重复执行写入工具；429/503 尊重短 `Retry-After`，长时间退避告知用户。
+- `src/wechat-memory.mjs` 仅在已绑定微信的一对一 Durable Object 会话里缓存 4 轮文本、20 分钟 TTL；不能跨账号/绑定凭据复用，不能让模型从历史回复编造未被用户授权的删除操作。
+- `src/wechat-media.mjs` 处理图片/视频最大 50 MiB；大文件必须采用分片上传，不可 Buffer.concat 完整视频、不可公开 R2 对象。
