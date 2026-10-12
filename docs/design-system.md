@@ -162,3 +162,8 @@
 4. **补视觉回归**：建立最少的初始化、概览、相册、成长曲线、AI 设置等截图/交互对照，覆盖手机与桌面；不在尚未实现时声称已有完整组件库或 E2E。
 
 FlareMo 的设计思想可参考，但 BabyMemo 的色彩、命名与组件实现始终以**本文件和真实代码**为准。
+
+
+## PR #21 目录收敛（待合并）
+
+功能文件已移动至 `src/features/growth/RecordView.tsx`、`src/features/album/Album.tsx`、`src/features/settings/Settings.tsx`；API 与前端共享类型位于 `src/lib/client.ts`。新增业务继续按此目录分层。旧段落中称业务组件全部留在 `src/App.tsx` 的文字是此前阶段记录，以本节为准。不得因目录重构改变 URL 或现有 API 鉴权。
