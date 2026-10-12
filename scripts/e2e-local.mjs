@@ -214,6 +214,43 @@ async function e2e() {
     assert.equal(bad.status,400);
     assert.equal((await json('/api/state')).data.babies.find(item=>item.id===baby.id)?.birth_time,'08:45');
   });
+  await step('concurrent record creation is idempotent and baby-scoped',async()=>{
+    const requestId='e1000000-0000-4000-8000-000000000001';
+    const payload={babyId,requestId,day:'2026-08-01',weight:11.2,notes:'race regression'};
+    const [a,b]=await Promise.all([
+      json('/api/records/growth',{method:'POST',body:payload}),
+      json('/api/records/growth',{method:'POST',body:payload})
+    ]);
+    assert.ok([200,201].includes(a.status),JSON.stringify(a.data));
+    assert.ok([200,201].includes(b.status),JSON.stringify(b.data));
+    assert.equal(a.data.id,b.data.id,'lost responses must not create duplicate rows');
+    const firstBaby=(await json('/api/records/growth?babyId='+babyId)).data.items;
+    const secondBaby=(await json('/api/records/growth?babyId='+secondBabyId)).data.items;
+    assert.equal(firstBaby.filter(x=>x.id===a.data.id).length,1);
+    assert.equal(secondBaby.some(x=>x.id===a.data.id),false);
+    const conflict=await json('/api/records/growth',{method:'POST',body:{...payload,babyId:secondBabyId}});
+    assert.equal(conflict.status,409,'the same client request ID cannot write to another baby');
+    assert.equal((await json('/api/records/growth/'+a.data.id,{method:'DELETE'})).status,200);
+  });
+  await step('cross-baby milestone CRUD and metadata are isolated',async()=>{
+    const created=await json('/api/records/milestones',{method:'POST',body:{
+      babyId:secondBabyId,day:'2026-08-02',title:'Baby B milestone',description:'not baby A'
+    }});
+    assert.equal(created.status,201,JSON.stringify(created.data));
+    assert.equal((await json('/api/records/milestones?babyId='+babyId)).data.items.some(x=>x.id===created.data.id),false);
+    assert.equal((await json('/api/records/milestones?babyId='+secondBabyId)).data.items.some(x=>x.id===created.data.id),true);
+    assert.equal((await json('/api/records/milestones/'+created.data.id,{method:'DELETE'})).status,200);
+    assert.equal((await json('/api/records/milestones?babyId='+secondBabyId)).data.items.some(x=>x.id===created.data.id),false);
+    assert.equal((await json('/api/trash/milestones/'+created.data.id+'/restore',{method:'POST',body:{}})).status,200);
+    assert.equal((await json('/api/records/milestones?babyId='+secondBabyId)).data.items.some(x=>x.id===created.data.id),true);
+  });
+  await step('write endpoints reject cross-origin requests even with a valid session',async()=>{
+    const attack=await json('/api/records/milestones',{method:'POST',
+      headers:{Origin:'https://attacker.invalid'},body:{babyId,day:'2026-08-01',title:'CSRF'}});
+    assert.equal(attack.status,403);
+    assert.equal(attack.data.error,'ORIGIN_REJECTED');
+    assert.equal((await json('/api/records/milestones?babyId='+babyId)).data.items.some(x=>x.title==='CSRF'),false);
+  });
   await step('growth measurement create, list, and delete',async()=>{
     const created=await json('/api/records/growth',{method:'POST',body:{
       babyId,day:'2026-01-15',weight:10.2,height:75,headCircumference:46,notes:'local test'
@@ -397,6 +434,48 @@ async function e2e() {
     const again=await json('/api/records/milestones',{method:'POST',body:eventPayload});
     assert.equal(created.status,201);assert.equal(again.status,200);assert.equal(again.data.id,created.data.id);
   });
+  await step('media validation rejects invalid MIME, oversize and bad multipart parts',async()=>{
+    const invalid=await json('/api/upload/start',{method:'POST',body:{
+      babyId,day:'2026-08-05',title:'script.svg',mime:'image/svg+xml',size:200
+    }});
+    assert.equal(invalid.status,400);
+    const huge=await json('/api/upload/start',{method:'POST',body:{
+      babyId,day:'2026-08-05',title:'oversize.mov',mime:'video/quicktime',size:209715201
+    }});
+    assert.equal(huge.status,400);
+    const start=await json('/api/upload/start',{method:'POST',body:{
+      babyId:secondBabyId,day:'2026-08-05',title:'video.mp4',mime:'video/mp4',size:32
+    }});
+    assert.equal(start.status,201,JSON.stringify(start.data));
+    const id=start.data.id;
+    const badPart=await json('/api/upload/'+id+'/part/1',{method:'PUT',body:new Uint8Array(31),
+      headers:{'Content-Type':'application/octet-stream'}});
+    assert.equal(badPart.status,413);
+    const missingPart=await json('/api/upload/'+id+'/finish',{method:'POST',body:{}});
+    assert.equal(missingPart.status,400);
+    assert.equal(missingPart.data.error,'UPLOAD_INCOMPLETE');
+    const video=Uint8Array.from([0,0,0,24,102,116,121,112,105,115,111,109,0,0,0,0,109,112,52,50,
+      0,0,0,0,0,0,0,0,0,0,0,0]);
+    assert.equal((await json('/api/upload/'+id+'/part/1',{method:'PUT',body:video,
+      headers:{'Content-Type':'application/octet-stream'}})).status,200);
+    assert.ok([200,201].includes((await json('/api/upload/'+id+'/finish',{method:'POST',body:{}})).status));
+    const range=await request('/api/media/'+id+'/content',{headers:{Range:'bytes=4-11'}});
+    assert.equal(range.status,206);
+    assert.equal(range.headers.get('content-range'),'bytes 4-11/32');
+    assert.deepEqual(new Uint8Array(await range.arrayBuffer()),video.slice(4,12));
+    const listing=(await json('/api/media?babyId='+secondBabyId)).data.items;
+    assert.ok(listing.some(x=>x.id===id&&x.mime==='video/mp4'));
+    assert.equal((await json('/api/media?babyId='+babyId)).data.items.some(x=>x.id===id),false);
+    const saved=sessionCookie;sessionCookie='';
+    try{
+      assert.equal((await request('/api/media/'+id+'/content')).status,401);
+      assert.equal((await request('/api/media/'+id+'/thumbnail')).status,401);
+    }finally{sessionCookie=saved}
+    assert.equal((await json('/api/media/'+id,{method:'DELETE'})).status,200);
+    assert.equal((await request('/api/media/'+id+'/content')).status,404);
+    assert.equal((await json('/api/trash/media/'+id+'/restore',{method:'POST',body:{}})).status,200);
+    assert.equal((await request('/api/media/'+id+'/content')).status,200);
+  });
   await step('records export protects private data',async()=>{
     assert.equal((await json('/api/export/records',{anonymous:true})).status,401);
     const v=await json('/api/export/records');assert.equal(v.status,200);
@@ -578,6 +657,81 @@ async function browserE2e(){
       await page.getByRole('heading',{name:'相册'}).waitFor();
       assert.equal(await page.locator('.upload-card').count(),0);
       await page.screenshot({path:join(evidence,'mobile-album.png'),fullPage:true});
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': four responsive widths across primary views',async()=>{
+      // Browser viewports prove layout contracts, not physical iPhone behavior.
+      const cases=[320,375,390,768],views=[
+        ['首页','Test Baby'],
+        ['成长','成长记录'],
+        ['相册','相册'],
+        ['设置','设置']
+      ];
+      for(const width of cases){
+        await page.setViewportSize({width,height:844});
+        for(const [nav,heading] of views){
+          await page.locator('.mobile-nav button[aria-label="'+nav+'"]').click();
+          await page.getByRole('heading',{name:heading,exact:true}).waitFor({timeout:12000});
+          const result=await page.evaluate(()=>({
+            width:window.innerWidth,html:document.documentElement.scrollWidth,
+            body:document.body.scrollWidth
+          }));
+          assert.ok(Math.max(result.html,result.body)<=result.width+1,
+            'Horizontal overflow on '+width+'px '+nav+': '+JSON.stringify(result));
+          if(width===320||width===768)await page.screenshot({
+            path:join(evidence,'responsive-'+width+'-'+nav+'.png'),fullPage:true
+          });
+        }
+        const tap=await page.locator('.mobile-nav button').first().evaluate(el=>{
+          const box=el.getBoundingClientRect();return {width:box.width,height:box.height};
+        });
+        assert.ok(tap.width>=44&&tap.height>=44,
+          'Mobile tab hit area must be 44px or larger '+JSON.stringify(tap));
+      }
+      await page.setViewportSize({width:390,height:844});
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': draft persistence and multi-baby separation',async()=>{
+      // Moments are intentionally not a mobile tab in the new photo-first layout.
+      const openMoments=async()=>{
+        await page.locator('.mobile-nav button[aria-label="首页"]').click();
+        await page.getByRole('button',{name:'记录新瞬间'}).click();
+        await page.getByRole('heading',{name:'成长瞬间',exact:true}).waitFor();
+      };
+      await openMoments();
+      const input=page.locator('input[placeholder*="第一次独立走路"]');
+      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
+      await input.fill('只属于宝宝A的临时草稿');
+      await page.locator('.mobile-nav button[aria-label="成长"]').click();
+      await openMoments();
+      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
+      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Second Baby'});
+      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='');
+      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
+      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
+      const fontSize=await input.evaluate(el=>Number.parseFloat(getComputedStyle(el).fontSize));
+      assert.ok(fontSize>=16,'Mobile Safari text input should not trigger focus zoom');
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': reduced motion and accessible gallery dialog',async()=>{
+      await page.emulateMedia({reducedMotion:'reduce'});
+      await page.locator('.mobile-nav button[aria-label="相册"]').click();
+      await page.getByRole('heading',{name:'相册'}).waitFor();
+      const preview=page.locator('.photo-preview').first();
+      await preview.waitFor({timeout:12000});
+      await preview.click();
+      const dialog=page.getByRole('dialog',{name:'相册预览'});
+      await dialog.waitFor();
+      const measure=await dialog.evaluate(el=>{
+        const rect=el.getBoundingClientRect();
+        return {left:rect.left,right:rect.right,viewport:innerWidth,top:rect.top};
+      });
+      assert.ok(measure.left>=-1&&measure.right<=measure.viewport+1,
+        'Media dialog must fit mobile width '+JSON.stringify(measure));
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({state:'detached'});
+      const transition=await preview.evaluate(el=>getComputedStyle(el).transitionDuration);
+      assert.ok(transition.split(',').every(x=>Number.parseFloat(x)===0),
+        'Reduced motion should suppress preview animations: '+transition);
+      await page.emulateMedia({reducedMotion:'no-preference'});
+      await page.screenshot({path:join(evidence,'mobile-album-post-regression.png'),fullPage:true});
     });
     assert.deepEqual(errors,[],'Uncaught browser exceptions');
     console.log('All '+(useWebKit?'WebKit Safari-engine':'Chromium')+' browser tests passed.');
