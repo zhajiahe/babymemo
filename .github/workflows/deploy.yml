@@ -148,9 +148,11 @@ jobs:
       - name: Apply remote database migrations
         if: ${{ needs.gate.outputs.dry_run == 'false' && (github.event_name == 'workflow_dispatch' || steps.latest.outputs.safe_to_publish == 'true') }}
         run: npx wrangler d1 migrations apply DB --remote
-      - name: Publish Worker
+      - name: Publish Worker (retry transient Cloudflare API errors)
         if: ${{ needs.gate.outputs.dry_run == 'false' && (github.event_name == 'workflow_dispatch' || steps.latest.outputs.safe_to_publish == 'true') }}
-        run: npx wrangler deploy --keep-vars
+        env:
+          EXPECTED_SHA: ${{ needs.gate.outputs.revision }}
+        run: bash scripts/deploy-worker-with-retry.sh
       # Auto-deploy preserves existing Worker secrets; never replay GitHub values.
       - name: Sync configured Worker secrets (manual release only)
         if: ${{ github.event_name == 'workflow_dispatch' && needs.gate.outputs.dry_run == 'false' }}
