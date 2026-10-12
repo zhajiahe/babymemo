@@ -102,7 +102,7 @@ export default function App(){
  <Card><div className="section-title"><h3>闪光的时刻</h3><button className="text-btn" onClick={()=>setActive('moments')}>查看全部 <ChevronRight size={15}/></button></div>{milestones.slice(0,4).map(x=><div className="event" key={x.id}><span className="event-date">{x.day}</span><span>{x.title}</span></div>)}{!milestones.length&&<div className="empty">成长中的惊喜，从现在开始收藏。</div>}</Card></div></>}
  {active==='growth'&&<RecordView baby={baby} kind="growth" items={records} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage}/>}
  {active==='moments'&&<RecordView baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage}/>}
- {active==='album'&&<Album baby={baby} media={media} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
+ {active==='album'&&<Album baby={baby} media={media} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
  {active==='assistant'&&<Assistant configured={state.openrouter.configured} babyId={baby.id} setActive={setActive}/>}
  {active==='settings'&&<Settings state={state} baby={baby} changed={changed} notify={setToast}/>}
  <footer className="footer">BabyMemo · 用爱记录，用心珍藏 <Heart size={13}/></footer>
@@ -132,7 +132,7 @@ function GrowthChart({items}:{items:RecordItem[]}){
  const poly=points.map((p,i)=>`${x(i)},${y(Number(p[metric]))}`).join(' ');
  return <Card className="growth-chart"><div className="section-title"><h3>成长趋势</h3><div className="chart-tabs"><button className={metric==='weight'?'active':''} onClick={()=>setMetric('weight')}>体重 · kg</button><button className={metric==='height'?'active':''} onClick={()=>setMetric('height')}>身高 · cm</button></div></div>{!points.length?<p className="empty">记录测量数据后，这里会显示变化趋势。</p>:<svg role="img" aria-label={`${metric==='weight'?'体重':'身高'}趋势，${points.length} 个测量点`} viewBox="0 0 720 235" className="growth-svg"><line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#e8e8ed"/>{[0,1,2,3].map(step=>{const value=min+(max-min)*step/3;const yy=y(value);return <g key={step}><line x1={left} x2={right} y1={yy} y2={yy} stroke="#edf0f3" strokeDasharray="3 5"/><text x={left-10} y={yy+4} textAnchor="end" fontSize={12} fill="#87919f">{value.toFixed(1)}</text></g>})}{points.length>1&&<polyline points={poly} fill="none" stroke="#dd8068" strokeWidth={3} strokeLinejoin="round" strokeLinecap="round"/>}{points.map((p,i)=><circle key={p.id} cx={x(i)} cy={y(Number(p[metric]))} r={4} fill="#df826c" stroke="#fff" strokeWidth={2}><title>{p.day}：{Number(p[metric])}{metric==='weight'?' kg':' cm'}</title></circle>)}<text x={left} y={226} fill="#8993a0" fontSize={11}>{points[0].day}</text><text x={right} y={226} fill="#8993a0" fontSize={11} textAnchor="end">{points.at(-1)?.day}</text></svg>}<p className="hint">展示当前页中有测量值的记录；支持切换体重与身高。</p></Card>;
 }
-function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
+function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];mediaEdited:(id:string,value:{title:string;day:string})=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
  const [selected,setSelected]=useState<MediaItem|null>(null);
  useEffect(()=>{setSelected(null)},[baby.id]);
@@ -241,6 +241,8 @@ function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;m
   if(!selected)return;
   await api('/api/media/'+selected.id,{method:'PATCH',body:JSON.stringify(value)});
   setSelected(current=>current?.id===selected.id?{...current,...value}:current);
+  // The list must update even when the media count stays unchanged.
+  mediaEdited(selected.id,value);
   changed();notify('照片信息已更新');
  }
  function navigateMedia(step:number){
