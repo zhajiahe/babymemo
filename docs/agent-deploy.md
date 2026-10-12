@@ -2,7 +2,7 @@
 
 本文供 Codex、Claude Code、Pi 等能运行终端的 Coding Agent 使用。目标是按可核查、可重复、尽量不破坏数据的方式完成 **BabyMemo → Cloudflare** 的验证和部署。GitHub Actions 路径见 [github-action-deploy.md](./github-action-deploy.md)。
 
-> **首要原则：默认只检查、不发布。** Agent 可以读取仓库、检查配置与运行本地构建；必须得到部署者明确授权，才允许在指定 Cloudflare 账号上创建资源、迁移远端数据库、发布 Worker、修改 Secrets 或绑定自定义域名。本文不会授权 Agent 触碰旧 MyBaby 生产环境。
+> **首要原则：Agent 默认只检查、不主动触发发布。** 已获得一次性产品决策授权，将 `main` 的 CI 全绿与 Cloudflare 自动发布关联。Agent 可以读取仓库、检查配置与运行本地构建；除此自动路径外，仍须得到部署者明确授权才可手工创建资源、迁移远端数据库、发布 Worker、修改 Secrets 或绑定自定义域名。本文不会授权 Agent 触碰旧 MyBaby 生产环境。
 
 ## 0. 部署约束
 
@@ -11,7 +11,7 @@
 - 先看 [`wrangler.jsonc`](../wrangler.jsonc)、[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)、[`package.json`](../package.json)、[`migrations/`](../migrations) 和本文件，**以当前代码为准**。
 - 不准把密码、`SESSION_SECRET`、`DATA_KEY`、OpenRouter Key、微信授权 Token、Cookie 或日志中的敏感原文复制到聊天、PR、Issue、Git 仓库或命令行参数。
 - 不得生成虚假的“部署成功”“扫码成功”“数据迁移成功”报告；任何一项未实测要写成**未验证**。
-- 不修改 GitHub Actions 为 push 自动发布；不删除或重新创建现有 D1/R2 以绕过失败；不轮换现存的 `DATA_KEY`。
+- 本仓库已获部署者授权启用「完整 CI 通过后自动发布 `main`」；Agent 不得绕过 CI 直接创建未经检查的生产发布。不得删除或重建现有 D1/R2，不得轮换现存的 `SESSION_SECRET` / `DATA_KEY`。GitHub 仍提供手动 Dry Run 和授权后的手动发布入口。
 - 开始部署前核对最新 `main`、工作分支和 PR 状态；若已有其他 PR 合并，先整合代码并审查部署脚本冲突，禁止强推或跳过验证。
 - 若部署者仅要求代码优化与文档，不调用任何可能操作生产 Cloudflare 资源的命令。
 

@@ -39,7 +39,7 @@ Cloudflare 原生家庭成长记录系统。参考 MyBaby 的宝宝档案、成�
 | SESSION_SECRET | 独立随机 32 字节 |
 | DATA_KEY | 独立随机 32 字节 |
 
-Actions → Deploy BabyMemo to Cloudflare → Run workflow：默认 `dry_run=true`，检验已有 D1/R2、类型检查、单元测试、构建和发布预演；正式发布设置 `dry_run=false`，校验 Secrets、准备 D1/R2、迁移数据库、发布 Worker、同步 Secrets、健康检查。首次无资源时 Dry Run 失败是预期行为。只有手动运行才发布，不随 Push 自动部署。
+Actions → Deploy BabyMemo to Cloudflare → Run workflow：默认 `dry_run=true`，检验已有 D1/R2、类型检查、单元测试、构建和发布预演；正式发布设置 `dry_run=false`，校验 Secrets、准备 D1/R2、迁移数据库、发布 Worker、同步 Secrets、健康检查。首次无资源时 Dry Run 失败是预期行为。后续合并到 `main` 将先自动运行包含浏览器 E2E 的完整 CI；**全部通过后自动部署到 Cloudflare**（不自动创建 D1/R2、不重新写入密钥、增量迁移先于发布，并进行线上健康检查）。如 CI 失败则不发布，较旧的 CI 结果也不会覆盖最新 `main`。仍支持手动 Dry Run 与手动正式发布。
 
 本地开发（Node.js 22+）：先 npm install、npm run build，再执行 npx wrangler d1 migrations apply DB --local；另开终端启动 npx wrangler dev 和 npm run dev。把上面的密钥写入仅供本地使用、已被 .gitignore 忽略的 .dev.vars。登录及 Secret 不要提交到 Git。运行 `npm run test:unit` 可检查首次部署 D1 ID 解析逻辑。
 

@@ -1,10 +1,10 @@
 # 通过 GitHub Actions 部署 BabyMemo
 
-本文适用于自己的 `zhajiahe/babymemo` 仓库。工作流位于 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)，显示名称为 **Deploy BabyMemo to Cloudflare**。仅在手动点击 **Run workflow** 时执行；`push` 和 PR 只运行代码检查，**不会自动发布生产版本**。
+本文适用于自己的 `zhajiahe/babymemo` 仓库。工作流位于 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)，显示名称为 **Deploy BabyMemo to Cloudflare**。支持两种发布方式：**`main` 的完整 CI（包括本地 Worker E2E 和 Chromium 浏览器 E2E）通过后自动发布**，或在 Actions 里手动点击 **Run workflow**（默认 Dry Run，不修改生产）。PR 检查不会触发发布。
 
 BabyMemo 运行于 Cloudflare Workers + D1 + R2 + Durable Objects，前端 React/Vite、服务端 Hono；无需 VPS。首次初始化使用家庭管理员名称和密码。AI 仅使用网页内配置的 OpenRouter；微信 Bot 为可选的 iLink 集成。
 
-> **生产发布必须得到部署者明确授权。** 先确认目标 Cloudflare 账号、远端资源和备份情况；Dry Run 不会发布但需要读取目标账号 D1/R2。MyBaby 旧站的 Neon / Vercel / R2 不会被本工作流迁移，切勿把新空数据库当作旧站数据。
+> **生产变更已通过启用自动发布得到部署者授权。** 合并到 `main` 且 CI 全部通过，会自动迁移远端 D1 并发布 Worker；请在合并前确认数据库备份、目标账号及影响范围。手动 Dry Run 仍只检查，不发布，但会读取目标账号的 D1/R2。MyBaby 旧站的 Neon / Vercel / R2 不会被本工作流迁移，切勿把新空数据库当作旧站数据。
 
 ## 1. Cloudflare 与 GitHub 准备
 
@@ -59,8 +59,8 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 2. `npm run provision:remote`：根据 [`wrangler.jsonc`](../wrangler.jsonc) 查找或创建 D1 `babymemo`、R2 `babymemo-media`，并将解析出的 `database_id` 写入**本次 Actions 工作目录**，不会回写 GitHub。
 3. `npm run verify`：执行 TypeScript 检查、单元测试与 Vite 构建。
 4. `npx wrangler d1 migrations apply DB --remote`：运行 `migrations/` 下尚未应用的迁移。
-5. `npx wrangler deploy`：发布 Worker、静态资源以及 `WechatSession` Durable Object 绑定。
-6. 将必需的 `SESSION_SECRET`、`DATA_KEY` 同步到 Worker。正式发布前工作流校验两个 GitHub Secrets，缺失或格式不符将中止。升级时必须复用既有密钥，特别是 `DATA_KEY`。
+5. `npx wrangler deploy --keep-vars`：发布 Worker、静态资源以及 `WechatSession` Durable Object 绑定，并保留在 Cloudflare 控制台设定的变量。
+6. **仅手动正式发布**：验证并同步 GitHub Secrets 中的 `SESSION_SECRET`、`DATA_KEY` 到 Worker。**CI 自动发布绝不重新写入这两项密钥**，保持 Cloudflare Worker 中既有值；必须确保首次安装时已经通过手动发布或控制台配置好密钥。
 7. `npm run smoke:check`：检查 `/api/health`（包含 D1 可用性）和 `/api/bootstrap/status`（只验证两项 Secret 是否配置，不泄露其值）。
 
 **重要：** 当前仓库的 `npm run deploy` 脚本与上述工作流的顺序不同（先发布，再迁移）。生产环境建议使用此工作流，或严格按 [Agent Runbook](./agent-deploy.md) 给出的迁移优先顺序逐条执行。
@@ -83,17 +83,26 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 
 ## 5. 后续升级及自定义域名
 
-普通代码升级：检查 PR/CI → 确保有数据备份 → 合并到 `main` → 在 Actions 手动运行 Dry Run（此时已有远端资源，应通过）→ 再以 `dry_run=false` 正式发布。再次发布仍勾选 `provision=true` 不会主动重建已存在的同名资源。
+普通代码升级：检查 PR 与数据库迁移 → 确保有数据备份 → 合并到 `main` → 等待完整 CI（TypeScript、单元测试、本地 Worker E2E、Chromium 浏览器 E2E）成功 → 自动发布现有 Cloudflare Worker → 线上健康检查。失败 CI 不部署；如果较新的提交已经进入 `main`，旧 CI 的发布会被跳过。若自动流程异常，可在 Actions 手动运行 Dry Run 后选择 `dry_run=false` 恢复发布。自动流程固定 `provision=false`，不会新建或重建 D1/R2；只有显式手动部署才允许 "provision=true"。
 
 自定义域名：Cloudflare Dashboard → Worker → Custom Domains 先完成绑定；在仓库 Variable 中填写真实的 `BABYMEMO_PUBLIC_URL`；确认 Cloudflare Dashboard 和 DNS 已可用再运行正式工作流。不要为了更换域名轮换 `SESSION_SECRET` / `DATA_KEY`，也无需配置额外的认证 Origin 环境变量。
 
 只更新 Worker Secret 可以在 Cloudflare Dashboard 的 Worker → Settings → Variables and Secrets 中手动操作；**不要覆盖不知道原值的生产 `DATA_KEY`**。
 
-## 6. 常见故障
+## 6. 自动发布的触发与安全约束
+
+- 触发机制：`Deploy BabyMemo to Cloudflare` 监听 `Check BabyMemo` 的 `workflow_run.completed`。只接受同一 GitHub 仓库、`main` 分支、由 **push** 启动且**结论为 success** 的 CI；PR、fork、失败/取消的 CI 不能发布。
+- 提交一致性：部署固定 checkout **成功 CI 的 commit SHA**，不会用新的未测试 HEAD 替代；开始和真正发布前都会对比远端 `main`，如果不是最新提交则跳过，防止慢速 CI 把新版覆盖成旧版。
+- 凭据边界：生产 job 仍采用 `environment: production`。如 GitHub 为该 Environment 设置必需审批，自动发布需先获得审批。Cloudflare Token 权限仍限定生产账号。
+- 数据与密钥：自动任务只调用 `provision:remote -- --check` 检查并解析已有 D1/R2，**先增量 D1 migration 后发布**，使用 `wrangler deploy --keep-vars` 保留控制台变量，并**跳过 `secret put`**，既有 `SESSION_SECRET` 与 `DATA_KEY` 不会自动轮换；成功发布后执行健康检查。项目手动发布仍允许按需创建资源与首次同步 Secrets。
+- 避免双重发布：如果 Cloudflare Dashboard 另行开启了 Workers Builds/Git 自动部署，同一 `main` push 可能同时触发两条部署链，应关闭其中一条。建议以 GitHub Actions 为唯一生产发布入口。
+- CI 自动发布**不支持自动回滚 D1 migration**。变更数据库结构前必须检查迁移向前兼容并确认备份。HTTP 健康检查通过也不代表真实 iPhone Safari / 微信 / OpenRouter 的完整验收。
+
+## 7. 常见故障
 
 | 现象 | 排查要点 |
 | --- | --- |
-| Actions 中找不到部署工作流 | Workflow 文件通常须先存在于默认分支；PR #3 合并前可从分支查看文件，但不能视为已上线 |
+| Actions 中找不到部署工作流 | Workflow 文件须存在于默认分支，检查 GitHub Actions 设置与工作流是否启用 |
 | Dry Run 提示缺 D1 或 R2 | `--check` 不会创建远端资源；首次正式运行需 `provision=true`，或先手动建资源 |
 | Cloudflare API / R2 / D1 返回权限错误 | 检查 Token 所属账号和编辑/读取权限，避免跨账号操作 |
 | D1 ID 不一致 | 脚本会拒绝切换到另一个同名数据库；先人工确认现有数据库，不能靠清空数据库解决 |
@@ -104,7 +113,7 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 | iPhone MOV 无法播放 | 现阶段不提供 HEVC/MOV 转码，分片成功不等于所有浏览器可解码 |
 | 微信 Bot 不响应 | 检查扫码绑定、是否手动启用、Bot 状态和第三方 iLink 协议 |
 
-## 7. 生产安全边界
+## 8. 生产安全边界
 
 部署会修改远端 Cloudflare 资源、运行 D1 migration。**不能**将 Dry Run 当成数据库备份，也不能把 D1 migration 当成可自动回滚的步骤。发布前先备份现有数据和 R2 媒体；失败时优先排查并前向修复，不要随意删除 D1、R2 或直接重建 Worker。
 
