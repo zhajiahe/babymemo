@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Baby } from './types';
 import { applySession, authenticated, clearSession, login, owner, sameOrigin, setup } from './auth';
+import { constantEqual, passwordHash, randomHex } from './crypto';
 import { decryptSecret, encryptSecret, setSetting, setting } from './crypto';
 import { generateQr, qrStatus, askOpenRouter, workerBot } from './wechat';
 import { mediaDownloadHeader } from './media-filename.mjs';
@@ -68,10 +69,10 @@ app.get('/api/state',async c=>{
   const [user,babies,growth,milestones,media,byBaby]=await Promise.all([
     owner(c.env),
     c.env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all(),
-    c.env.DB.prepare('SELECT count(*) AS count FROM growth_records').first<{count:number}>(),
-    c.env.DB.prepare('SELECT count(*) AS count FROM milestones').first<{count:number}>(),
-    c.env.DB.prepare('SELECT count(*) AS count FROM media').first<{count:number}>(),
-    c.env.DB.prepare("SELECT baby_id,kind,COUNT(*) AS total FROM (SELECT baby_id,'growth' AS kind FROM growth_records UNION ALL SELECT baby_id,'milestones' AS kind FROM milestones UNION ALL SELECT baby_id,'media' AS kind FROM media) GROUP BY baby_id,kind")
+    c.env.DB.prepare('SELECT count(*) AS count FROM growth_records WHERE deleted_at IS NULL').first<{count:number}>(),
+    c.env.DB.prepare('SELECT count(*) AS count FROM milestones WHERE deleted_at IS NULL').first<{count:number}>(),
+    c.env.DB.prepare('SELECT count(*) AS count FROM media WHERE deleted_at IS NULL').first<{count:number}>(),
+    c.env.DB.prepare("SELECT baby_id,kind,COUNT(*) AS total FROM (SELECT baby_id,'growth' AS kind FROM growth_records WHERE deleted_at IS NULL UNION ALL SELECT baby_id,'milestones' AS kind FROM milestones WHERE deleted_at IS NULL UNION ALL SELECT baby_id,'media' AS kind FROM media WHERE deleted_at IS NULL) GROUP BY baby_id,kind")
       .all<{baby_id:string;kind:'growth'|'milestones'|'media';total:number}>()
   ]);
   const [encryptedApiKey,encryptedBot,model,botOn,familyName] = await Promise.all([
@@ -107,7 +108,7 @@ app.get('/api/records/:kind',async c=>{
   if(!table)return fail(c,404,'NOT_FOUND');
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const page=Math.min(1000,Math.max(0,Number.parseInt(c.req.query('page')||'0',10)||0));
-  const r=await c.env.DB.prepare('SELECT * FROM '+table+' WHERE baby_id=? ORDER BY day DESC,created_at DESC LIMIT 40 OFFSET ?').bind(babyId,page*40).all();
+  const r=await c.env.DB.prepare('SELECT * FROM '+table+' WHERE baby_id=? AND deleted_at IS NULL ORDER BY day DESC,created_at DESC LIMIT 40 OFFSET ?').bind(babyId,page*40).all();
   return c.json({items:r.results,page,hasMore:r.results.length===40});
 });
 app.post('/api/records/:kind',async c=>{
@@ -129,13 +130,13 @@ app.post('/api/records/:kind',async c=>{
 app.delete('/api/records/:kind/:id',async c=>{
   const table=c.req.param('kind')==='growth'?'growth_records':c.req.param('kind')==='milestones'?'milestones':null;
   if(!table)return fail(c,404,'NOT_FOUND');
-  await c.env.DB.prepare('DELETE FROM '+table+' WHERE id=?').bind(c.req.param('id')).run();
+  await c.env.DB.prepare('UPDATE '+table+' SET deleted_at=? WHERE id=? AND deleted_at IS NULL').bind(now(),c.req.param('id')).run();
   return c.json({ok:true});
 });
 app.get('/api/media',async c=>{
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const page=Math.min(1000,Math.max(0,Number.parseInt(c.req.query('page')||'0',10)||0));
-  const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,thumbnail_ready,created_at FROM media WHERE baby_id=? ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?').bind(babyId,page*36).all();
+  const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,thumbnail_ready,created_at,favorite FROM media WHERE baby_id=? AND deleted_at IS NULL ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?').bind(babyId,page*36).all();
   return c.json({items:rows.results,hasMore:rows.results.length===36});
 });
 // Enumerate missing private derivatives in bounded batches across the *entire*
@@ -146,10 +147,10 @@ app.get('/api/media/thumbnail-backfill',async c=>{
   const after=c.req.query('after')||'';
   if(after.length>80)return fail(c,400,'INVALID_CURSOR');
   const batch=await c.env.DB.prepare(
-    "SELECT id,mime,size FROM media WHERE baby_id=? AND thumbnail_ready=0 AND mime LIKE 'image/%' AND id>? ORDER BY id LIMIT 10"
+    "SELECT id,mime,size FROM media WHERE baby_id=? AND deleted_at IS NULL AND thumbnail_ready=0 AND mime LIKE 'image/%' AND id>? ORDER BY id LIMIT 10"
   ).bind(babyId,after).all<{id:string;mime:string;size:number}>();
   const count=await c.env.DB.prepare(
-    "SELECT COUNT(*) AS total FROM media WHERE baby_id=? AND thumbnail_ready=0 AND mime LIKE 'image/%'"
+    "SELECT COUNT(*) AS total FROM media WHERE baby_id=? AND deleted_at IS NULL AND thumbnail_ready=0 AND mime LIKE 'image/%'"
   ).bind(babyId).first<{total:number}>();
   return c.json({items:batch.results,remaining:count?.total||0,cursor:batch.results.at(-1)?.id||after});
 });
@@ -241,7 +242,7 @@ app.post('/api/upload/:id/finish',async c=>{
 // Existing media lacking thumbnails automatically fall back to the original.
 app.get('/api/media/:id/thumbnail',async c=>{
   const id=c.req.param('id');
-  const row=await c.env.DB.prepare('SELECT object_key,mime FROM media WHERE id=?').bind(id).first<{object_key:string;mime:string}>();
+  const row=await c.env.DB.prepare('SELECT object_key,mime FROM media WHERE id=? AND deleted_at IS NULL').bind(id).first<{object_key:string;mime:string}>();
   if(!row||!row.mime.startsWith('image/'))return fail(c,404,'NOT_FOUND');
   const thumb=await c.env.MEDIA.get(thumbKey(id));
   const obj=thumb||await c.env.MEDIA.get(row.object_key);
@@ -254,7 +255,7 @@ app.get('/api/media/:id/thumbnail',async c=>{
 // Thumbnail is optional: its failure must never invalidate an uploaded original.
 app.put('/api/media/:id/thumbnail',async c=>{
   const id=c.req.param('id');
-  const row=await c.env.DB.prepare('SELECT mime FROM media WHERE id=?').bind(id).first<{mime:string}>();
+  const row=await c.env.DB.prepare('SELECT mime FROM media WHERE id=? AND deleted_at IS NULL').bind(id).first<{mime:string}>();
   if(!row||!row.mime.startsWith('image/'))return fail(c,404,'NOT_FOUND');
   const max=524288;
   const size=Number(c.req.header('content-length')||0);
@@ -288,13 +289,13 @@ app.patch('/api/media/:id',async c=>{
   if(!value||typeof value!=='object')return fail(c,400,'INVALID_MEDIA_METADATA');
   const v=value as Record<string,unknown>;
   if(typeof v.title!=='string'||!v.title.trim()||v.title.trim().length>120||!dayOk(v.day))return fail(c,400,'INVALID_MEDIA_METADATA');
-  const record=await c.env.DB.prepare('SELECT id FROM media WHERE id=?').bind(c.req.param('id')).first();
+  const record=await c.env.DB.prepare('SELECT id FROM media WHERE id=? AND deleted_at IS NULL').bind(c.req.param('id')).first();
   if(!record)return fail(c,404,'NOT_FOUND');
-  await c.env.DB.prepare('UPDATE media SET title=?,day=? WHERE id=?').bind(v.title.trim(),v.day,c.req.param('id')).run();
+  await c.env.DB.prepare('UPDATE media SET title=?,day=? WHERE id=? AND deleted_at IS NULL').bind(v.title.trim(),v.day,c.req.param('id')).run();
   return c.json({ok:true});
 });
 app.get('/api/media/:id/content',async c=>{
-  const row=await c.env.DB.prepare('SELECT object_key,mime,title FROM media WHERE id=?').bind(c.req.param('id')).first<{object_key:string;mime:string;title:string}>();
+  const row=await c.env.DB.prepare('SELECT object_key,mime,title FROM media WHERE id=? AND deleted_at IS NULL').bind(c.req.param('id')).first<{object_key:string;mime:string;title:string}>();
   if(!row)return fail(c,404,'NOT_FOUND');
   const range=c.req.header('Range');let options: R2GetOptions|undefined;
   if(range){
@@ -319,12 +320,47 @@ app.get('/api/media/:id/content',async c=>{
   return new Response(obj.body,{headers});
 });
 app.delete('/api/media/:id',async c=>{
-  const id=c.req.param('id');
-  const row=await c.env.DB.prepare('SELECT object_key FROM media WHERE id=?').bind(id).first<{object_key:string}>();
-  if(!row)return fail(c,404,'NOT_FOUND');
-  await c.env.MEDIA.delete([row.object_key,thumbKey(id)]);
-  await c.env.DB.prepare('DELETE FROM media WHERE id=?').bind(c.req.param('id')).run();
-  return c.json({ok:true});
+  const result=await c.env.DB.prepare('UPDATE media SET deleted_at=? WHERE id=? AND deleted_at IS NULL').bind(now(),c.req.param('id')).run();
+  return result.meta.changes?c.json({ok:true,undoable:true}):fail(c,404,'NOT_FOUND');
+});
+// Recoverable deletion: content remains private and is purged after 30 days.
+const trashTables:{[kind:string]:string}={growth:'growth_records',milestones:'milestones',media:'media'};
+app.get('/api/trash',async c=>{
+  const [growth,milestones,media]=await Promise.all([
+    c.env.DB.prepare('SELECT id,baby_id,day,deleted_at,weight,height FROM growth_records WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 100').all(),
+    c.env.DB.prepare('SELECT id,baby_id,day,deleted_at,title FROM milestones WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 100').all(),
+    c.env.DB.prepare('SELECT id,baby_id,day,deleted_at,title,mime FROM media WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 100').all()
+  ]);
+  return c.json({growth:growth.results,milestones:milestones.results,media:media.results,retentionDays:30});
+});
+app.post('/api/trash/:kind/:id/restore',async c=>{
+  const table=trashTables[c.req.param('kind')];if(!table)return fail(c,404,'NOT_FOUND');
+  const result=await c.env.DB.prepare('UPDATE '+table+' SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL').bind(c.req.param('id')).run();
+  return result.meta.changes?c.json({ok:true}):fail(c,404,'NOT_FOUND');
+});
+app.get('/api/export/records',async c=>{
+  const [babies,growth,milestones,media]=await Promise.all([
+    c.env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes,created_at FROM babies').all(),
+    c.env.DB.prepare('SELECT * FROM growth_records').all(),
+    c.env.DB.prepare('SELECT * FROM milestones').all(),
+    c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,created_at,deleted_at,favorite FROM media').all()
+  ]);
+  return c.json({schema:'babymemo-family-export-v1',exportedAt:now(),babies:babies.results,growth:growth.results,milestones:milestones.results,media:media.results,
+    note:'Metadata export only. Original media require authenticated downloads or operator R2 backup; this file alone is not a full disaster-recovery backup.'});
+});
+app.post('/api/settings/password',async c=>{
+  try{
+    const v=await json(c.req.raw);
+    if(typeof v.currentPassword!=='string'||typeof v.newPassword!=='string'||v.newPassword.length<6||v.newPassword.length>128)return fail(c,400,'INVALID_PASSWORD');
+    const existing=await owner(c.env);if(!existing)return fail(c,409,'NOT_INITIALIZED');
+    const current=await passwordHash(v.currentPassword,existing.password_salt);
+    if(!constantEqual(current,existing.password_hash))return fail(c,403,'WRONG_CURRENT_PASSWORD');
+    const salt=randomHex(16),hash=await passwordHash(v.newPassword,salt);
+    const result=await c.env.DB.prepare('UPDATE owner SET password_salt=?,password_hash=?,session_version=session_version+1 WHERE id=1 AND password_hash=?')
+      .bind(salt,hash,existing.password_hash).run();
+    if(!result.meta.changes)return fail(c,409,'PASSWORD_CHANGED_CONCURRENTLY');
+    clearSession(c);return c.json({ok:true,reauthenticate:true});
+  }catch{return fail(c,400,'PASSWORD_CHANGE_FAILED');}
 });
 app.post('/api/settings/openrouter',async c=>{
   try{
@@ -407,6 +443,7 @@ app.onError((e,c)=>{
 export default {
   fetch: app.fetch.bind(app),
   async scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext){
+    ctx.waitUntil(purgeDeleted(env).catch(()=>console.error(JSON.stringify({level:'error',event:'TRASH_PURGE_FAILED'}))));
     ctx.waitUntil(cleanupExpiredUploads({
       env,
       olderThan:new Date(Date.now()-14*86400000).toISOString(),
@@ -416,3 +453,16 @@ export default {
     .catch(()=>console.error(JSON.stringify({level:'error',event:'UPLOAD_RETENTION_FAILED'}))));
   }
 };
+
+// Deletion is reversible for 30 days. Only tombstoned originals may be physically removed.
+async function purgeDeleted(env:Env):Promise<void>{
+  const cutoff=new Date(Date.now()-30*86400000).toISOString();
+  const expired=await env.DB.prepare('SELECT id,object_key FROM media WHERE deleted_at IS NOT NULL AND deleted_at<? ORDER BY deleted_at LIMIT 30').bind(cutoff).all<{id:string;object_key:string}>();
+  for(const row of expired.results){
+    await env.MEDIA.delete([row.object_key,thumbKey(row.id)]);
+    await env.DB.prepare('DELETE FROM media WHERE id=? AND deleted_at<?').bind(row.id,cutoff).run();
+  }
+  for(const table of ['growth_records','milestones']){
+    await env.DB.prepare('DELETE FROM '+table+' WHERE deleted_at IS NOT NULL AND deleted_at<?').bind(cutoff).run();
+  }
+}
