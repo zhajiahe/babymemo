@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {getActiveThread,appendTurn,buildCommandContext,isClearContext,CONTEXT_TTL_MS} from '../src/wechat-memory.mjs';
+test('scoped bounded memory with TTL and explicit reset',()=>{
+ let thread=getActiveThread(null,'botA','userA',1000);
+ for(let i=0;i<6;i++)thread=appendTurn(thread,'query '+i,'reply '+i,'baby1',1000+i);
+ assert.equal(thread.turns.length,4);assert.equal(thread.babyId,'baby1');
+ assert.equal(getActiveThread(thread,'botB','userA',2000).turns.length,0);
+ assert.equal(getActiveThread(thread,'botA','userB',2000).turns.length,0);
+ assert.equal(getActiveThread(thread,'botA','userA',2000).turns.length,4);
+ assert.equal(getActiveThread(thread,'botA','userA',1006+CONTEXT_TTL_MS).turns.length,0);
+ assert.equal(isClearContext('清除上下文'),true);assert.equal(isClearContext('查询小好'),false);
+});
+test('multi-turn first result reference resolves to previously listed ID',()=>{
+ let thread=getActiveThread(null,'bot','user',1000);
+ thread=appendTurn(thread,'查小好最近体重','小好的成长测量：\naaaaaaaa · 2026-10-01 · 10kg\nbbbbbbbb · 2026-09-30 · 9kg','baby',1000);
+ const c=buildCommandContext('把第一条体重改为 10.2kg',thread);
+ assert.match(c.modelMessages.at(-1).content,/aaaaaaaa/);assert.match(c.groundedText,/记录编号 aaaaaaaa/);
+ assert.doesNotMatch(buildCommandContext('删除第三条',thread).groundedText,/记录编号/);
+ assert.doesNotMatch(buildCommandContext('删除别人的记录',thread).groundedText,/记录编号/);
+});
+test('clarification continuation uses actual previous user intent, not bot as authority',()=>{
+ let thread=getActiveThread(null,'bot','user',1000);
+ thread=appendTurn(thread,'删除小好某天记录','请提供记录日期','baby',1000);
+ const next=buildCommandContext('10月1日',thread);
+ assert.match(next.groundedText,/删除小好某天记录/);
+ assert.match(next.modelMessages.at(-1).content,/上一轮待补充/);
+ const unrelated=buildCommandContext('查询最近记录',thread);
+ assert.doesNotMatch(unrelated.groundedText,/删除/);
+});

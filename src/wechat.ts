@@ -2,6 +2,9 @@ import JSONBig from 'json-bigint';
 import type { Env, Baby } from './types';
 import { decryptSecret, encryptSecret, setting } from './crypto';
 import { wechatTools, wechatHelp, runWechatTool } from './wechat-harness.mjs';
+import {WechatPhotoError,mediaItems,persistWeChatMedia} from './wechat-media.mjs';
+import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.mjs';
+import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './wechat-memory.mjs';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
 const wireJSON=JSONBig({storeAsString:true,strict:true,protoAction:'error',constructorAction:'error'});
@@ -57,16 +60,10 @@ export async function testOpenRouterConnection(env:Env):Promise<boolean>{
   const encrypted=await setting(env,'openrouter_key');if(!encrypted)throw Error('OPENROUTER_KEY_MISSING');
   const model=await setting(env,'openrouter_model')||'openai/gpt-4.1-mini';
   const key=await decryptSecret(env,encrypted);
-  const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
-    method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key,'HTTP-Referer':'https://github.com/zhajiahe/babymemo','X-Title':'BabyMemo WeChat Operations'},
-    redirect:'manual',signal:AbortSignal.timeout(25000),
-    body:JSON.stringify({model,messages:[{role:'user',content:'Reply exactly: OK'}],temperature:0,max_tokens:16})
-  });
-  if(!res.ok){await res.body?.cancel();throw Error('OPENROUTER_HTTP_'+res.status);}
-  const result=await res.json() as Json;
+  const result=await openRouterCompletion({key,model,messages:[{role:'user',content:'Reply exactly: OK'}],max_tokens:16});
   return Array.isArray(result.choices)&&result.choices.length>0;
 }
-export async function handleWechatCommand(env:Env,text:string,messageId:string):Promise<string>{
+export async function handleWechatCommand(env:Env,text:string,messageId:string,thread:any=null):Promise<string>{
   const command=text.trim();
   if(!command)return wechatHelp;
   if(/^(帮助|使用说明|菜单|help|你能做什么|有什么功能)[？?!！]?$/i.test(command))return wechatHelp;
@@ -74,9 +71,11 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string):
   if(!babies.results.length)return '请先在 BabyMemo 中添加宝宝资料';
   if(/^(宝宝列表|列出宝宝|有哪些宝宝|查看所有宝宝)[？?]?$/i.test(command))return runWechatTool(env,null,'list_babies',{},messageId,command);
   const matches=babies.results.filter(b=>b.name && command.includes(b.name));
-  if(matches.length>1||(babies.results.length>1&&matches.length!==1))
+  if(matches.length>1||(babies.results.length>1&&matches.length!==1&&!babies.results.some(b=>b.id===thread?.babyId)))
     return '请明确写出一位宝宝的名字。可选：'+babies.results.map(b=>b.name).join('、')+'\n示例：'+babies.results[0].name+' 今天体重 10.5kg';
-  const baby=matches[0]||babies.results[0];
+  const baby=matches[0]||babies.results.find(b=>b.id===thread?.babyId)||babies.results[0];
+  if(thread)thread.selectedBabyId=baby.id;
+  const context=thread?buildCommandContext(command,thread):{modelMessages:[{role:'user',content:command}],groundedText:command};
   const encrypted=await setting(env,'openrouter_key');
   if(!encrypted)return '请先在网页设置中配置微信操作所需的 OpenRouter Key';
   const model=await setting(env,'openrouter_model')||'openai/gpt-4.1-mini';
@@ -87,15 +86,9 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string):
     '只提取用户明确说出的字段。必要参数不清楚时不要编造日期、测量值或目标记录；不确定就不调用工具。'+
     '修改和删除已有记录必须指定完整日期或查询结果的记录编号；同日可能有多条，具体由工具执行时判定。'+
     '只能使用提供的功能工具，绝不输出 SQL。不要回答育儿诊断、医学分析或与家庭记录无关的问答。';
-  const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
-    method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key,
-      'HTTP-Referer':'https://github.com/zhajiahe/babymemo','X-Title':'BabyMemo WeChat Operations'},
-    redirect:'manual',signal:AbortSignal.timeout(25000),
-    body:JSON.stringify({model,messages:[{role:'system',content:instruction},{role:'user',content:command.slice(0,3000)}],
-      tools:wechatTools,tool_choice:'auto',temperature:0,max_tokens:450})
-  });
-  if(!res.ok){await res.body?.cancel();throw Error('OPENROUTER_HTTP_'+res.status);}
-  const response=await res.json() as Json;
+  const response=await openRouterCompletion({key,model,
+    messages:[{role:'system',content:instruction},...context.modelMessages],
+    tools:wechatTools,max_tokens:550});
   const calls=response?.choices?.[0]?.message?.tool_calls;
   if(!Array.isArray(calls)||calls.length===0)return '没能确定具体操作。请提供明确的宝宝、日期与动作。\n\n'+wechatHelp;
   if(calls.length!==1)return '请一次只操作一条记录，其他操作请分开发送';
@@ -104,7 +97,29 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string):
   if(!wechatTools.some(x=>x.function.name===call.function.name))return '不支持这项微信操作';
   let args:Record<string,unknown>;
   try{args=JSON.parse(call.function.arguments) as Record<string,unknown>}catch{return '无法解析指令参数，请再说一遍'}
-  return await runWechatTool(env,baby,call.function.name,args,messageId,command);
+  return await runWechatTool(env,baby,call.function.name,args,messageId,context.groundedText);
+}
+// The photo itself has no baby name. Use the caption when present, otherwise
+// an explicitly configured default baby; never silently choose first of many.
+export async function handleWechatPhotoMessage(env:Env,raw:Json,messageId:string,thread:any=null):Promise<string>{
+  const babies=await env.DB.prepare('SELECT id,name,birthday,time_zone FROM babies ORDER BY created_at').all<Baby>();
+  if(!babies.results.length)return '请先在 BabyMemo 网页创建宝宝档案，再发送照片。';
+  const caption=(Array.isArray(raw.item_list)?raw.item_list:[])
+   .filter((item:any)=>item?.type===1&&typeof item?.text_item?.text==='string')
+   .map((item:any)=>item.text_item.text).join(' ').trim();
+  const found=babies.results.filter(b=>b.name&&caption.includes(b.name));
+  if(found.length>1)return '这张照片的文字中提到了多位宝宝，请每次只指定一位宝宝。';
+  let baby:Baby|undefined=found[0];
+  if(!baby){
+    if(babies.results.length===1)baby=babies.results[0];
+    else{
+      const preferred=await setting(env,'wechat_default_baby_id');
+      baby=babies.results.find(b=>b.id===preferred)||babies.results.find(b=>b.id===thread?.babyId);
+      if(!baby)return '收到照片，但当前家庭有多位宝宝。请先在网页「设置 → 微信操作」选择默认收图宝宝，或发送带宝宝昵称的图片消息。照片尚未保存。';
+    }
+  }
+  if(thread)thread.selectedBabyId=baby.id;
+  return (await persistWeChatMedia(env,raw,baby,messageId))||'没有检测到可保存的图片或视频。';
 }
 export class WechatSession {
   constructor(private readonly ctx: DurableObjectState,private readonly env: Env){}
@@ -126,7 +141,7 @@ export class WechatSession {
     }
     if(path==='/reset'){
       await this.ctx.storage.deleteAlarm();
-      await Promise.all(['cursor','lastPoll','lastError','lastMessage'].map(key=>this.ctx.storage.delete(key)));
+      await Promise.all(['cursor','lastPoll','lastError','lastMessage','conversation'].map(key=>this.ctx.storage.delete(key)));
       return Response.json({ok:true});
     }
     return new Response('Not found',{status:404});
@@ -141,24 +156,40 @@ export class WechatSession {
     try{
       const token=await decryptSecret(this.env,tokenEncrypted);
       const cursor=(await this.ctx.storage.get<string>('cursor'))||'';
+      const cached=await this.ctx.storage.get<any>('conversation');
+      if(cached?.expiresAt&&cached.expiresAt<=Date.now())await this.ctx.storage.delete('conversation');
       const response=await ilink(base,'ilink/bot/getupdates',{get_updates_buf:cursor,base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token,45000);
       await this.ctx.storage.put('lastPoll',new Date().toISOString());
       await this.ctx.storage.put('lastError',null);
       for(const raw of (Array.isArray(response.msgs)?response.msgs:[])){
-        if(!raw||raw.message_type!==1||(raw.message_state!==undefined&&raw.message_state!==0&&raw.message_state!==2)||raw.group_id||raw.from_user_id!==userId||raw.to_user_id&&raw.to_user_id!==botId||!raw.context_token)continue;
+        if(!raw||raw.message_type!==1||(raw.message_state!==undefined&&raw.message_state!==0&&raw.message_state!==2)||raw.group_id||raw.from_user_id!==userId||raw.to_user_id&&raw.to_user_id!==botId)continue;
         if(!Array.isArray(raw.item_list))continue;
         const text=raw.item_list.filter((i:any)=>i?.type===1&&typeof i?.text_item?.text==='string').map((i:any)=>i.text_item.text).join('\n').trim();
-        const msgid=String(raw.message_id||'');
-        if(!text||!msgid||text.length>3000)continue;
+        const msgid=String(raw.message_id||raw.msg_id||'');
+        const hasMedia=mediaItems(raw).length>0;
+        if((!text&&!hasMedia)||!msgid||text.length>3000)continue;
         const unique=botId+':'+msgid;
         await this.env.DB.prepare("INSERT OR IGNORE INTO wechat_messages(message_id,state,created_at) VALUES(?,'processing',?)").bind(unique,new Date().toISOString()).run();
-        const row=await this.env.DB.prepare('SELECT state,reply_text,client_id FROM wechat_messages WHERE message_id=?').bind(unique)
-          .first<{state:string;reply_text:string|null;client_id:string|null}>();
+        const row=await this.env.DB.prepare('SELECT state,reply_text,client_id,photo_attempts FROM wechat_messages WHERE message_id=?').bind(unique)
+          .first<{state:string;reply_text:string|null;client_id:string|null;photo_attempts:number}>();
         if(row?.state==='done')continue;
+        const thread=getActiveThread(await this.ctx.storage.get('conversation'),botId,userId);
+        const clear=!hasMedia&&isClearContext(text);
         let reply=row?.reply_text?await decryptSecret(this.env,row.reply_text):'';
         if(!reply){
-          try{reply=await handleWechatCommand(this.env,text,unique)}
-          catch{reply='暂时无法处理，请稍后再发送一次。';}
+          try{
+            if(clear)reply='已清除本次微信会话的短期上下文和宝宝选择。';
+            else reply=hasMedia?await handleWechatPhotoMessage(this.env,raw,unique,thread):await handleWechatCommand(this.env,text,unique,thread);
+          }catch(e){
+            // Protocol-invalid or expired photos can be acknowledged with a helpful
+            // error. Network/R2/D1 failures are retried with the original cursor.
+            if(hasMedia&&!(e instanceof WechatPhotoError)){
+              const attempts=(row?.photo_attempts||0)+1;
+              await this.env.DB.prepare('UPDATE wechat_messages SET photo_attempts=? WHERE message_id=?').bind(attempts,unique).run();
+              if(attempts<3)throw e; // keep upstream cursor for bounded retry
+              reply='图片或视频下载/入库多次失败，请检查相册内是否已有部分媒体，然后重新发送尚未保存的内容。';
+            }else reply=e instanceof WechatPhotoError?e.message:(friendlyOpenRouterError(e)||'暂时无法处理，请稍后再发送一次。');
+          }
         }
         // Save a deterministic response and client ID before sending. Replayed batches
         // reuse both and cannot create duplicate growth rows for the same message.
@@ -167,6 +198,11 @@ export class WechatSession {
           .bind(await encryptSecret(this.env,reply.slice(0,1800)),clientId,unique).run();
         await ilink(base,'ilink/bot/sendmessage',{msg:{from_user_id:'',to_user_id:userId,client_id:clientId,message_type:2,message_state:2,context_token:raw.context_token,item_list:[{type:1,text_item:{text:reply.slice(0,1800)}}]},base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token);
         await this.env.DB.prepare("UPDATE wechat_messages SET state='done' WHERE message_id=?").bind(unique).run();
+        if(clear)await this.ctx.storage.delete('conversation');
+        else if(thread.selectedBabyId||thread.babyId){
+          const next=appendTurn(thread,hasMedia?'[微信图片或视频]':text,reply,thread.selectedBabyId||thread.babyId);
+          await this.ctx.storage.put('conversation',next);
+        }
         await this.ctx.storage.put('lastMessage',new Date().toISOString());
       }
       // Acknowledgement advances only after all supported messages are durable.

@@ -23,7 +23,7 @@ export const wechatTools=[
  tool('list_trash','查看当前宝宝的回收站',{kind:{type:'string',enum:['growth','milestones','media']}}),
  tool('restore_trash','从回收站中恢复一项内容',{kind:{type:'string',enum:['growth','milestones','media']},...selector},['kind'])
 ];
-export const wechatHelp='BabyMemo 微信操作\n可以直接发送：\n· 小好今天体重 10.5 kg，身高 80 cm\n· 查小好最近五次体重\n· 小好今天会走路了\n· 查小好的里程碑 / 相册\n· 把小好 10 月 1 日的体重改成 10.2 kg\n· 删除小好 10 月 1 日的成长记录\n· 查看小好的回收站 / 恢复编号 12345678\n同一天有多条时，先查询记录并使用回复里的编号。删除后可在 30 天内恢复。当前支持绑定微信的私聊文字操作。';
+export const wechatHelp='BabyMemo 微信操作\n可以直接发送：\n· 小好今天体重 10.5 kg，身高 80 cm\n· 查小好最近五次体重\n· 小好今天会走路了\n· 查小好的里程碑 / 相册\n· 把小好 10 月 1 日的体重改成 10.2 kg\n· 删除小好 10 月 1 日的成长记录\n· 查看小好的回收站 / 恢复编号 12345678\n· 直接发送照片或视频 → 自动存入私有相册（单个 50 MiB 上限）\n· 查询后说“把第一条改成……”可连续操作；发送“清除上下文”重置记忆（多宝宝请先设置默认收图宝宝）\n同一天有多条时，先查询记录并使用回复里的编号。删除后可在 30 天内恢复。支持绑定微信的私聊文字与照片。';
 const validDate=x=>{
  if(typeof x!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(x))return false;
  const d=new Date(x+'T00:00:00Z');return Number.isFinite(d.valueOf())&&d.toISOString().slice(0,10)===x;

@@ -150,3 +150,12 @@
 .wechat-examples{margin:16px 0;padding:14px 16px;border:1px solid var(--bm-border-soft);border-radius:12px;background:var(--bm-surface-soft)}
 .wechat-examples strong{font-size:14px}
 .wechat-examples p{font-size:13px;line-height:1.8;margin:8px 0 0}
+
+/* WeChat photo inbox: explicitly selected target for multi-baby families */
+.wechat-photo-setting{display:grid;gap:12px;margin:12px 0 18px;padding:16px;border:1px solid var(--bm-border-soft);border-radius:12px;background:var(--bm-surface-soft)}
+.wechat-photo-setting strong{font-size:14px}
+.wechat-photo-setting p{font-size:13px;line-height:1.7;margin:6px 0 0}
+.wechat-photo-controls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px}
+.wechat-photo-controls .field{flex:1;min-width:min(100%,240px)}
+.wechat-photo-controls .secondary{min-height:44px}
+@media(max-width:480px){.wechat-photo-controls{flex-direction:column;align-items:stretch}.wechat-photo-controls .field{width:100%}}

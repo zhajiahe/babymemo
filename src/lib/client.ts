@@ -1,6 +1,6 @@
 export type BabyInfo={id:string;name:string;birthday:string;gender:string;time_zone:string;allergies:string;notes:string};
 export type BabyCounts={growth:number;milestones:number;media:number};
-export type State={ownerName:string;familyName:string;babies:BabyInfo[];counts:BabyCounts;countsByBaby:Record<string,BabyCounts>;openrouter:{configured:boolean;model:string};wechat:{connected:boolean;enabled:boolean}};
+export type State={ownerName:string;familyName:string;babies:BabyInfo[];counts:BabyCounts;countsByBaby:Record<string,BabyCounts>;openrouter:{configured:boolean;model:string};wechat:{connected:boolean;enabled:boolean;defaultBabyId:string}};
 export type Tab='overview'|'growth'|'moments'|'album'|'settings';
 export type RecordItem={id:string;day:string;weight?:number|null;height?:number|null;head_circumference?:number|null;title?:string;description?:string;notes?:string};
 export class ApiFailure extends Error { constructor(readonly status:number,message:string){super(message);this.name='ApiFailure'} }
