@@ -16,3 +16,5 @@
 .setup-guide code{padding:2px 5px;background:#f5f5f8;border-radius:5px;color:#9f5b4b;overflow-wrap:anywhere}
 .setup-guide p{margin:8px 0}
 .setup-guide a{font-weight:700;color:#cd795f}
+
+.growth-chart{margin-top:20px}.chart-tabs{display:flex;gap:5px;padding:3px;border:1px solid #edf0f3;border-radius:10px;background:#f9fafb}.chart-tabs button{border:0;background:transparent;padding:7px 12px;border-radius:7px;color:#83909c;font-size:12px}.chart-tabs button.active{background:#fff;color:#b96855;box-shadow:0 1px 5px #1b223010;font-weight:650}.growth-svg{width:100%;height:auto;max-height:260px;overflow:visible}
