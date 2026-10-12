@@ -5,6 +5,7 @@ import { decryptSecret, encryptSecret, setSetting, setting } from './crypto';
 import { generateQr, qrStatus, askOpenRouter, workerBot } from './wechat';
 import { mediaDownloadHeader } from './media-filename.mjs';
 import { finalizeUpload, FinalizeMismatchError } from './upload-finalize.mjs';
+import { cleanupExpiredUploads } from './upload-cleanup.mjs';
 export { WechatSession } from './wechat';
 
 const app = new Hono<{Bindings:Env}>();
@@ -127,15 +128,30 @@ app.delete('/api/records/:kind/:id',async c=>{
 app.get('/api/media',async c=>{
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const page=Math.min(1000,Math.max(0,Number.parseInt(c.req.query('page')||'0',10)||0));
-  const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,created_at FROM media WHERE baby_id=? ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?').bind(babyId,page*36).all();
+  const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,thumbnail_ready,created_at FROM media WHERE baby_id=? ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?').bind(babyId,page*36).all();
   return c.json({items:rows.results,hasMore:rows.results.length===36});
+});
+// Enumerate missing private derivatives in bounded batches across the *entire*
+// album. Cursor advances even if a browser cannot decode a particular HEIC.
+app.get('/api/media/thumbnail-backfill',async c=>{
+  const babyId=c.req.query('babyId');
+  if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
+  const after=c.req.query('after')||'';
+  if(after.length>80)return fail(c,400,'INVALID_CURSOR');
+  const batch=await c.env.DB.prepare(
+    "SELECT id,mime,size FROM media WHERE baby_id=? AND thumbnail_ready=0 AND mime LIKE 'image/%' AND id>? ORDER BY id LIMIT 10"
+  ).bind(babyId,after).all<{id:string;mime:string;size:number}>();
+  const count=await c.env.DB.prepare(
+    "SELECT COUNT(*) AS total FROM media WHERE baby_id=? AND thumbnail_ready=0 AND mime LIKE 'image/%'"
+  ).bind(babyId).first<{total:number}>();
+  return c.json({items:batch.results,remaining:count?.total||0,cursor:batch.results.at(-1)?.id||after});
 });
 // Resume after Safari reload by re-selecting the same local file. No public uploads.
 app.get('/api/upload/pending',async c=>{
   const babyId=c.req.query('babyId');
   if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const sessions=await c.env.DB.prepare(
-    'SELECT id,day,title,mime,size,fingerprint,created_at FROM media_uploads WHERE baby_id=? ORDER BY created_at DESC LIMIT 30'
+    'SELECT id,day,title,mime,size,fingerprint,created_at,updated_at FROM media_uploads WHERE baby_id=? ORDER BY created_at DESC LIMIT 30'
   ).bind(babyId).all<{id:string;day:string;title:string;mime:string;size:number;fingerprint:string;created_at:string}>();
   const items=await Promise.all(sessions.results.map(async session=>{
     const parts=await c.env.DB.prepare('SELECT part_number FROM media_upload_parts WHERE media_upload_id=? ORDER BY part_number')
@@ -150,7 +166,7 @@ app.post('/api/upload/start',async c=>{
     if(typeof v.babyId!=='string'||!await babyExists(c.env,v.babyId)||!dayOk(v.day)||typeof v.mime!=='string'||!allowedMime(v.mime)||!Number.isSafeInteger(v.size)||v.size<1||v.size>209715200||v.fingerprint!==undefined&&!uploadFingerprintOk(v.fingerprint))return fail(c,400,'INVALID_MEDIA');
     const id=crypto.randomUUID(),key='private/'+v.babyId+'/'+id;
     const handle=await c.env.MEDIA.createMultipartUpload(key,{httpMetadata:{contentType:v.mime}});
-    await c.env.DB.prepare('INSERT INTO media_uploads(id,baby_id,object_key,upload_id,day,title,mime,size,fingerprint,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,key,handle.uploadId,v.day,String(v.title||'').slice(0,120),v.mime,v.size,v.fingerprint||'',now()).run();
+    await c.env.DB.prepare('INSERT INTO media_uploads(id,baby_id,object_key,upload_id,day,title,mime,size,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,key,handle.uploadId,v.day,String(v.title||'').slice(0,120),v.mime,v.size,v.fingerprint||'',now(),now()).run();
     return c.json({id,chunkSize:8388608},201);
   }catch{return fail(c,400,'UPLOAD_START_FAILED');}
 });
@@ -165,6 +181,7 @@ app.put('/api/upload/:id/part/:number',async c=>{
   try{
     const part=await c.env.MEDIA.resumeMultipartUpload(row.object_key,row.upload_id).uploadPart(number,c.req.raw.body!);
     await c.env.DB.prepare('INSERT INTO media_upload_parts(media_upload_id,part_number,etag) VALUES(?,?,?) ON CONFLICT(media_upload_id,part_number) DO UPDATE SET etag=excluded.etag').bind(id,number,part.etag).run();
+    await c.env.DB.prepare('UPDATE media_uploads SET updated_at=? WHERE id=?').bind(now(),id).run();
     return c.json({ok:true,partNumber:number});
   }catch{return fail(c,502,'UPLOAD_PART_FAILED');}
 });
@@ -197,6 +214,7 @@ app.post('/api/upload/:id/finish',async c=>{
     const parts=await c.env.DB.prepare('SELECT part_number AS partNumber,etag FROM media_upload_parts WHERE media_upload_id=? ORDER BY part_number').bind(id).all<{partNumber:number;etag:string}>();
     const expected=Math.ceil(row.size/8388608);
     if(parts.results.length!==expected||parts.results.some((p,i)=>p.partNumber!==i+1))return fail(c,400,'UPLOAD_INCOMPLETE');
+    await c.env.DB.prepare('UPDATE media_uploads SET updated_at=? WHERE id=?').bind(now(),id).run();
     const result=await finalizeUpload({
       bucket:c.env.MEDIA,row,parts:parts.results,isRecorded:recorded,
       persist:async()=>{
@@ -253,6 +271,7 @@ app.put('/api/media/:id/thumbnail',async c=>{
   if(data[0]!==255||data[1]!==216||data[2]!==255||data[total-2]!==255||data[total-1]!==217)
     return fail(c,400,'INVALID_THUMBNAIL');
   await c.env.MEDIA.put(thumbKey(id),data,{httpMetadata:{contentType:'image/jpeg'}});
+  await c.env.DB.prepare('UPDATE media SET thumbnail_ready=1 WHERE id=?').bind(id).run();
   return c.json({ok:true});
 });
 // Metadata edits never alter the private R2 object.
@@ -378,4 +397,15 @@ app.onError((e,c)=>{
   console.error(JSON.stringify({level:'error',code:'UNHANDLED_REQUEST',path:c.req.path})); 
   return fail(c,500,'INTERNAL_ERROR');
 });
-export default app;
+export default {
+  fetch: app.fetch.bind(app),
+  async scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext){
+    ctx.waitUntil(cleanupExpiredUploads({
+      env,
+      olderThan:new Date(Date.now()-14*86400000).toISOString(),
+      limit:30,
+      finalizeUpload
+    }).then(stats=>console.log(JSON.stringify({level:'info',event:'UPLOAD_RETENTION',...stats})))
+    .catch(()=>console.error(JSON.stringify({level:'error',event:'UPLOAD_RETENTION_FAILED'}))));
+  }
+};

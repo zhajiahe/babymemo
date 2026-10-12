@@ -111,3 +111,10 @@
 .pending-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .pending-actions button{min-height:44px}
 @media(max-width:480px){.pending-actions{width:100%}.pending-actions button{flex:1}}
+
+/* Owner-triggered old-photo thumbnail backfill: no automatic bulk download. */
+.thumbnail-backfill{margin:16px 0;padding:18px}
+.thumbnail-backfill .section-title{margin-bottom:6px}
+.backfill-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.backfill-actions button{min-height:44px}
+@media(max-width:480px){.backfill-actions button{width:100%}}

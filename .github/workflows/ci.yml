@@ -53,3 +53,27 @@ jobs:
           name: babymemo-e2e-screenshots
           path: e2e-artifacts/
           if-no-files-found: ignore
+
+  webkit-e2e:
+    name: Safari-engine WebKit E2E (simulated slow network)
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm install --no-save --no-audit --no-fund playwright@1.56.1
+      - run: npx playwright install --with-deps webkit
+      - run: npm run build
+      - run: npm run test:e2e
+        env:
+          BROWSER_E2E: '1'
+          BROWSER_ENGINE: webkit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: babymemo-webkit-e2e-screenshots
+          path: e2e-artifacts/
+          if-no-files-found: ignore

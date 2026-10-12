@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
 import { MediaViewer, type MediaItem } from './components/MediaViewer';
-import { createAlbumThumbnail, fingerprintFile } from './media-upload';
+import { createAlbumThumbnail, createStoredThumbnail, fingerprintFile } from './media-upload';
 import { pickMatchingUpload, remainingPartNumbers } from './upload-plan.mjs';
 import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
 
@@ -37,7 +37,7 @@ function Gate({onReady}:{onReady:()=>void}){
  {mode==='loading'?<div className="skeleton">正在检查服务状态…</div>:mode==='unavailable'?<div className="stack"><div className="error" role="alert">{error}</div><button className="secondary" onClick={()=>location.reload()}><RefreshCw size={15}/>重新检查</button></div>:<form onSubmit={submit} className="stack">
  {mode==='setup'&&<><div className="setup-check">{[['会话密钥',ready.sessionConfigured],['加密密钥',ready.encryptionConfigured]].map(([label,ok])=><span key={String(label)} className={ok?'good':'bad'}>{ok?<Check size={13}/>:<WifiOff size={13}/>} {label}</span>)}</div><p className="setup-security-note">首次访问未初始化实例的人可以创建管理员。请部署后立即完成初始化；如需限制访问，请提前为站点启用 Cloudflare Access。</p></>}
  <>{mode==='setup'&&<Field label="家庭名称（必填）"><input required maxLength={80} value={form.familyName} onChange={e=>setForm({...form,familyName:e.target.value})} placeholder="例如：我们的温暖小家"/></Field>}<Field label={mode==='setup'?'管理员登录名':'管理员登录名'}><input required value={form.ownerName} autoComplete="username" onChange={e=>setForm({...form,ownerName:e.target.value})} placeholder="例如：爸爸 / 妈妈"/></Field>
- </><Field label="家庭密码"><input type="password" autoComplete={mode==='setup'?'new-password':'current-password'} minLength={mode==='setup'?10:1} required value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder={mode==='setup'?'至少 10 位字符':'输入家庭密码'}/></Field>
+ </><Field label="家庭密码"><input type="password" autoComplete={mode==='setup'?'new-password':'current-password'} minLength={mode==='setup'?6:1} required value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder={mode==='setup'?'至少 6 位字符（可使用数字）':'输入家庭密码'}/></Field>
  {mode==='setup'&&<><div className="form-divider"><span>宝宝档案</span></div><div className="two"><Field label="宝宝名字"><input required value={form.babyName} onChange={e=>setForm({...form,babyName:e.target.value})} placeholder="宝宝昵称"/></Field><Field label="性别"><select value={form.gender} onChange={e=>setForm({...form,gender:e.target.value})}><option value="girl">女孩</option><option value="boy">男孩</option><option value="other">暂不填写</option></select></Field></div>
  <Field label="出生日期"><input type="date" required max={today()} value={form.birthday} onChange={e=>setForm({...form,birthday:e.target.value})}/></Field>
  <Field label="家庭时区"><select value={form.timeZone} onChange={e=>setForm({...form,timeZone:e.target.value})}><option value="Asia/Shanghai">中国标准时间 · UTC+8</option><option value="Asia/Tokyo">日本标准时间 · UTC+9</option><option value="America/Los_Angeles">美国太平洋时间</option></select></Field>
@@ -138,6 +138,51 @@ function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{bab
  useEffect(()=>{setSelected(null)},[baby.id]);
  type PendingUpload={id:string;day:string;title:string;mime:string;size:number;fingerprint:string;completedParts:number[];created_at:string};
  const [pending,setPending]=useState<PendingUpload[]>([]);
+ const [backfill,setBackfill]=useState({remaining:0,running:false,completed:0,skipped:0,failed:0});
+ const stopBackfill=useRef(false);
+ async function refreshBackfill(){
+  const response=await api<{items:{id:string;mime:string;size:number}[];remaining:number;cursor:string}>(
+   '/api/media/thumbnail-backfill?babyId='+encodeURIComponent(baby.id));
+  setBackfill(old=>({...old,remaining:response.remaining}));
+  return response;
+ }
+ useEffect(()=>{
+  stopBackfill.current=false;
+  setBackfill({remaining:0,running:false,completed:0,skipped:0,failed:0});
+  void refreshBackfill().catch(()=>{});
+  return()=>{stopBackfill.current=true};
+ },[baby.id]);
+ async function backfillThumbnails(){
+  if(backfill.running||uploading)return;
+  stopBackfill.current=false;
+  setBackfill(old=>({...old,running:true,completed:0,skipped:0,failed:0}));
+  let cursor='',completed=0,skipped=0,failed=0;
+  try{
+   while(!stopBackfill.current){
+    const result=await api<{items:{id:string;mime:string;size:number}[];remaining:number;cursor:string}>(
+     '/api/media/thumbnail-backfill?babyId='+encodeURIComponent(baby.id)+'&after='+encodeURIComponent(cursor));
+    if(!result.items.length)break;
+    for(const item of result.items){
+     if(stopBackfill.current)break;
+     try{
+      if(item.size>25*1024*1024){skipped++;continue;}
+      const thumb=await createStoredThumbnail(item.id,item.mime);
+      if(!thumb){skipped++;continue;}
+      await api('/api/media/'+item.id+'/thumbnail',{
+       method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}
+      });
+      completed++;
+     }catch{failed++}
+     finally{setBackfill(old=>({...old,completed,skipped,failed}))}
+    }
+    cursor=result.cursor;
+   }
+   const summary=await refreshBackfill();
+   notify('缩略图补全：成功 '+completed+' 张，跳过 '+skipped+' 张，失败 '+failed+' 张。剩余 '+summary.remaining+' 张可稍后重试。');
+  }catch(e){notify(e instanceof Error?e.message:'补全中断，可重新操作')}
+  finally{setBackfill(old=>({...old,running:false,completed,skipped,failed}))}
+ }
+
  async function refreshPending(){
   const response=await api<{items:PendingUpload[]}>('/api/upload/pending?babyId='+encodeURIComponent(baby.id));
   setPending(response.items);
@@ -269,6 +314,7 @@ function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{bab
   if(next)setSelected(next);
  }
  return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>{progress&&<p className="small">{progress}</p>}</Card>
+ {backfill.remaining>0&&<Card className="thumbnail-backfill"><div className="section-title"><h3>补全旧照片缩略图</h3><span className="muted small">{backfill.remaining} 张待处理</span></div><p className="muted small">需要通过当前设备下载旧照片并生成私有缩略图。建议连接 Wi-Fi，保持页面开启。原图不会被修改；不支持解码或大于 25MB 的照片会跳过。</p><div className="backfill-actions">{backfill.running?<button className="secondary" type="button" onClick={()=>{stopBackfill.current=true}}>停止补全</button>:<button className="primary" type="button" disabled={uploading} onClick={()=>void backfillThumbnails()}>开始补全</button>}<span className="muted small">{backfill.running?'处理中 · ':''}成功 {backfill.completed} · 跳过 {backfill.skipped} · 失败 {backfill.failed}</span></div></Card>}
  {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">网络中断或刷新页面后，重新选择原来的文件，会自动识别并继续上传未完成的分片。文件不会保存在本网站中。</p>{pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><div className="pending-actions">{item.completedParts.length===Math.ceil(item.size/8388608)&&<button className="primary" type="button" disabled={uploading} onClick={()=>void finishPending(item.id)}>完成保存</button>}<button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div></div>)}</Card>}
  <div className="photo-grid">{media.map(item=><Card key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+(item.title||'成长回忆')}><span className="photo-frame">{item.mime.startsWith('image/')?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt="" />:<span className="video-placeholder" aria-hidden="true"><Camera size={32}/><span>视频 · 点击播放</span></span>}</span><span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button><div className="photo-caption"><div><strong>{item.title||'未命名'}</strong><p>{item.day}</p></div><button type="button" className="icon-btn" onClick={()=>void remove(item.id)} aria-label={'删除 '+(item.title||'媒体')}><Trash2 size={16}/></button></div></Card>)}</div>{!media.length&&<div className="empty card">还没有照片，试试上传第一张。</div>}<Pager page={page} setPage={setPage} hasMore={hasMore}/>{selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia}/> }</>;
 }

@@ -39,3 +39,17 @@ export async function createAlbumThumbnail(file: File): Promise<Blob | null> {
     URL.revokeObjectURL(url);
   }
 }
+
+
+/** Derive a small private JPEG from an already stored original (on-demand only). */
+export async function createStoredThumbnail(id: string, mime: string): Promise<Blob | null> {
+  const response = await fetch('/api/media/'+encodeURIComponent(id)+'/content', {
+    credentials: 'same-origin'
+  });
+  if (!response.ok) throw Error('ORIGINAL_FETCH_'+response.status);
+  const size=Number(response.headers.get('content-length')||0);
+  if(size>25*1024*1024)return null;
+  const data=await response.blob();
+  if(data.size>25*1024*1024)return null;
+  return createAlbumThumbnail(new File([data], 'existing-image', {type:mime}));
+}
