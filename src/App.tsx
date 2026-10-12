@@ -61,6 +61,7 @@ export default function App(){
  const [growthPage,setGrowthPage]=useState(0),[momentPage,setMomentPage]=useState(0),[albumPage,setAlbumPage]=useState(0);
  const [hasMore,setHasMore]=useState({growth:false,moments:false,album:false});
  const [busy,setBusy]=useState(false);
+ useEffect(()=>{if(!toast)return;const timer=setTimeout(()=>setToast(''),5000);return()=>clearTimeout(timer)},[toast]);
  const baby=state?.babies.find(b=>b.id===babyId)||state?.babies[0];
  async function refresh(){
   try{const v=await api<State>('/api/state');setState(v);setBabyId(old=>old&&v.babies.some(x=>x.id===old)?old:(v.babies[0]?.id||''));setMode('app');}
@@ -105,7 +106,7 @@ export default function App(){
  {active==='growth'&&<RecordView baby={baby} kind="growth" items={records} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage}/>}
  {active==='moments'&&<RecordView baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage}/>}
  {active==='album'&&<Album baby={baby} media={media} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
- {active==='assistant'&&<Assistant configured={state.openrouter.configured} setActive={setActive}/>}
+ {active==='assistant'&&<Assistant configured={state.openrouter.configured} babyId={baby.id} setActive={setActive}/>}
  {active==='settings'&&<Settings state={state} baby={baby} changed={changed} notify={setToast}/>}
  <footer className="footer">BabyMemo · 用爱记录，用心珍藏 <Heart size={13}/></footer>
  </div></main>{toast&&<Notice text={toast} onClose={()=>setToast('')}/>}</div>;
@@ -137,51 +138,70 @@ function GrowthChart({items}:{items:RecordItem[]}){
 }
 function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
- async function upload(files:FileList|null){if(!files?.length)return;setUploading(true);
-  for(const file of Array.from(files)){try{
-   if(file.size>209715200)throw Error('暂时只支持最大 200MB 的文件');
-   const mime=file.type||(/\.mov$/i.test(file.name)?'video/quicktime':'application/octet-stream');
-   const start=await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:today(),title:file.name,mime,size:file.size});
-   const parts=Math.ceil(file.size/start.chunkSize);
-   // Keep three bounded uploads in flight; retry transient failures per part.
-   // Worker never buffers the whole file, so iPhone MOV uploads remain chunked.
-   let next=0,completed=0;
-   const uploadPart=async(index:number)=>{
-    for(let attempt=0;attempt<3;attempt++){
-     try {
-      await api('/api/upload/'+start.id+'/part/'+(index+1),{
-       method:'PUT',
-       body:file.slice(index*start.chunkSize,Math.min(file.size,(index+1)*start.chunkSize)),
-       headers:{'Content-Type':'application/octet-stream'}
-      });
-      return;
-     }catch(e){
-      if(attempt===2)throw e;
-      await new Promise(resolve=>setTimeout(resolve,600*(2**attempt)));
-     }
+ async function upload(files:FileList|null){
+  if(!files?.length||uploading)return;
+  setUploading(true);
+  try {
+   for(const file of Array.from(files)){
+    let uploadId:string|undefined;
+    try{
+     if(file.size<1||file.size>209715200)throw Error('文件大小需在 1B～200MB 之间');
+     const extension=file.name.toLowerCase().match(/\.(heic|heif|jpg|jpeg|png|webp|gif|mov|mp4|webm)$/)?.[1];
+     const formats:Record<string,string>={heic:'image/heic',heif:'image/heif',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',mov:'video/quicktime',mp4:'video/mp4',webm:'video/webm'};
+     const mime=file.type||(extension?formats[extension]:'application/octet-stream');
+     setProgress(file.name+' · 正在准备');
+     const start=await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:today(),title:file.name,mime,size:file.size});
+     uploadId=start.id;
+     const total=Math.ceil(file.size/start.chunkSize);
+     let next=0,completed=0,failed=false;
+     const uploadPart=async(index:number)=>{
+      const part=file.slice(index*start.chunkSize,Math.min(file.size,(index+1)*start.chunkSize));
+      for(let attempt=0;attempt<3;attempt++){
+       try{
+        await api('/api/upload/'+start.id+'/part/'+(index+1),{method:'PUT',body:part,headers:{'Content-Type':'application/octet-stream'}});
+        return;
+       }catch(error){
+        if(attempt===2)throw error;
+        await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+       }
+      }
+     };
+     const jobs=Array.from({length:Math.min(3,total)},async()=>{
+      while(!failed&&next<total){
+       const index=next++;
+       try{
+        await uploadPart(index);
+        completed++;
+        setProgress(file.name+' · '+Math.round(completed/total*100)+'%');
+       }catch(error){failed=true;throw error;}
+      }
+     });
+     const results=await Promise.allSettled(jobs);
+     const rejection=results.find((r):r is PromiseRejectedResult=>r.status==='rejected');
+     if(rejection)throw rejection.reason;
+     setProgress(file.name+' · 正在保存');
+     await post('/api/upload/'+start.id+'/finish',{});
+     uploadId=undefined;
+     notify('已保存 '+file.name);
+     changed();
+    }catch(error){
+     if(uploadId)await post('/api/upload/'+uploadId+'/cancel',{}).catch(()=>{});
+     notify(file.name+'：'+(error instanceof Error?error.message:'上传失败'));
     }
-   };
-   await Promise.all(Array.from({length:Math.min(3,parts)},async()=>{
-    while(next<parts){
-     const index=next++;
-     await uploadPart(index);
-     completed++;
-     setProgress(file.name+' · '+Math.round(completed/parts*100)+'%');
-    }
-   }));
-   await post('/api/upload/'+start.id+'/finish',{});
-   notify('已保存 '+file.name);changed();
-  }catch(e){notify(file.name+'：'+(e instanceof Error?e.message:'上传失败'));}}
-  setUploading(false);setProgress('');
+   }
+  }finally{
+   setUploading(false);
+   setProgress('');
+  }
  }
  async function remove(id:string){if(!confirm('确定从相册删除这项媒体吗？'))return;await api('/api/media/'+id,{method:'DELETE'});changed()}
  return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>void upload(e.target.files)}/></label>{progress&&<p className="small">{progress}</p>}</Card>
  <div className="photo-grid">{media.map(item=><Card key={item.id} className="photo-item"><div className="photo-frame">{item.mime.startsWith('image/')?<img src={'/api/media/'+item.id+'/content'} loading="lazy" alt={item.title||'成长照片'}/>:<video controls preload="none" src={'/api/media/'+item.id+'/content'}/>}</div><div className="photo-caption"><div><strong>{item.title||'未命名'}</strong><p>{item.day}</p></div><button className="icon-btn" onClick={()=>void remove(item.id)} aria-label="删除照片"><Trash2 size={16}/></button></div></Card>)}</div>{!media.length&&<div className="empty card">还没有照片，试试上传第一张。</div>}<Pager page={page} setPage={setPage} hasMore={hasMore}/></>;
 }
-function Assistant({configured,setActive}:{configured:boolean;setActive:(v:Tab)=>void}){
+function Assistant({configured,babyId,setActive}:{configured:boolean;babyId:string;setActive:(v:Tab)=>void}){
  const [input,setInput]=useState(''),[messages,setMessages]=useState<{role:'me'|'bot';text:string}[]>([]),[waiting,setWaiting]=useState(false);
  async function send(e:FormEvent){e.preventDefault();if(!input.trim()||waiting)return;const content=input;setInput('');setMessages(v=>[...v,{role:'me',text:content}]);setWaiting(true);
- try{const res=await post<{answer:string}>('/api/chat',{message:content});setMessages(v=>[...v,{role:'bot',text:res.answer}])}catch(e){setMessages(v=>[...v,{role:'bot',text:e instanceof Error?e.message:'请求失败'}])}finally{setWaiting(false)}}
+ try{const res=await post<{answer:string}>('/api/chat',{message:content,babyId});setMessages(v=>[...v,{role:'bot',text:res.answer}])}catch(e){setMessages(v=>[...v,{role:'bot',text:e instanceof Error?e.message:'请求失败'}])}finally{setWaiting(false)}}
  return <Card className="chat"><div className="chat-header"><span className="stat-icon peach"><Sparkles size={21}/></span><div><h3>BabyMemo AI</h3><p className="muted small">由你的 OpenRouter 配置提供支持 · 只读问答</p></div></div>{!configured?<div className="empty"><p>还没有配置 OpenRouter</p><button className="primary" onClick={()=>setActive('settings')}>前往设置 <ChevronRight size={16}/></button></div>:<>
  <div className="chat-messages">{!messages.length&&<div className="chat-placeholder"><Sparkles size={32}/><p>有什么想聊的？</p><span>可以聊聊宝宝成长、育儿灵感，或帮你梳理记录。</span></div>}{messages.map((m,i)=><div className={'bubble '+m.role} key={i}>{m.text}</div>)}{waiting&&<div className="bubble bot">正在思考…</div>}</div>
  <form onSubmit={send} className="chat-input"><input placeholder="问问 BabyMemo…" value={input} onChange={e=>setInput(e.target.value)}/><button disabled={waiting||!input.trim()} aria-label="发送"><ChevronRight size={20}/></button></form></>}</Card>;

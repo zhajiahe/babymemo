@@ -13,7 +13,11 @@ const json = async (req: Request, limit=16_384):Promise<any> => {
   if(raw.length>limit)throw Error('BODY_TOO_LARGE');
   return JSON.parse(raw);
 };
-const dayOk = (s:unknown):s is string => typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&!Number.isNaN(Date.parse(s+'T00:00:00Z'));
+const dayOk = (s:unknown):s is string => {
+  if(typeof s!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
+  const day=new Date(s+'T00:00:00Z');
+  return !Number.isNaN(day.getTime())&&day.toISOString().slice(0,10)===s;
+};
 const validNum=(v:unknown,min:number,max:number):boolean=>v===null||v===undefined||(typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max);
 const now=()=>new Date().toISOString();
 const allowedMime=(s:string)=>/^(image\/(jpeg|png|webp|heic|heif|gif)|video\/(mp4|quicktime|webm))$/.test(s);
@@ -28,7 +32,12 @@ app.use('/api/*',async(c,next)=>{
   if(!['/api/health','/api/bootstrap/status','/api/bootstrap','/api/login'].includes(path)&&!await authenticated(c))return fail(c,401,'LOGIN_REQUIRED');
   await next();
 });
-app.get('/api/health',c=>c.json({ok:true,service:'babymemo',version:1}));
+app.get('/api/health',async c=>{
+  try{
+    await c.env.DB.prepare('SELECT id FROM owner LIMIT 1').first();
+    return c.json({ok:true,service:'babymemo',version:1});
+  }catch{return fail(c,503,'DATABASE_UNAVAILABLE')}
+});
 app.get('/api/bootstrap/status',async c=>c.json({
   initialized:!!await owner(c.env),
   bootstrapConfigured:!!c.env.BOOTSTRAP_SECRET&&c.env.BOOTSTRAP_SECRET.length>=32,
@@ -130,16 +139,28 @@ app.post('/api/upload/start',async c=>{
 });
 app.put('/api/upload/:id/part/:number',async c=>{
   const id=c.req.param('id'),number=Number(c.req.param('number'));
-  if(!Number.isInteger(number)||number<1||number>30)return fail(c,400,'INVALID_PART');
+  if(!Number.isInteger(number)||number<1||number>25)return fail(c,400,'INVALID_PART');
   const row=await c.env.DB.prepare('SELECT * FROM media_uploads WHERE id=?').bind(id).first<{object_key:string;upload_id:string;size:number}>();
   if(!row)return fail(c,404,'UPLOAD_NOT_FOUND');
   const length=Number(c.req.header('content-length'));
-  if(!Number.isFinite(length)||length<=0||length>8388608)return fail(c,413,'INVALID_PART_SIZE');
+  const expectedLength=Math.min(8388608,row.size-(number-1)*8388608);
+  if(!Number.isSafeInteger(length)||expectedLength<=0||length!==expectedLength)return fail(c,413,'INVALID_PART_SIZE');
   try{
     const part=await c.env.MEDIA.resumeMultipartUpload(row.object_key,row.upload_id).uploadPart(number,c.req.raw.body!);
     await c.env.DB.prepare('INSERT INTO media_upload_parts(media_upload_id,part_number,etag) VALUES(?,?,?) ON CONFLICT(media_upload_id,part_number) DO UPDATE SET etag=excluded.etag').bind(id,number,part.etag).run();
     return c.json({ok:true,partNumber:number});
   }catch{return fail(c,502,'UPLOAD_PART_FAILED');}
+});
+// Clean up incomplete R2 multipart uploads after a failed mobile transfer.
+app.post('/api/upload/:id/cancel',async c=>{
+  const id=c.req.param('id');
+  const row=await c.env.DB.prepare('SELECT object_key,upload_id FROM media_uploads WHERE id=?').bind(id).first<{object_key:string;upload_id:string}>();
+  if(!row)return fail(c,404,'UPLOAD_NOT_FOUND');
+  try{
+    await c.env.MEDIA.resumeMultipartUpload(row.object_key,row.upload_id).abort();
+    await c.env.DB.prepare('DELETE FROM media_uploads WHERE id=?').bind(id).run();
+    return c.json({ok:true});
+  }catch{return fail(c,502,'UPLOAD_CANCEL_FAILED');}
 });
 app.post('/api/upload/:id/finish',async c=>{
   const id=c.req.param('id');
@@ -207,7 +228,10 @@ app.post('/api/settings/openrouter/test',async c=>{
 app.post('/api/chat',async c=>{
   try {
     const v=await json(c.req.raw);if(typeof v.message!=='string'||!v.message.trim()||v.message.length>2000)return fail(c,400,'INVALID_MESSAGE');
-    const baby=await currentBaby(c.env);const answer=await askOpenRouter(c.env,v.message,baby);
+    const baby=v.babyId===undefined?await currentBaby(c.env):
+      (typeof v.babyId==='string'?await c.env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes FROM babies WHERE id=?').bind(v.babyId).first<Baby>():null);
+    if(!baby)return fail(c,400,'INVALID_BABY');
+    const answer=await askOpenRouter(c.env,v.message,baby);
     return c.json({answer});
   }catch(e){return fail(c,502,e instanceof Error?e.message:'CHAT_FAILED');}
 });
@@ -249,7 +273,11 @@ app.post('/api/settings/wechat/:action',async c=>{
   if(action==='start'&&!await setting(c.env,'openrouter_key'))return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
   await setSetting(c.env,'wechat_enabled',action==='start'?'true':'false');
   const result=await workerBot(c.env).fetch('https://bot.internal/'+action,{method:'POST'});
-  return c.json({ok:result.ok,status:action});
+  if(!result.ok){
+    if(action==='start')await setSetting(c.env,'wechat_enabled','false');
+    return fail(c,502,'WECHAT_BOT_UPDATE_FAILED');
+  }
+  return c.json({ok:true,status:action});
 });
 app.get('/api/settings/wechat/status',async c=>{
   const response=await workerBot(c.env).fetch('https://bot.internal/status');

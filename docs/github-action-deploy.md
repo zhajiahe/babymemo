@@ -1,0 +1,111 @@
+# 通过 GitHub Actions 部署 BabyMemo
+
+本文适用于自己的 `zhajiahe/babymemo` 仓库。工作流位于 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)，显示名称为 **Deploy BabyMemo to Cloudflare**。仅在手动点击 **Run workflow** 时执行；`push` 和 PR 只运行代码检查，**不会自动发布生产版本**。
+
+BabyMemo 运行于 Cloudflare Workers + D1 + R2 + Durable Objects，前端 React/Vite、服务端 Hono；无需 VPS。首次初始化使用家庭管理员名称和密码。AI 仅使用网页内配置的 OpenRouter；微信 Bot 为可选的 iLink 集成。
+
+> 当前文档随 PR #3 提交。在合并 PR 前，请只在该功能分支上试跑 `dry_run=true`；不要针对生产账号运行正式发布。已经部署了 MyBaby 旧站的 Neon / Vercel / R2 不会被此工作流迁移，切勿把新空数据库当作旧站数据。
+
+## 1. Cloudflare 与 GitHub 准备
+
+1. 在 Cloudflare Dashboard 开通 **Workers**、**D1** 和 **R2**，确认当前账号的 `*.workers.dev` 子域可用。Durable Object 类 `WechatSession` 在部署时由 Wrangler migration 注册。
+2. 在 [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) 创建限定到目标账号的 Token。需具备 Workers Scripts 编辑、D1 编辑、Workers R2 Storage 编辑所需权限；部分账号还需允许读取 Workers 子域信息。授予实际所需的最小权限即可。
+3. 在 Cloudflare Dashboard 获取 **Account ID**。
+4. 在 GitHub 仓库 `Settings → Actions → General` 启用 Actions；本工作流仅需 `contents: read`。
+5. 进入 `Settings → Secrets and variables → Actions`。由于部署 job 使用了 `environment: production`，密钥也可以保存在同名 GitHub Environment 中，前提是该环境允许工作流访问。
+
+## 2. 设置 Secrets 和可选 Variable
+
+先在**自己的安全终端**分别执行三次（每次产生一个新值），立即保存到密码管理器：
+
+```bash
+openssl rand -hex 32
+openssl rand -hex 32
+openssl rand -hex 32
+```
+
+在 GitHub Actions **Secrets** 中创建下列条目：
+
+| 名称 | 用途 | 要求 |
+| --- | --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API 权限 | 限定目标账号 |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号 ID | 必填 |
+| `BOOTSTRAP_SECRET` | 首次安装时验证初始化操作 | 至少 32 字符 |
+| `SESSION_SECRET` | 家庭登录 Cookie 签名 | 至少 32 字符，保持稳定 |
+| `DATA_KEY` | 加密 OpenRouter / 微信凭据 | **恰好 64 位十六进制字符**，保持稳定 |
+
+**不可将密钥写进** workflow 文件、提交记录、Issue、PR、聊天、`workflow_dispatch` 的表单输入或浏览器地址。GitHub Secret 保存后不会回显原值。`SESSION_SECRET` 变化会令既有会话失效；`DATA_KEY` 变化会使已经保存的 OpenRouter 和微信凭据无法解密，**升级时必须复用旧值**。`BOOTSTRAP_SECRET` 也应妥善留存，仅未初始化实例需要用它完成首次设置。
+
+可在 GitHub Actions **Variables**（不是 Secret）中设定：
+
+```text
+BABYMEMO_PUBLIC_URL=https://baby.example.com
+```
+
+这里只能填写 HTTPS **origin**，不要附加路径、查询参数或尾随其他字符。先在 Cloudflare Worker 中实际绑定并确认域名正常，再使用它。该变量**只供发布后的健康检查使用**，不是鉴权域名或 Cookie 的配置。留空时检查脚本会尝试通过 Cloudflare API 获取账号子域，并检查 `https://babymemo.<workers.dev-子域>.workers.dev`。
+
+## 3. 第一次部署
+
+打开仓库 `Actions → Deploy BabyMemo to Cloudflare → Run workflow`。
+
+| 选项 | 默认 | 作用 |
+| --- | --- | --- |
+| `dry_run` | `true` | 只读核对已有远端 D1/R2、类型检查、构建、`wrangler deploy --dry-run`；不迁移、不发布、不同步 Secrets |
+| `provision` | `true` | 仅在正式运行且 `dry_run=false` 时创建缺失的 D1、R2；已存在同名资源则复用 |
+
+**第一次账号还没有 D1 / R2 资源时，默认 Dry Run 会报“Missing D1/R2”，这是预期现象。** 可先通过 Cloudflare 控制台创建同名资源后重新试跑 Dry Run；也可以在明确选择正确账号后，将 `dry_run=false` 且 `provision=true` 运行首次正式部署。
+
+正式运行按下列顺序执行：
+
+1. 检查 Cloudflare Token、Account ID 是否存在。
+2. `npm run provision:remote`：根据 [`wrangler.jsonc`](../wrangler.jsonc) 查找或创建 D1 `babymemo`、R2 `babymemo-media`，并将解析出的 `database_id` 写入**本次 Actions 工作目录**，不会回写 GitHub。
+3. `npm run verify`：执行 TypeScript 检查、单元测试与 Vite 构建。
+4. `npx wrangler d1 migrations apply DB --remote`：运行 `migrations/` 下尚未应用的迁移。
+5. `npx wrangler deploy`：发布 Worker、静态资源以及 `WechatSession` Durable Object 绑定。
+6. 将必需的 `BOOTSTRAP_SECRET`、`SESSION_SECRET`、`DATA_KEY` 同步到 Worker。正式发布前工作流校验三个 GitHub Secrets，缺失或格式不符将中止。升级时必须复用既有密钥，特别是 `DATA_KEY`。
+7. `npm run smoke:check`：检查 `/api/health`（包含 D1 可用性）和 `/api/bootstrap/status`（只验证三项 Secret 是否配置，不泄露其值）。
+
+**重要：** 当前仓库的 `npm run deploy` 脚本与上述工作流的顺序不同（先发布，再迁移）。生产环境建议使用此工作流，或严格按 [Agent Runbook](./agent-deploy.md) 给出的迁移优先顺序逐条执行。
+
+## 4. 第一次初始化
+
+正式工作流通过后，打开部署后的 Worker 首页（`/`）；BabyMemo 会根据 `GET /api/bootstrap/status` 自动显示初始化表单，**没有单独的 `/setup` 路由**。
+
+在浏览器 HTTPS 页面中填写：`BOOTSTRAP_SECRET`、家庭管理员名称、家庭登录密码（至少 10 位）、宝宝名字、出生日期、性别和家庭时区；过敏信息可选。完成后进入家庭空间。
+
+再按以下顺序手工验证：
+
+1. 退出并以家庭管理员名称、密码重新登录。
+2. 新增、查看、删除一条测试成长记录；确认只在当前宝宝下显示。
+3. 上传一张照片，在手机浏览器打开相册并确认可读取；再测试视频和弱网络上传。
+4. 在设置中填写 OpenRouter Key 和模型 ID，点击测试；**不要**把 API Key 放入 GitHub Secrets。
+5. 如需微信 Bot，在设置中扫码绑定 iLink，确认授权后再**手动启用**，检查运行状态和白名单单聊；iLink 可能因第三方协议变化而失效。
+
+## 5. 后续升级及自定义域名
+
+普通代码升级：检查 PR/CI → 确保有数据备份 → 合并到 `main` → 在 Actions 手动运行 Dry Run（此时已有远端资源，应通过）→ 再以 `dry_run=false` 正式发布。再次发布仍勾选 `provision=true` 不会主动重建已存在的同名资源。
+
+自定义域名：Cloudflare Dashboard → Worker → Custom Domains 先完成绑定；在仓库 Variable 中填写真实的 `BABYMEMO_PUBLIC_URL`；确认 Cloudflare Dashboard 和 DNS 已可用再运行正式工作流。不要为了更换域名轮换 `SESSION_SECRET` / `DATA_KEY`，也无需配置额外的认证 Origin 环境变量。
+
+只更新 Worker Secret 可以在 Cloudflare Dashboard 的 Worker → Settings → Variables and Secrets 中手动操作；**不要覆盖不知道原值的生产 `DATA_KEY`**。
+
+## 6. 常见故障
+
+| 现象 | 排查要点 |
+| --- | --- |
+| Actions 中找不到部署工作流 | Workflow 文件通常须先存在于默认分支；PR #3 合并前可从分支查看文件，但不能视为已上线 |
+| Dry Run 提示缺 D1 或 R2 | `--check` 不会创建远端资源；首次正式运行需 `provision=true`，或先手动建资源 |
+| Cloudflare API / R2 / D1 返回权限错误 | 检查 Token 所属账号和编辑/读取权限，避免跨账号操作 |
+| D1 ID 不一致 | 脚本会拒绝切换到另一个同名数据库；先人工确认现有数据库，不能靠清空数据库解决 |
+| Smoke Check 报 Secret 缺失 | 核对 GitHub Secrets 或 `production` Environment Secrets、Worker Secrets 是否同步 |
+| Smoke Check 域名不可访问 | 确认绑定已生效；Variable 可暂留空检查 workers.dev，国内可访问性需要单独实测 |
+| 初始化页一直显示无法连接 | 检查 `/api/health`、D1 迁移、`/api/bootstrap/status`，不要通过重置数据库绕过 |
+| 登录后报 `ORIGIN_REJECTED` 或反复掉线 | 确认访问使用同一 HTTPS 域名，浏览器 Cookie 与请求 Origin 对应，清除旧域名 Cookie 后重登 |
+| iPhone MOV 无法播放 | 现阶段不提供 HEVC/MOV 转码，分片成功不等于所有浏览器可解码 |
+| 微信 Bot 不响应 | 检查扫码绑定、是否手动启用、Bot 状态和第三方 iLink 协议 |
+
+## 7. 生产安全边界
+
+部署会修改远端 Cloudflare 资源、运行 D1 migration。**不能**将 Dry Run 当成数据库备份，也不能把 D1 migration 当成可自动回滚的步骤。发布前先备份现有数据和 R2 媒体；失败时优先排查并前向修复，不要随意删除 D1、R2 或直接重建 Worker。
+
+本流程**不会**自动迁移旧 MyBaby 的 Vercel、Neon 或 R2 生产数据，也尚未完成真实生产端到端验收。参考 [Agent 部署指南](./agent-deploy.md) 与 [项目 README](../README.md)。

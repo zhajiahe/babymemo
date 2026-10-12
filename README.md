@@ -29,6 +29,8 @@ Cloudflare 原生家庭成长记录系统。参考 MyBaby 的宝宝档案、成�
 
 ## GitHub Actions 部署
 
+操作指南：[GitHub Actions 部署](docs/github-action-deploy.md) · [Coding Agent 部署 Runbook](docs/agent-deploy.md)。默认先运行 **Dry Run**，不触碰生产 D1。
+
 在仓库 Settings → Secrets and variables → Actions 配置：
 
 | Secret | 来源 |
@@ -39,7 +41,7 @@ Cloudflare 原生家庭成长记录系统。参考 MyBaby 的宝宝档案、成�
 | SESSION_SECRET | 独立随机 32 字节 |
 | DATA_KEY | 独立随机 32 字节 |
 
-Actions → Deploy BabyMemo to Cloudflare → Run workflow，依次检查必需 Secrets、构建、发布、解析自动创建的 D1 ID、迁移 D1、同步 Secrets。正式部署为手动触发，不随每次 Push 自动发布。
+Actions → Deploy BabyMemo to Cloudflare → Run workflow：默认 `dry_run=true`，检验已有 D1/R2、类型检查、单元测试、构建和发布预演；正式发布设置 `dry_run=false`，校验 Secrets、准备 D1/R2、迁移数据库、发布 Worker、同步 Secrets、健康检查。首次无资源时 Dry Run 失败是预期行为。只有手动运行才发布，不随 Push 自动部署。
 
 本地开发（Node.js 22+）：先 npm install、npm run build，再执行 npx wrangler d1 migrations apply DB --local；另开终端启动 npx wrangler dev 和 npm run dev。把上面的密钥写入仅供本地使用、已被 .gitignore 忽略的 .dev.vars。登录及 Secret 不要提交到 Git。运行 `npm run test:unit` 可检查首次部署 D1 ID 解析逻辑。
 
@@ -51,7 +53,7 @@ OpenRouter 与微信凭据使用 DATA_KEY 经 AES-GCM 加密存放于 D1，UI �
 
 ## 性能与限制
 
-D1 日期索引 + 有界分页，Cloudflare Assets 静态托管；照片懒加载，视频 Range，浏览器每次仅上传 8 MiB 分片。暂未做 iPhone HEVC/MOV 转码或自动缩略图；上传上限 200MB，最终可播放性依客户端解码器。未完成上传的自动垃圾回收、微信失效自动恢复、生产数据导入/备份、跨站隐私与端到端验收仍未完成。新站暂未恢复旧 MyBaby 的照片编辑、HEIC 自动转换、视频封面、出生体格信息等全部功能。
+D1 日期索引 + 有界分页，Cloudflare Assets 静态托管；照片懒加载，视频 Range，浏览器最多 3 个 8 MiB 分片并行上传与单片重试，失败时尝试取消 R2 multipart。暂未做 iPhone HEVC/MOV 转码或自动缩略图；上传上限 200MB，最终可播放性依客户端解码器。未完成上传的自动垃圾回收、微信失效自动恢复、生产数据导入/备份、跨站隐私与端到端验收仍未完成。新站暂未恢复旧 MyBaby 的照片编辑、HEIC 自动转换、视频封面、出生体格信息等全部功能。
 
 **数据安全**：新仓库不会读取或修改 MyBaby 的生产 Neon、R2、Vercel；迁移旧数据需要另外做只读导出、哈希核验、媒体复制和最终切换流程。不要用空的新 D1 覆盖旧数据。详细字段映射和只读迁移验收清单见 [MyBaby 迁移计划](docs/MIGRATION.md)。
 

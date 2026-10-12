@@ -1,65 +1,99 @@
 name: Deploy BabyMemo to Cloudflare
+
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only verify resources, typecheck, build, and dry-run; do not deploy or migrate"
+        type: boolean
+        default: true
+      provision:
+        description: "Create D1/R2 resources if missing (not used during dry-run)"
+        type: boolean
+        default: true
+
 permissions:
   contents: read
+
 concurrency:
   group: babymemo-production
   cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BABYMEMO_PUBLIC_URL: ${{ vars.BABYMEMO_PUBLIC_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-audit --no-fund
-      - run: npm run build
-      - name: Validate required deployment secrets
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          BOOTSTRAP_SECRET: ${{ secrets.BOOTSTRAP_SECRET }}
-          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
-          DATA_KEY: ${{ secrets.DATA_KEY }}
+      - name: Check deployment credentials
+        shell: bash
         run: |
           set -euo pipefail
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID BOOTSTRAP_SECRET SESSION_SECRET DATA_KEY; do
-            if [ -z "${!name}" ]; then
-              echo "::error title=Missing GitHub Secret::$name must be configured before production deployment"
-              exit 1
-            fi
-          done
-          [[ "$DATA_KEY" =~ ^[0-9a-fA-F]{64}$ ]] || { echo '::error::DATA_KEY must be a 32-byte hex string'; exit 1; }
-          [ "${#BOOTSTRAP_SECRET}" -ge 32 ] && [ "${#SESSION_SECRET}" -ge 32 ] || { echo '::error::Authentication secrets must be at least 32 characters'; exit 1; }
-      - name: Deploy Worker (auto-provision resources)
-        run: npx wrangler deploy
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "CLOUDFLARE_API_TOKEN is missing"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "CLOUDFLARE_ACCOUNT_ID is missing"; exit 1; }
+      - name: Validate production secrets
+        if: ${{ inputs.dry_run != true }}
+        shell: bash
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - name: Resolve auto-provisioned D1 ID
-        run: npm run db:resolve
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - name: Apply D1 migrations
-        run: npx wrangler d1 migrations apply DB --remote
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - name: Sync existing configured secrets
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BOOTSTRAP_SECRET: ${{ secrets.BOOTSTRAP_SECRET }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           DATA_KEY: ${{ secrets.DATA_KEY }}
         run: |
           set -euo pipefail
           for name in BOOTSTRAP_SECRET SESSION_SECRET DATA_KEY; do
-            if [ -n "${!name}" ]; then
-              printf '%s' "${!name}" | npx wrangler secret put "$name" >/dev/null
+            if [[ -z "${!name}" ]]; then
+              echo "::error title=Missing GitHub Secret::$name is required for production deployment"
+              exit 1
             fi
           done
+          [[ "$DATA_KEY" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "::error::DATA_KEY must be a 32-byte hexadecimal key"; exit 1; }
+          [[ "${#BOOTSTRAP_SECRET}" -ge 32 && "${#SESSION_SECRET}" -ge 32 ]] || { echo "::error::Authentication secrets must be at least 32 characters"; exit 1; }
+      - run: npm install --no-audit --no-fund
+      - name: Provision or inspect Cloudflare resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.dry_run }}" == "true" || "${{ inputs.provision }}" != "true" ]]; then
+            npm run provision:remote -- --check
+          else
+            npm run provision:remote
+          fi
+      - name: Typecheck and build
+        run: npm run verify
+      - name: Wrangler publish preview
+        if: ${{ inputs.dry_run == true }}
+        run: npx wrangler deploy --dry-run
+      - name: Apply remote database migrations
+        if: ${{ inputs.dry_run != true }}
+        run: npx wrangler d1 migrations apply DB --remote
+      - name: Publish Worker
+        if: ${{ inputs.dry_run != true }}
+        run: npx wrangler deploy
+      - name: Sync configured Worker secrets
+        if: ${{ inputs.dry_run != true }}
+        shell: bash
+        env:
+          BOOTSTRAP_SECRET: ${{ secrets.BOOTSTRAP_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          DATA_KEY: ${{ secrets.DATA_KEY }}
+        run: |
+          set -euo pipefail
+          for name in BOOTSTRAP_SECRET SESSION_SECRET DATA_KEY; do
+            if [[ -n "${!name}" ]]; then
+              printf '%s' "${!name}" | npx wrangler secret put "$name" > /dev/null
+            else
+              echo "::warning::$name not synced: repository secret absent. Existing Worker secret (if any) is kept."
+            fi
+          done
+      - name: Smoke-check the published instance
+        if: ${{ inputs.dry_run != true }}
+        run: npm run smoke:check
