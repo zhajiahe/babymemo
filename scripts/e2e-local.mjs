@@ -309,6 +309,16 @@ async function browserE2e(){
     const context=await browser.newContext({viewport:{width:1280,height:860},...(useWebKit?{isMobile:true,hasTouch:true,deviceScaleFactor:2}:{})});
     const page=await context.newPage();
     page.on('pageerror',error=>errors.push(error.message));
+    if(useWebKit){
+      // Safari/WebKit does not store Secure cookies on plain HTTP loopback.
+      // Test-only response adaptation: production Worker keeps HttpOnly; Secure.
+      await page.route('**/api/login',async route=>{
+        const response=await route.fetch();
+        const headers={...response.headers()};
+        if(headers['set-cookie'])headers['set-cookie']=headers['set-cookie'].replace(/;\\s*Secure(?=;|$)/ig,'');
+        await route.fulfill({response,headers});
+      });
+    }
     let simulateFailure=useWebKit;
     if(useWebKit){
       await page.route('**/api/upload/**/part/**',async route=>{
@@ -322,16 +332,6 @@ async function browserE2e(){
       await page.locator('input[autocomplete="username"]').fill('Tester');
       await page.locator('input[autocomplete="current-password"]').fill('123456');
       await page.getByRole('button',{name:/登录我的空间/}).click();
-      if(useWebKit){
-        await page.waitForTimeout(800);
-        const detail={
-          cookies:(await context.cookies(base)).map(c=>({name:c.name,secure:c.secure,domain:c.domain})),
-          url:page.url(),
-          visible:(await page.locator('body').innerText()).slice(0,450),
-          browserErrors:errors.slice(0,4)
-        };
-        console.log('WebKit local login diagnostic:',JSON.stringify(detail));
-      }
       await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
     });
