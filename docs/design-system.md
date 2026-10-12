@@ -2,6 +2,18 @@
 
 > 借鉴 FlareMo Ember 的核心方法：**少量明确的设计 token、稳定的排版尺度、克制的动效、可执行的组件与文案规则**。不是照搬 FlareMo 的技术栈或配色。BabyMemo 的视觉主题是「温暖的家庭档案」，核心气质：**安静、可信、轻盈、有记忆感**。
 
+## 落地进度（2026-10-12，阶段一）
+
+本轮实施范围：源于 `src/styles.css` 的基础色彩 token、CTA 对比度、字号与手机端触控目标，未重写页面：
+
+- [x] 收敛 `--bm-page / surface / ink / muted / border / brand / brand-hover / brand-soft / focus / success / error` 等常用语义 token。
+- [x] 主按钮、相册上传按钮、聊天发送按钮统一深珊瑚色，白字对比度达到普通正文的 4.5:1 目标（代码回归测试覆盖）。
+- [x] 清理样式表中的 10–11px 字号声明，提升到最小 12px；保留统计数字等其他排版层级。
+- [x] 基本点击控件最小 44px，移动导航最小 48px；移动 Safari 表单输入字体 16px，避免自动放大。
+- [x] 优化表单提示、错误、空状态与手机相册长文件名可读性；继续沿用 `prefers-reduced-motion`。
+- [ ] 真实 iPhone Safari、桌面浏览器视觉/功能回归：**尚未验收**。
+- [ ] 全面替换其他历史硬编码色值、提取共享 UI 组件与截图回归：后续阶段。
+
 ## 0. 实施状态与真实来源
 
 **当前已实现**：React + 原生 CSS；`src/styles.css` 中的卡片、导航、表单、暖珊瑚色、`--bm-*` 变量、全局 `:focus-visible`、`prefers-reduced-motion` 和移动端布局。
