@@ -351,6 +351,9 @@ function Settings({state,baby,changed,notify,onBabyCreated}:{state:State;baby:Ba
  const [showNewBaby,setShowNewBaby]=useState(false),[creatingBaby,setCreatingBaby]=useState(false),[createError,setCreateError]=useState('');
  const [newBaby,setNewBaby]=useState({name:'',birthday:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
  const [qr,setQr]=useState(''),[qrImage,setQrImage]=useState(''),[status,setStatus]=useState(''),[verifyCode,setVerifyCode]=useState(''),[botStatus,setBotStatus]=useState<any>(null);
+ const [password,setPassword]=useState({currentPassword:'',newPassword:'',confirmPassword:''}),[passwordBusy,setPasswordBusy]=useState(false);
+ const [trash,setTrash]=useState<{growth:{id:string;baby_id:string;day:string;deleted_at:string}[];milestones:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[];media:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[]}|null>(null);
+ const [trashBusy,setTrashBusy]=useState(false);
  useEffect(()=>{setName(baby.name);setBirthday(baby.birthday);setAllergies(baby.allergies)},[baby.id,baby.name,baby.birthday,baby.allergies]);
  useEffect(()=>{if(qr)void import('qrcode').then(({default:QRCode})=>QRCode.toDataURL(qr,{width:220,margin:2,errorCorrectionLevel:'M'})).then(setQrImage).catch(()=>notify('二维码渲染失败'))},[qr]);
  useEffect(()=>{if(!qr||status==='confirmed'||status==='expired')return;let cancelled=false;let timeout:ReturnType<typeof setTimeout>;
@@ -374,6 +377,13 @@ function Settings({state,baby,changed,notify,onBabyCreated}:{state:State;baby:Ba
    setCreateError(e instanceof Error?e.message:'新增宝宝失败，请重试');
   }finally{setCreatingBaby(false)}
  }
+ async function loadTrash(){setTrashBusy(true);try{setTrash(await api('/api/trash'))}catch(e){notify(e instanceof Error?e.message:'回收站读取失败')}finally{setTrashBusy(false)}}
+ async function restore(kind:'growth'|'milestones'|'media',id:string){try{await post('/api/trash/'+kind+'/'+id+'/restore',{});await loadTrash();changed();notify('已从回收站恢复')}catch(e){notify(e instanceof Error?e.message:'恢复失败')}}
+ async function changePassword(e:FormEvent){e.preventDefault();if(password.newPassword!==password.confirmPassword){notify('两次新密码不一致');return}
+  if(passwordBusy)return;setPasswordBusy(true);
+  try{await post('/api/settings/password',{currentPassword:password.currentPassword,newPassword:password.newPassword});setPassword({currentPassword:'',newPassword:'',confirmPassword:''});window.location.reload()}
+  catch(e){notify(e instanceof Error?e.message:'修改密码失败')}finally{setPasswordBusy(false)}
+ }
  async function pair(){try{setStatus('正在获取二维码…');const r=await post<{qrContent:string}>('/api/settings/wechat/qr',{});setQr(r.qrContent);setStatus('wait')}catch(e){notify(String(e))}}
  async function toggleBot(action:'start'|'pause'){try{await post('/api/settings/wechat/'+action,{});changed();notify(action==='start'?'微信 Bot 已启用':'微信 Bot 已暂停')}catch(e){notify(String(e))}}
  async function test(){try{const r=await post<any>('/api/settings/openrouter/test',{});notify('模型测试成功：'+r.answer)}catch(e){notify(String(e))}}
@@ -389,6 +399,10 @@ function Settings({state,baby,changed,notify,onBabyCreated}:{state:State;baby:Ba
   {createError&&<div className="error" role="alert">{createError}</div>}
   <Primary disabled={creatingBaby}>{creatingBaby?'正在创建…':'创建并切换到新宝宝'} <Plus size={16}/></Primary>
  </form>}</div></Card>
+ <Card><div className="section-title"><h3>家庭数据与回收站</h3><ShieldCheck size={20}/></div><p className="muted small">删除的记录和媒体保留 30 天，可在到期前恢复；定时清理由服务器执行。导出仅包含记录与媒体清单，不含原文件，不等于完整灾备。</p><a className="secondary full" href="/api/export/records" download="babymemo-records.json"><CloudUpload size={16}/> 导出记录 JSON</a><button className="secondary full" onClick={()=>void loadTrash()} disabled={trashBusy}>{trashBusy?'读取中…':'查看回收站'}</button>
+ {trash&&<div className="trash-list">{(['growth','milestones','media'] as const).flatMap(kind=>trash[kind].map(entry=><div className="trash-item" key={kind+entry.id}><div><strong>{kind==='growth'?'成长测量':kind==='milestones'?'成长瞬间':'媒体'} · {'title' in entry?entry.title:entry.day}</strong><p className="muted small">{state.babies.find(b=>b.id===entry.baby_id)?.name||'宝宝'} · {entry.day} · 删除于 {entry.deleted_at.slice(0,10)}</p></div><button className="secondary" onClick={()=>void restore(kind,entry.id)}>恢复</button></div>)))}{!trash.growth.length&&!trash.milestones.length&&!trash.media.length&&<p className="muted small">回收站为空</p>}</div>}
+ </Card>
+ <Card><div className="section-title"><h3>账户安全</h3><ShieldCheck size={20}/></div><p className="muted small">修改家庭密码会注销所有设备的会话。支持至少 6 位的数字或混合密码，推荐使用更长的密码。</p><form className="stack" onSubmit={changePassword}><Field label="当前密码"><input type="password" autoComplete="current-password" required value={password.currentPassword} onChange={e=>setPassword({...password,currentPassword:e.target.value})}/></Field><Field label="新密码"><input type="password" autoComplete="new-password" required minLength={6} value={password.newPassword} onChange={e=>setPassword({...password,newPassword:e.target.value})}/></Field><Field label="确认新密码"><input type="password" autoComplete="new-password" required minLength={6} value={password.confirmPassword} onChange={e=>setPassword({...password,confirmPassword:e.target.value})}/></Field><Primary disabled={passwordBusy}>{passwordBusy?'正在更新…':'修改密码并退出所有设备'}</Primary></form></Card>
  <Card><div className="section-title"><h3>OpenRouter</h3><WandSparkles size={20}/></div><p className="muted small">目前只支持 OpenRouter。API Key 在 Worker 内加密后保存到 D1，不返回到浏览器。</p><form className="stack" onSubmit={saveOpenrouter}><Field label="模型 ID"><input required value={model} onChange={e=>setModel(e.target.value)} placeholder="openai/gpt-4.1-mini"/></Field><Field label={'API Key · '+(state.openrouter.configured?'已配置，可留空不变':'尚未配置')}><input type="password" autoComplete="off" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-or-v1-…"/></Field><Primary disabled={saving}>保存 OpenRouter 设置 <Check size={16}/></Primary></form><button className="secondary full" onClick={()=>void test()} disabled={!state.openrouter.configured}>测试模型连通性</button></Card>
  <Card className="span-2"><div className="section-title"><h3>微信 ClawBot</h3><MessageCircle size={20}/></div><p className="muted">网页扫码绑定微信，不需要 VPS。绑定后由 Cloudflare Durable Objects 定时轮询消息，使用 OpenRouter 回答、记录明确的成长事件。</p>
  <div className="wechat-row"><div className="wechat-status"><span className={'status-dot '+(state.wechat.enabled?'online':'')}/><strong>{state.wechat.connected?(state.wechat.enabled?'已连接并启用':'已绑定，当前暂停'):'尚未绑定微信'}</strong></div><button className="secondary" onClick={()=>void inspect()}><RefreshCw size={15}/> 运行状态</button></div>
