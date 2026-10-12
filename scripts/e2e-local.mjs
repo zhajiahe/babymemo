@@ -110,8 +110,11 @@ async function e2e() {
   });
   let babyId;
   await step('one-time first-owner setup without a bootstrap key',async()=>{
-    const input={familyName:'E2E Test Home',ownerName:'Tester',password:'local-safe-e2e-password',
+    const input={familyName:'E2E Test Home',ownerName:'Tester',password:'123456',
       babyName:'Test Baby',birthday:'2024-01-01',gender:'girl',timeZone:'Asia/Shanghai',allergies:''};
+    const tooShort=await json('/api/bootstrap',{method:'POST',body:{...input,password:'12345'},anonymous:true});
+    assert.equal(tooShort.status,400);
+    assert.equal(tooShort.data.error,'INVALID_SETUP_INPUT');
     const first=await json('/api/bootstrap',{method:'POST',body:input,anonymous:true});
     assert.equal(first.status,201,JSON.stringify(first.data));
     babyId=first.data.babyId;
@@ -131,7 +134,7 @@ async function e2e() {
     sessionCookie='';
     assert.equal((await json('/api/state',{anonymous:true})).status,401);
     assert.equal((await json('/api/login',{method:'POST',body:{name:'Tester',password:'wrong'},anonymous:true})).status,401);
-    const login=await json('/api/login',{method:'POST',body:{name:'Tester',password:'local-safe-e2e-password'},anonymous:true});
+    const login=await json('/api/login',{method:'POST',body:{name:'Tester',password:'123456'},anonymous:true});
     assert.equal(login.status,200,JSON.stringify(login.data));
     sessionCookie=login.headers.get('set-cookie')?.split(';')[0]??'';
     assert.match(sessionCookie,/^babymemo_session=/);
@@ -192,6 +195,9 @@ async function e2e() {
     assert.equal(repeated.status,200,JSON.stringify(repeated.data));
     assert.equal(repeated.data.alreadyCompleted,true);
     assert.equal((await json('/api/upload/pending?babyId='+babyId)).data.items.length,0);
+    const missing=await json('/api/media/thumbnail-backfill?babyId='+babyId);
+    assert.equal(missing.status,200);
+    assert.equal(missing.data.items.some(x=>x.id===mediaId),true);
     const once=await json('/api/media?babyId='+babyId);
     assert.equal(once.data.items.filter(x=>x.id===mediaId).length,1);
   });
@@ -225,6 +231,10 @@ async function e2e() {
     assert.equal(derivative.status,200);
     assert.equal(derivative.headers.get('content-type'),'image/jpeg');
     assert.deepEqual(new Uint8Array(await derivative.arrayBuffer()),thumb);
+    const completedBackfill=await json('/api/media/thumbnail-backfill?babyId='+babyId);
+    assert.equal(completedBackfill.data.items.some(x=>x.id===mediaId),false);
+    const mediaRow=await json('/api/media?babyId='+babyId);
+    assert.equal(mediaRow.data.items.find(x=>x.id===mediaId).thumbnail_ready,1);
     const edited=await json('/api/media/'+mediaId,{method:'PATCH',body:{title:'Edited photo',day:'2026-02-01'}});
     assert.equal(edited.status,200);
     const list=await json('/api/media?babyId='+babyId);
@@ -287,25 +297,35 @@ async function e2e() {
 // Browser E2E runs in Chromium (including mobile viewport emulation), not
 // Safari. A separate CI job injects the pinned playwright-core test dependency.
 async function browserE2e(){
-  const {chromium}=await import('playwright-core');
+  const {chromium,webkit}=await import('playwright-core');
+  const useWebKit=process.env.BROWSER_ENGINE==='webkit';
+  const engine=useWebKit?webkit:chromium;
   const {mkdirSync}=await import('node:fs');
   const evidence=join(root,'e2e-artifacts');
   mkdirSync(evidence,{recursive:true});
-  const browser=await chromium.launch({channel:'chrome',headless:true,args:['--no-sandbox']});
+  const browser=await engine.launch(useWebKit?{headless:true}:{channel:'chrome',headless:true,args:['--no-sandbox']});
   const errors=[];
   try{
-    const context=await browser.newContext({viewport:{width:1280,height:860}});
+    const context=await browser.newContext({viewport:{width:1280,height:860},...(useWebKit?{isMobile:true,hasTouch:true,deviceScaleFactor:2}:{})});
     const page=await context.newPage();
     page.on('pageerror',error=>errors.push(error.message));
-    await step('Chromium: sign in through rendered React login form',async()=>{
+    let simulateFailure=useWebKit;
+    if(useWebKit){
+      await page.route('**/api/upload/**/part/**',async route=>{
+        if(simulateFailure){simulateFailure=false;await route.abort('failed');return;}
+        await delay(350); // throttle each multipart part on a simulated slow link
+        await route.continue();
+      });
+    }
+    await step((useWebKit?'WebKit':'Chromium')+': sign in through rendered React login form',async()=>{
       await page.goto(base+'/',{waitUntil:'domcontentloaded'});
       await page.locator('input[autocomplete="username"]').fill('Tester');
-      await page.locator('input[autocomplete="current-password"]').fill('local-safe-e2e-password');
+      await page.locator('input[autocomplete="current-password"]').fill('123456');
       await page.getByRole('button',{name:/登录我的空间/}).click();
       await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
     });
-    await step('Chromium: gallery image upload and private preview',async()=>{
+    await step((useWebKit?'WebKit slow network':'Chromium')+': gallery image upload and private preview',async()=>{
       await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
       await page.getByRole('heading',{name:'家庭相册'}).waitFor();
       // A tiny valid PNG; user photos and R2 production storage are untouched.
@@ -321,7 +341,7 @@ async function browserE2e(){
       await page.waitForFunction(()=>document.querySelector('.media-viewer-stage img')?.naturalWidth > 0);
       await page.screenshot({path:join(evidence,'desktop-album-viewer.png'),fullPage:false});
     });
-    await step('Chromium: gallery metadata edit and delete',async()=>{
+    await step((useWebKit?'WebKit':'Chromium')+': gallery metadata edit and delete',async()=>{
       await page.locator('.media-viewer-edit input').first().fill('Browser E2E photo');
       await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
       await page.getByRole('button',{name:/保存信息/}).click();
@@ -332,7 +352,7 @@ async function browserE2e(){
       await page.locator('.photo-caption .icon-btn').first().click();
       await page.locator('.photo-preview').first().waitFor({state:'detached',timeout:15000});
     });
-    await step('Chromium: 390px mobile navigation and horizontal overflow',async()=>{
+    await step((useWebKit?'WebKit':'Chromium')+': 390px mobile navigation and horizontal overflow',async()=>{
       await page.setViewportSize({width:390,height:844});
       await page.locator('.mobile-nav button[aria-label="成长曲线"]').click();
       await page.getByRole('heading',{name:'成长记录'}).waitFor();
@@ -346,7 +366,7 @@ async function browserE2e(){
       await page.screenshot({path:join(evidence,'mobile-album.png'),fullPage:true});
     });
     assert.deepEqual(errors,[],'Uncaught browser exceptions');
-    console.log('All Chromium desktop and mobile-viewport browser tests passed.');
+    console.log('All '+(useWebKit?'WebKit Safari-engine':'Chromium')+' browser tests passed.');
     await context.close();
   }finally{
     await browser.close();
