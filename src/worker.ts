@@ -215,6 +215,7 @@ app.post('/api/settings/wechat/qr',async c=>{
   try{
     const info=await generateQr();
     await setSetting(c.env,'pairing_qr',await encryptSecret(c.env,info.code));
+    await setSetting(c.env,'pairing_base','https://ilinkai.weixin.qq.com');
     return c.json({qrContent:info.content});
   }catch{return fail(c,502,'WECHAT_QR_FAILED');}
 });
@@ -222,7 +223,9 @@ app.post('/api/settings/wechat/qr/status',async c=>{
   try{
     const v=await json(c.req.raw);const saved=await setting(c.env,'pairing_qr');
     if(!saved)return fail(c,400,'PAIRING_NOT_STARTED');
-    const result=await qrStatus(await decryptSecret(c.env,saved),typeof v.verifyCode==='string'?v.verifyCode:undefined);
+    const pairingBase=await setting(c.env,'pairing_base')||'https://ilinkai.weixin.qq.com';
+    const result=await qrStatus(await decryptSecret(c.env,saved),typeof v.verifyCode==='string'?v.verifyCode:undefined,pairingBase);
+    if(result.redirectBase)await setSetting(c.env,'pairing_base',result.redirectBase);
     if(result.status==='confirmed'){
       if(!result.botToken||!result.botId||!result.userId)return fail(c,502,'INVALID_WECHAT_CREDENTIALS');
       await setSetting(c.env,'wechat_token',await encryptSecret(c.env,result.botToken));

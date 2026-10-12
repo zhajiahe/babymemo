@@ -173,7 +173,11 @@ export class WechatSession {
       const code=e instanceof Error&&/^WECHAT_[A-Z_0-9]+$/.test(e.message)?e.message:'POLL_OR_NETWORK_ERROR';
       await this.ctx.storage.put('lastError',code);
       delay=30000;
-      if(code==='WECHAT_AUTH_EXPIRED')return;
+      if(code==='WECHAT_AUTH_EXPIRED'){
+        await this.env.DB.prepare("INSERT INTO app_settings(name,value,updated_at) VALUES('wechat_enabled','false',?) ON CONFLICT(name) DO UPDATE SET value='false',updated_at=excluded.updated_at").bind(new Date().toISOString()).run();
+        await this.ctx.storage.deleteAlarm();
+        return;
+      }
     }finally{
       if(await setting(this.env,'wechat_enabled')==='true')await this.ctx.storage.setAlarm(Date.now()+delay);
     }

@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
-import QRCode from 'qrcode';
 
 type BabyInfo={id:string;name:string;birthday:string;gender:string;time_zone:string;allergies:string;notes:string};
 type State={ownerName:string;babies:BabyInfo[];counts:{growth:number;milestones:number;media:number};openrouter:{configured:boolean;model:string};wechat:{connected:boolean;enabled:boolean}};
@@ -141,7 +140,7 @@ function Settings({state,baby,changed,notify}:{state:State;baby:BabyInfo;changed
  const [name,setName]=useState(baby.name),[birthday,setBirthday]=useState(baby.birthday),[allergies,setAllergies]=useState(baby.allergies);
  const [qr,setQr]=useState(''),[qrImage,setQrImage]=useState(''),[status,setStatus]=useState(''),[verifyCode,setVerifyCode]=useState(''),[botStatus,setBotStatus]=useState<any>(null);
  useEffect(()=>{setName(baby.name);setBirthday(baby.birthday);setAllergies(baby.allergies)},[baby.id,baby.name,baby.birthday,baby.allergies]);
- useEffect(()=>{if(qr)QRCode.toDataURL(qr,{width:220,margin:2,errorCorrectionLevel:'M'}).then(setQrImage).catch(()=>notify('二维码渲染失败'))},[qr]);
+ useEffect(()=>{if(qr)void import('qrcode').then(({default:QRCode})=>QRCode.toDataURL(qr,{width:220,margin:2,errorCorrectionLevel:'M'})).then(setQrImage).catch(()=>notify('二维码渲染失败'))},[qr]);
  useEffect(()=>{if(!qr||status==='confirmed'||status==='expired')return;let cancelled=false;let timeout:ReturnType<typeof setTimeout>;
   const poll=async()=>{try{const r=await post<{status:string}>('/api/settings/wechat/qr/status',{verifyCode});if(cancelled)return;setStatus(r.status);if(r.status==='confirmed'){setQr('');setQrImage('');changed();notify('微信绑定成功，请手动启用 Bot');return;}}catch(e){if(!cancelled)setStatus('连接重试中');}if(!cancelled)timeout=setTimeout(poll,2000)};
   timeout=setTimeout(poll,500);return()=>{cancelled=true;clearTimeout(timeout)};

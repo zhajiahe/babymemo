@@ -39,7 +39,7 @@ Cloudflare 原生家庭成长记录系统。参考 MyBaby 的宝宝档案、成�
 
 Actions → Deploy BabyMemo to Cloudflare → Run workflow，依次构建、发布、迁移 D1、同步 Secrets。正式部署为手动触发，不随每次 Push 自动发布。
 
-本地开发（Node.js 22+）：先 npm install，然后 npx wrangler d1 migrations apply DB --local；另开终端启动 npx wrangler dev 和 npm run dev。把上面的密钥写入仅供本地使用、已被 .gitignore 忽略的 .dev.vars。登录及 Secret 不要提交到 Git。
+本地开发（Node.js 22+）：先 npm install、npm run build，再执行 npx wrangler d1 migrations apply DB --local；另开终端启动 npx wrangler dev 和 npm run dev。把上面的密钥写入仅供本地使用、已被 .gitignore 忽略的 .dev.vars。登录及 Secret 不要提交到 Git。
 
 ## 网页配置微信与 AI
 
