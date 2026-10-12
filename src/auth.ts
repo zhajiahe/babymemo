@@ -39,7 +39,7 @@ export async function setup(c:Ctx,input:{ownerName:string;familyName:string;pass
   if(await owner(c.env))throw Error('ALREADY_INITIALIZED');
   if(!c.env.SESSION_SECRET||c.env.SESSION_SECRET.length<32)throw Error('SESSION_SECRET_NOT_CONFIGURED');
   if(!c.env.DATA_KEY||!/^[a-f0-9]{64}$/i.test(c.env.DATA_KEY))throw Error('DATA_KEY_NOT_CONFIGURED');
-  if(input.password.length<10||input.password.length>128||!input.familyName.trim()||input.familyName.trim().length>80||!input.ownerName.trim()||input.ownerName.length>80||input.babyName.length<1||input.babyName.length>80||!/^\d{4}-\d{2}-\d{2}$/.test(input.birthday)||!['boy','girl','other'].includes(input.gender))throw Error('INVALID_SETUP_INPUT');
+  if(input.password.length<6||input.password.length>128||!input.familyName.trim()||input.familyName.trim().length>80||!input.ownerName.trim()||input.ownerName.length>80||input.babyName.length<1||input.babyName.length>80||!/^\d{4}-\d{2}-\d{2}$/.test(input.birthday)||!['boy','girl','other'].includes(input.gender))throw Error('INVALID_SETUP_INPUT');
   if(!/^[-\w/]{1,64}$/.test(input.timeZone))throw Error('INVALID_TIME_ZONE');
   const salt=randomHex(16),hash=await passwordHash(input.password,salt),id=crypto.randomUUID(),when=new Date().toISOString();
   // Atomic DB.batch + owner(id=1) prevent concurrent first-run takeovers.

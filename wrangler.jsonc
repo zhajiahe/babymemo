@@ -41,5 +41,10 @@
         "WechatSession"
       ]
     }
-  ]
+  ],
+  "triggers": {
+    "crons": [
+      "0 19 * * *"
+    ]
+  }
 }
