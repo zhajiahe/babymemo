@@ -229,6 +229,40 @@ async function e2e() {
     assert.equal((await json('/api/media/'+mediaId+'/content')).status,404);
     assert.equal((await json('/api/media/'+mediaId+'/thumbnail')).status,404);
   });
+  await step('two-part 8MiB+ upload resumes the saved multipart state',async()=>{
+    const chunkSize=8388608;
+    const size=chunkSize+37;
+    const file=new Uint8Array(size);
+    file.fill(31);
+    file[0]=0;file[1]=0;file[size-1]=99;
+    const created=await json('/api/upload/start',{method:'POST',body:{
+      babyId,day:'2026-01-15',title:'two-parts.mp4',mime:'video/mp4',size,
+      fingerprint:'c'.repeat(64)
+    }});
+    assert.equal(created.status,201,JSON.stringify(created.data));
+    const id=created.data.id;
+    const first=await json('/api/upload/'+id+'/part/1',{method:'PUT',
+      body:file.subarray(0,chunkSize),headers:{'Content-Type':'application/octet-stream'}});
+    assert.equal(first.status,200,JSON.stringify(first.data));
+    // Simulate fresh requests after an interrupted/reloaded client.
+    const resume=await json('/api/upload/pending?babyId='+babyId);
+    const item=resume.data.items.find(x=>x.id===id);
+    assert.ok(item,'Resumable upload visible after first part');
+    assert.deepEqual(item.completedParts,[1]);
+    assert.equal(item.fingerprint,'c'.repeat(64));
+    const second=await json('/api/upload/'+id+'/part/2',{method:'PUT',
+      body:file.subarray(chunkSize),headers:{'Content-Type':'application/octet-stream'}});
+    assert.equal(second.status,200,JSON.stringify(second.data));
+    const finish=await json('/api/upload/'+id+'/finish',{method:'POST',body:{}});
+    assert.equal(finish.status,201,JSON.stringify(finish.data));
+    const range=await request('/api/media/'+id+'/content',{
+      headers:{Range:'bytes='+chunkSize+'-'+(size-1)}
+    });
+    assert.equal(range.status,206);
+    assert.deepEqual(new Uint8Array(await range.arrayBuffer()),file.subarray(chunkSize));
+    assert.equal((await json('/api/upload/pending?babyId='+babyId)).data.items.some(x=>x.id===id),false);
+    assert.equal((await json('/api/media/'+id,{method:'DELETE'})).status,200);
+  });
   await step('cancel a recoverable multipart session',async()=>{
     const created=await json('/api/upload/start',{method:'POST',body:{
       babyId,day:'2026-01-15',title:'abandoned.mov',mime:'video/quicktime',size:23,
