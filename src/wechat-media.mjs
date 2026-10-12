@@ -106,7 +106,7 @@ async function decryptAndSink(item,write,{fetchImpl=fetch,maxBytes=MAX_WECHAT_ME
   if(plain>maxBytes)bad('微信图片或视频超过 50 MB 限制');
   if(first.length<32)first=Buffer.concat([first,chunk.subarray(0,32-first.length)]);
   if(!mime&&first.length>=12)mime=kind==='video'?inspectVideo(first):inspectImage(first);
-  await write(chunk);
+  await write(chunk,mime);
  }
  try{
   while(true){
@@ -138,10 +138,10 @@ export async function downloadWeChatVideo(item,options={}){
 }
 // Main path: O(8 MiB) resident buffering even for a 50 MiB video.
 export async function storeEncryptedMedia(bucket,objectKey,item,options={}){
- let pending=[],pendingSize=0,multipart=null,partNo=0,parts=[];
+ let pending=[],pendingSize=0,multipart=null,partNo=0,parts=[],detectedMime=null;
  const metadata=mime=>({httpMetadata:{contentType:mime}});
  async function uploadBlocks(){
-  if(!multipart)multipart=await bucket.createMultipartUpload(objectKey,metadata('application/octet-stream'));
+  if(!multipart)multipart=await bucket.createMultipartUpload(objectKey,metadata(detectedMime||'application/octet-stream'));
   while(pendingSize>=PART){
    const combined=Buffer.concat(pending);
    const block=combined.subarray(0,PART);
@@ -152,7 +152,8 @@ export async function storeEncryptedMedia(bucket,objectKey,item,options={}){
   }
  }
  try{
-  const result=await decryptAndSink(item,async chunk=>{
+  const result=await decryptAndSink(item,async (chunk,mime)=>{
+   if(mime)detectedMime=mime;
    pending.push(Buffer.from(chunk));pendingSize+=chunk.length;
    if(pendingSize>=PART)await uploadBlocks();
   },options);
@@ -195,7 +196,7 @@ export async function persistWeChatMedia(env,raw,baby,messageId,options={}){
    const saved=await storeEncryptedMedia(env.MEDIA,objectKey,items[i],options);
    size=saved.size;mime=saved.mime;
   }
-  if(typeof mime!=='string'||!mime.startsWith(kind+'/')&&!(kind==='image'&&mime.startsWith('image/')))throw Error('WECHAT_MEDIA_MIME_MISMATCH');
+  if(typeof mime!=='string'||!mime.startsWith(kind+'/'))throw Error('WECHAT_MEDIA_MIME_MISMATCH');
   const day=localDay(raw,baby);
   const caption=raw.item_list?.filter(x=>x?.type===1&&typeof x.text_item?.text==='string')
     .map(x=>x.text_item.text).join(' ').trim().slice(0,100);

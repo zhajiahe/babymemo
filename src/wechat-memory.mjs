@@ -38,7 +38,7 @@ export function buildCommandContext(text,thread){
  }
  // An immediately preceding clarification can supply intent in a short
  // follow-up ("10月1日", "小好") but not change the user's current action.
- const followup=/^(?:是|对|就|日期|编号|小好|[0-9]{4}[-/年]|[0-9]{1,2}月|[a-f0-9]{8})/.test(text.trim());
+ const followup=!/(?:删除|删掉|更改|更正|修改|查找|查询|查一下|新增|记录|恢复|收藏)/.test(text)&&/^(?:是|对|就|日期|编号|[\u4e00-\u9fff]{1,8}$|[0-9]{4}[-/年]|[0-9]{1,2}月|[a-f0-9]{8})/.test(text.trim());
  const clarification=last&&/请|哪|明确|提供|不唯一|不足|重新/.test(last.reply);
  if(followup&&clarification&&last.user){
   modelText='[上一轮待补充的用户指令：'+bounded(last.user,300)+']\n'+modelText;

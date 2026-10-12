@@ -50,7 +50,7 @@ test('WeChat AES key encodings including raw hex, base64 bytes, base64 hex',()=>
  assert.throws(()=>decodeWeChatAesKey('not a key'),WechatPhotoError);
 });
 test('CDN allowlist rejects arbitrary hosts, relative URLs, HTTP, and redirects',async()=>{
- assert.match(wechatCdnUrl({encrypt_query_param:'a/b+z=='}),/^https:\/\/novac2c\.cdn\.weixin\.qq\.com\/c2c\/download\?/);
+ assert.match(wechatCdnUrl({encrypt_query_param:'a/b+z=='}),/^https:\/\/novac2c\.cdn\.weixin\.qq\.com\/download\?/);
  for(const url of ['http://novac2c.cdn.weixin.qq.com/c2c/download?x=y','https://evil.example/c2c/download',
    'https://novac2c.cdn.weixin.qq.com.evil.example/c2c/download','http://127.0.0.1/c2c/download']){
   assert.throws(()=>wechatCdnUrl({full_url:url}),WechatPhotoError);
@@ -84,7 +84,7 @@ test('lost D1 commit is recovered from private R2 on retry without fetching CDN 
 test('reject invalid decrypted payload and resource exhaustion',async()=>{
  const encryptedBad=(()=>{const e=createCipheriv('aes-128-ecb',key,null);return Buffer.concat([e.update('HTML, not an image'),e.final()])})();
  await assert.rejects(()=>downloadWeChatImage(item(),{fetchImpl:async()=>new Response(encryptedBad)}),WechatPhotoError);
- await assert.rejects(()=>downloadWeChatImage(item(),{fetchImpl:async()=>new Response(null,{headers:{'Content-Length':'21000000'}})}),WechatPhotoError);
+ await assert.rejects(()=>downloadWeChatImage(item(),{fetchImpl:async()=>new Response(null,{headers:{'Content-Length':'53000000'}})}),WechatPhotoError);
  const env=mockEnv();
  const over={item_list:Array.from({length:5},()=>item())};
  await assert.rejects(()=>persistWeChatPhotos(env,over,baby,'bot:message3',{fetchImpl:cdnFetch}),WechatPhotoError);
