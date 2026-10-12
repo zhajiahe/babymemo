@@ -350,6 +350,14 @@ async function e2e() {
     assert.equal(v.data.schema,'babymemo-family-export-v1');
     assert.equal(JSON.stringify(v.data).includes('sk-or-local-fake'),false);
   });
+  await step('WeChat photo default baby is private, validated and changeable',async()=>{
+    assert.equal((await json('/api/settings/wechat/default-baby',{method:'POST',anonymous:true,body:{babyId:secondBabyId}})).status,401);
+    assert.equal((await json('/api/settings/wechat/default-baby',{method:'POST',body:{babyId:'unknown-baby'}})).status,404);
+    assert.equal((await json('/api/settings/wechat/default-baby',{method:'POST',body:{babyId:secondBabyId}})).status,200);
+    assert.equal((await json('/api/state')).data.wechat.defaultBabyId,secondBabyId);
+    assert.equal((await json('/api/settings/wechat/default-baby',{method:'POST',body:{babyId:''}})).status,200);
+    assert.equal((await json('/api/state')).data.wechat.defaultBabyId,'');
+  });
   await step('scheduled cleanup handler accepts Cloudflare local Cron trigger',async()=>{
     const response=await request('/cdn-cgi/local/scheduled?format=json',{anonymous:true});
     assert.equal(response.status,200,await response.text());

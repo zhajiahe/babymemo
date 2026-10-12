@@ -126,7 +126,7 @@ export async function handleWechatPhotoMessage(env:Env,raw:Json,messageId:string
       if(!baby)return '收到照片，但当前家庭有多位宝宝。请先在网页「设置 → 微信操作」选择默认收图宝宝，或发送带宝宝昵称的图片消息。照片尚未保存。';
     }
   }
-  return await persistWeChatPhotos(env,raw,baby,messageId);
+  return (await persistWeChatPhotos(env,raw,baby,messageId))||'没有检测到可保存的照片。';
 }
 export class WechatSession {
   constructor(private readonly ctx: DurableObjectState,private readonly env: Env){}
