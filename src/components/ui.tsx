@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Heart } from 'lucide-react';
+
 
 /**
  * Shared Warm Archive primitives.
@@ -10,7 +10,7 @@ import { Heart } from 'lucide-react';
 export function Logo() {
   return (
     <div className="logo">
-      <span className="logo-icon"><Heart size={17} fill="currentColor" /></span>
+      <span className="logo-icon"><img src="/brand/mark.svg" alt="" width="36" height="36" /></span>
       <span>BabyMemo</span>
     </div>
   );
