@@ -4,7 +4,7 @@
 
 BabyMemo 运行于 Cloudflare Workers + D1 + R2 + Durable Objects，前端 React/Vite、服务端 Hono；无需 VPS。首次初始化使用家庭管理员名称和密码。AI 仅使用网页内配置的 OpenRouter；微信 Bot 为可选的 iLink 集成。
 
-> 当前文档随 PR #3 提交。在合并 PR 前，请只在该功能分支上试跑 `dry_run=true`；不要针对生产账号运行正式发布。已经部署了 MyBaby 旧站的 Neon / Vercel / R2 不会被此工作流迁移，切勿把新空数据库当作旧站数据。
+> **生产发布必须得到部署者明确授权。** 先确认目标 Cloudflare 账号、远端资源和备份情况；Dry Run 不会发布但需要读取目标账号 D1/R2。MyBaby 旧站的 Neon / Vercel / R2 不会被本工作流迁移，切勿把新空数据库当作旧站数据。
 
 ## 1. Cloudflare 与 GitHub 准备
 

@@ -57,6 +57,12 @@ D1 日期索引 + 有界分页，Cloudflare Assets 静态托管；照片懒加�
 
 **数据安全**：新仓库不会读取或修改 MyBaby 的生产 Neon、R2、Vercel；迁移旧数据需要另外做只读导出、哈希核验、媒体复制和最终切换流程。不要用空的新 D1 覆盖旧数据。详细字段映射和只读迁移验收清单见 [MyBaby 迁移计划](docs/MIGRATION.md)。
 
+## 设计规范与 Agent 协作
+
+- [AGENTS.md](AGENTS.md)：Codex / Claude Code / Pi 等 Agent 的技术边界、质量验证与安全规则。
+- [BabyMemo 设计系统 · Warm Archive](docs/design-system.md)：暖珊瑚视觉、排版、移动端、组件和文案规范，并标明现状与待改造项。
+- [Agent 部署 Runbook](docs/agent-deploy.md)：只读预检与受控 Cloudflare 部署（默认不发布）。
+
 ## 验证
 
 先运行 npm install、npm run check、npm run build，再在隔离 Cloudflare 环境验证初始化、登录、记录 CRUD、相册上传/读取、OpenRouter、微信配对和持续轮询。当前尚未真实验收，不宣称可直接用于生产。
