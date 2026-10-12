@@ -31,18 +31,32 @@ async function hmac(secret:string,payload:string):Promise<string> {
   const key=await crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
   return base64url(new Uint8Array(await crypto.subtle.sign('HMAC',key,encoder.encode(payload))));
 }
+// A signed, first-party cookie keeps a family signed in across browser restarts.
+// Renew after 30 days of use; old 7-day cookies remain valid until they expire.
+export const SESSION_MAX_AGE_SECONDS = 180*24*60*60;
+export const SESSION_LIFETIME_MS = SESSION_MAX_AGE_SECONDS*1000;
+export const SESSION_RENEW_AFTER_MS = 30*24*60*60*1000;
+
 export async function signSession(secret:string,version:number):Promise<string> {
-  const data=base64url(encoder.encode(JSON.stringify({v:version,exp:Date.now()+604800000,n:randomHex(12)})));
+  const data=base64url(encoder.encode(JSON.stringify({v:version,exp:Date.now()+SESSION_LIFETIME_MS,n:randomHex(12)})));
   return data+'.'+await hmac(secret,data);
 }
-export async function verifySession(token:string,secret:string,version:number):Promise<boolean> {
-  if(!token||!secret||token.length>1024)return false;
+
+export async function sessionExpiry(token:string,secret:string,version:number):Promise<number|null> {
+  if(!token||!secret||token.length>1024)return null;
   const parts=token.split('.');
-  if(parts.length!==2 || !constantEqual(parts[1],await hmac(secret,parts[0])))return false;
+  if(parts.length!==2 || !constantEqual(parts[1],await hmac(secret,parts[0])))return null;
   try {
     const info=JSON.parse(new TextDecoder().decode(unbase64url(parts[0])));
-    return info.v===version&&typeof info.exp==='number'&&info.exp>Date.now()&&info.exp<Date.now()+604801000;
-  }catch{return false;}
+    const now=Date.now();
+    // Bound accepted expiration: a valid signature must not grant an unbounded session.
+    return info.v===version&&typeof info.exp==='number'&&
+      info.exp>now&&info.exp<=now+SESSION_LIFETIME_MS+60_000?info.exp:null;
+  }catch{return null;}
+}
+
+export async function verifySession(token:string,secret:string,version:number):Promise<boolean> {
+  return (await sessionExpiry(token,secret,version))!==null;
 }
 async function dataKey(env:Env):Promise<CryptoKey> {
   if(!env.DATA_KEY||!/^[a-fA-F0-9]{64}$/.test(env.DATA_KEY))throw Error('DATA_KEY_NOT_CONFIGURED');

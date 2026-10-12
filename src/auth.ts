@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import type { Env, Owner } from './types';
-import { constantEqual, passwordHash, randomHex, signSession, verifySession } from './crypto';
+import { constantEqual, passwordHash, randomHex, SESSION_LIFETIME_MS, SESSION_MAX_AGE_SECONDS, SESSION_RENEW_AFTER_MS, sessionExpiry, signSession } from './crypto';
 type Ctx=Context<{Bindings:Env}>;
 export async function owner(env:Env):Promise<Owner|null> {
   return (await env.DB.prepare('SELECT * FROM owner WHERE id=1').first<Owner>())??null;
@@ -9,7 +9,16 @@ export async function authenticated(c:Ctx):Promise<boolean>{
   const user=await owner(c.env);
   if(!user||!c.env.SESSION_SECRET)return false;
   const cookie=c.req.header('Cookie')?.split(';').map(x=>x.trim()).find(x=>x.startsWith('babymemo_session='))?.slice('babymemo_session='.length)??'';
-  return verifySession(cookie,c.env.SESSION_SECRET,user.session_version);
+  const expiresAt=await sessionExpiry(cookie,c.env.SESSION_SECRET,user.session_version);
+  if(expiresAt===null)return false;
+  // The app always requests /api/state when opened. Upgrade existing 7-day
+  // cookies on that request, then extend a long session at most once per 30 days.
+  // Only renew here: logout and password changes must be able to clear the cookie.
+  if(c.req.method==='GET'&&c.req.path==='/api/state'&&
+    expiresAt-Date.now()<=SESSION_LIFETIME_MS-SESSION_RENEW_AFTER_MS){
+    await applySession(c,user.session_version);
+  }
+  return true;
 }
 export async function login(c:Ctx,name:string,password:string):Promise<boolean>{
   const ip=c.req.header('CF-Connecting-IP')??'unknown';
@@ -30,7 +39,7 @@ export async function login(c:Ctx,name:string,password:string):Promise<boolean>{
 export async function applySession(c:Ctx,version:number):Promise<void>{
   if(!c.env.SESSION_SECRET||c.env.SESSION_SECRET.length<32)throw Error('SESSION_SECRET_NOT_CONFIGURED');
   const token=await signSession(c.env.SESSION_SECRET,version);
-  c.header('Set-Cookie','babymemo_session='+token+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800');
+  c.header('Set-Cookie','babymemo_session='+token+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age='+SESSION_MAX_AGE_SECONDS);
 }
 export function clearSession(c:Ctx):void{
   c.header('Set-Cookie','babymemo_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
