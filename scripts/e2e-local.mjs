@@ -322,6 +322,16 @@ async function browserE2e(){
       await page.locator('input[autocomplete="username"]').fill('Tester');
       await page.locator('input[autocomplete="current-password"]').fill('123456');
       await page.getByRole('button',{name:/登录我的空间/}).click();
+      if(useWebKit){
+        await page.waitForTimeout(800);
+        const detail={
+          cookies:(await context.cookies(base)).map(c=>({name:c.name,secure:c.secure,domain:c.domain})),
+          url:page.url(),
+          visible:(await page.locator('body').innerText()).slice(0,450),
+          browserErrors:errors.slice(0,4)
+        };
+        console.log('WebKit local login diagnostic:',JSON.stringify(detail));
+      }
       await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
     });
