@@ -548,10 +548,15 @@ async function browserE2e(){
             await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
       await page.getByRole('button',{name:/保存信息/}).click();
       await page.getByText('照片信息已更新').waitFor({timeout:15000});
-      const count=await page.locator('.photo-item').count();
+      const source=await page.locator('.media-viewer-stage img').getAttribute('src');
+      const deletedId=source?.match(/\/api\/media\/([^/]+)\/content/)?.[1];
+      assert.ok(deletedId,'viewer must point to real saved media');
       page.once('dialog',dialog=>void dialog.accept());
       await page.getByRole('button',{name:'移入回收站'}).click();
-      await page.waitForFunction(previous=>document.querySelectorAll('.photo-item').length===previous-1,count);
+      await page.getByRole('dialog',{name:'相册预览'}).waitFor({state:'hidden',timeout:15000});
+      await page.getByText('已移入回收站，可在设置中恢复').waitFor({timeout:15000});
+      const remaining=await json('/api/media?babyId='+(await json('/api/state')).data.babies[0].id);
+      assert.equal(remaining.data.items.some(item=>item.id===deletedId),false,'deleted media must not appear in the authenticated list');
 
     });
     await step((useWebKit?'WebKit':'Chromium')+': 390px mobile navigation and horizontal overflow',async()=>{
