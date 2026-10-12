@@ -258,7 +258,7 @@ app.get('/api/media/:id/thumbnail',async c=>{
   const thumb=await c.env.MEDIA.get(thumbKey(id));
   const obj=thumb||(row.mime.startsWith('image/')?await c.env.MEDIA.get(row.object_key):null);
   if(!obj)return fail(c,404,'NOT_FOUND');
-  const etag='"'+(obj.httpEtag||obj.etag)+'"';
+  const etag=obj.httpEtag||'"'+obj.etag+'"';
   const headers=new Headers({'Content-Type':thumb?'image/jpeg':row.mime,'Content-Length':String(obj.size),
     'Cache-Control':'private, no-cache, must-revalidate','X-Content-Type-Options':'nosniff','ETag':etag});
   if(c.req.header('If-None-Match')===etag)return new Response(null,{status:304,headers});
