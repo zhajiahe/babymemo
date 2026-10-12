@@ -7,7 +7,7 @@
  * Test secrets, D1/R2 files and Wrangler processes are temporary and removed.
  */
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,7 +20,7 @@ const dir = mkdtempSync(join(tmpdir(), 'babymemo-e2e-'));
 const wrangler = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler');
 const envFile = join(root, '.dev.vars');
 let worker, serverLog = '', started = false;
-let port, base, sessionCookie = '', createdVars = false;
+let port, base, sessionCookie = '', createdVars = false, sessionSecret = '';
 
 async function freePort() {
   const server = createServer();
@@ -47,8 +47,9 @@ function runCli(args) {
 }
 async function boot() {
   if(existsSync(envFile))throw Error('Refusing to overwrite existing .dev.vars; use a clean isolated checkout');
+  sessionSecret = randomBytes(32).toString('hex');
   writeFileSync(envFile,
-    'SESSION_SECRET='+randomBytes(32).toString('hex')+'\n'+
+    'SESSION_SECRET='+sessionSecret+'\n'+
     'DATA_KEY='+randomBytes(32).toString('hex')+'\n',
     {mode:0o600});
   createdVars = true;
@@ -86,6 +87,12 @@ async function json(path, options={}) {
   const response = await request(path,options);
   let data; try{data=await response.json()}catch{data={}};
   return {status:response.status,headers:response.headers,data};
+}
+function signedTestSession(expiresAt, version=1) {
+  // Produces a real signed token matching the pre-change 7-day cookie format.
+  const payload=Buffer.from(JSON.stringify({v:version,exp:expiresAt,n:'legacy-e2e-fixture'})).toString('base64url');
+  const signature=createHmac('sha256',sessionSecret).update(payload).digest('base64url');
+  return 'babymemo_session='+payload+'.'+signature;
 }
 async function step(title,operation){
   await operation();
@@ -138,6 +145,35 @@ async function e2e() {
     assert.equal(login.status,200,JSON.stringify(login.data));
     sessionCookie=login.headers.get('set-cookie')?.split(';')[0]??'';
     assert.match(sessionCookie,/^babymemo_session=/);
+    assert.match(login.headers.get('set-cookie')??'',/Max-Age=15552000/);
+    assert.match(login.headers.get('set-cookie')??'',/HttpOnly; Secure; SameSite=Lax/);
+    assert.equal((await json('/api/state')).status,200);
+  });
+  await step('old 7-day sessions upgrade once to renewable 180-day cookies',async()=>{
+    sessionCookie=signedTestSession(Date.now()+7*86400000);
+    const initial=await json('/api/state');
+    assert.equal(initial.status,200);
+    const updated=initial.headers.get('set-cookie')??'';
+    assert.match(updated,/^babymemo_session=/);
+    assert.match(updated,/Max-Age=15552000/);
+    assert.match(updated,/HttpOnly; Secure; SameSite=Lax/);
+    sessionCookie=updated.split(';')[0];
+    const afterRefresh=await json('/api/state');
+    assert.equal(afterRefresh.status,200);
+    assert.equal(afterRefresh.headers.get('set-cookie'),null,'Do not rotate cookies on every request');
+  });
+  await step('expired, wrong-version, future-dated and tampered sessions are rejected',async()=>{
+    const saved=sessionCookie;
+    for(const invalid of [
+      signedTestSession(Date.now()-1000),
+      signedTestSession(Date.now()+86400000,2),
+      signedTestSession(Date.now()+181*86400000),
+      saved.slice(0,-1)+(saved.endsWith('a')?'b':'a')
+    ]){
+      sessionCookie=invalid;
+      assert.equal((await json('/api/state')).status,401);
+    }
+    sessionCookie=saved;
     assert.equal((await json('/api/state')).status,200);
   });
   await step('authenticated additional baby can be created without losing the first',async()=>{
@@ -408,6 +444,23 @@ async function browserE2e(){
       }
       await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': page reload and new tab reuse the same login',async()=>{
+      if(!useWebKit){
+        const cookies=await context.cookies(base);
+        const session=cookies.find(x=>x.name==='babymemo_session');
+        assert.ok(session?.httpOnly&&session?.secure,'Persistent cookie must remain HttpOnly + Secure');
+        assert.ok(session.expires>Date.now()/1000+150*86400,'Cookie should persist across browser restarts');
+      }
+      await page.reload({waitUntil:'domcontentloaded'});
+      await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
+      assert.equal(await page.locator('input[autocomplete="current-password"]').count(),0);
+      const another=await context.newPage();
+      try{
+        await another.goto(base+'/',{waitUntil:'domcontentloaded'});
+        await another.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
+        assert.equal(await another.locator('input[autocomplete="current-password"]').count(),0);
+      }finally{await another.close();}
     });
     await step((useWebKit?'WebKit':'Chromium')+': add baby through Settings and switch back',async()=>{
       await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
