@@ -631,6 +631,76 @@ async function browserE2e(){
       await page.getByRole('heading',{name:'家庭相册'}).waitFor();
       await page.screenshot({path:join(evidence,'mobile-album.png'),fullPage:true});
     });
+    await step((useWebKit?'WebKit':'Chromium')+': four responsive widths across primary views',async()=>{
+      // Browser viewports prove layout contracts, not physical iPhone behavior.
+      const cases=[320,375,390,768],views=[
+        ['概览','每一刻，都很珍贵'],
+        ['成长曲线','成长记录'],
+        ['家庭相册','家庭相册'],
+        ['设置','空间设置']
+      ];
+      for(const width of cases){
+        await page.setViewportSize({width,height:844});
+        for(const [nav,heading] of views){
+          await page.locator('.mobile-nav button[aria-label="'+nav+'"]').click();
+          await page.getByRole('heading',{name:heading,exact:true}).waitFor({timeout:12000});
+          const result=await page.evaluate(()=>({
+            width:window.innerWidth,html:document.documentElement.scrollWidth,
+            body:document.body.scrollWidth
+          }));
+          assert.ok(Math.max(result.html,result.body)<=result.width+1,
+            'Horizontal overflow on '+width+'px '+nav+': '+JSON.stringify(result));
+          if(width===320||width===768)await page.screenshot({
+            path:join(evidence,'responsive-'+width+'-'+nav+'.png'),fullPage:true
+          });
+        }
+        const tap=await page.locator('.mobile-nav button').first().evaluate(el=>{
+          const box=el.getBoundingClientRect();return {width:box.width,height:box.height};
+        });
+        assert.ok(tap.width>=44&&tap.height>=44,
+          'Mobile tab hit area must be 44px or larger '+JSON.stringify(tap));
+      }
+      await page.setViewportSize({width:390,height:844});
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': draft persistence and multi-baby separation',async()=>{
+      await page.locator('.mobile-nav button[aria-label="成长瞬间"]').click();
+      await page.getByRole('heading',{name:'小小里程碑'}).waitFor();
+      const input=page.locator('input[placeholder*="第一次独立走路"]');
+      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
+      await input.fill('只属于宝宝A的临时草稿');
+      await page.locator('.mobile-nav button[aria-label="成长曲线"]').click();
+      await page.locator('.mobile-nav button[aria-label="成长瞬间"]').click();
+      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
+      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Second Baby'});
+      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='');
+      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
+      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
+      const fontSize=await input.evaluate(el=>Number.parseFloat(getComputedStyle(el).fontSize));
+      assert.ok(fontSize>=16,'Mobile Safari text input should not trigger focus zoom');
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': reduced motion and accessible gallery dialog',async()=>{
+      await page.emulateMedia({reducedMotion:'reduce'});
+      await page.locator('.mobile-nav button[aria-label="家庭相册"]').click();
+      await page.getByRole('heading',{name:'家庭相册'}).waitFor();
+      const preview=page.locator('.photo-preview').first();
+      await preview.waitFor({timeout:12000});
+      await preview.click();
+      const dialog=page.getByRole('dialog',{name:'相册预览'});
+      await dialog.waitFor();
+      const measure=await dialog.evaluate(el=>{
+        const rect=el.getBoundingClientRect();
+        return {left:rect.left,right:rect.right,viewport:innerWidth,top:rect.top};
+      });
+      assert.ok(measure.left>=-1&&measure.right<=measure.viewport+1,
+        'Media dialog must fit mobile width '+JSON.stringify(measure));
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({state:'detached'});
+      const transition=await preview.evaluate(el=>getComputedStyle(el).transitionDuration);
+      assert.ok(transition.split(',').every(x=>Number.parseFloat(x)===0),
+        'Reduced motion should suppress preview animations: '+transition);
+      await page.emulateMedia({reducedMotion:'no-preference'});
+      await page.screenshot({path:join(evidence,'mobile-album-post-regression.png'),fullPage:true});
+    });
     assert.deepEqual(errors,[],'Uncaught browser exceptions');
     console.log('All '+(useWebKit?'WebKit Safari-engine':'Chromium')+' browser tests passed.');
     await context.close();
