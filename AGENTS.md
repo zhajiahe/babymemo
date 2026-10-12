@@ -50,7 +50,7 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 
 运行两个开发进程前，确认本地 D1/R2 模拟环境及 `.dev.vars` 已配置。不要把 `.dev.vars`、`node_modules/`、`dist/`、`.wrangler/`、真实照片、个人密钥或数据库备份加入 Git。
 
-目前没有现成的完整浏览器 E2E 门禁。**不要把 `npm run verify` 通过表述成真实 iPhone Safari、微信扫码或生产 Cloudflare 验收通过。**
+现在有本地 Worker HTTP E2E 与 Chromium 浏览器 E2E 的 CI 门禁；CI 全绿后触发自动 Cloudflare 发布。**不要把本地模拟通过表述成真实 iPhone Safari、微信扫码或生产 Cloudflare 端到端验收通过。**
 
 ## 4. 代码修改规则
 
@@ -83,11 +83,11 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 
 不要将真实宝宝姓名、生日、照片、病史、家庭会话、微信凭据和 OpenRouter Key 放入测试样本或日志。测试采用合成资料；调试报告只保留脱敏错误码与必要复现步骤。
 
-生产变更需要**部署者明确授权**。只读验证 ≠ 可以创建 D1/R2；`npm run provision:remote`、远端 D1 migration、`wrangler deploy`、Secret 更新或正式 GitHub Actions 发布都不在默认授权内。尤其不要直接执行 `npm run deploy` 作为“纯检查”，它会部署到 Cloudflare。完整操作遵循 `docs/agent-deploy.md`。
+生产变更需要**部署者明确授权**。当前已批准的是 **main 的完整 CI 全绿后自动发布已有 Cloudflare Worker**，不会自动创建 D1/R2 或轮换 Secret；除此之外，只读验证 ≠ 可以创建 D1/R2；`npm run provision:remote`、远端 D1 migration、`wrangler deploy`、Secret 更新或正式 GitHub Actions 发布都不在默认授权内。尤其不要直接执行 `npm run deploy` 作为“纯检查”，它会部署到 Cloudflare。完整操作遵循 `docs/agent-deploy.md`。
 
 ## 7. Git 与验证流程
 
-- 默认从最新 `main` 新建短分支，提交小而聚焦的 PR；不要未经明确请求强推、直接合并或触发生产部署。
+- 默认从最新 `main` 新建短分支，提交小而聚焦的 PR；不要未经明确请求强推或直接合并。**注意：合并到 main 现在会触发完整 CI，成功后自动发布生产。** 合并前必须确认迁移兼容性、备份与发布风险，不要手动绕过 CI 触发生产部署。
 - **已有 PR 的后续任务**优先更新该 PR 分支，修改前检查是否已合并或是否出现并行变更；若已合并，另开新 PR。
 - 如有冲突，先保留最新 `main` 的既有功能、测试与迁移，再选择性整合另一侧改动。禁止用“全部接受一边”掩盖丢失功能。
 - UI 修改：至少跑 `npm run check`、`npm run build`，并提供桌面/手机关键场景目检结果；无法目检则写“未验证”。
