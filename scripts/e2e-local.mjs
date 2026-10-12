@@ -197,6 +197,43 @@ async function e2e() {
     assert.deepEqual(firstGrowth.data.items,[]);
     assert.deepEqual(secondGrowth.data.items,[]);
   });
+  await step('concurrent record creation is idempotent and baby-scoped',async()=>{
+    const requestId='e1000000-0000-4000-8000-000000000001';
+    const payload={babyId,requestId,day:'2026-08-01',weight:11.2,notes:'race regression'};
+    const [a,b]=await Promise.all([
+      json('/api/records/growth',{method:'POST',body:payload}),
+      json('/api/records/growth',{method:'POST',body:payload})
+    ]);
+    assert.ok([200,201].includes(a.status),JSON.stringify(a.data));
+    assert.ok([200,201].includes(b.status),JSON.stringify(b.data));
+    assert.equal(a.data.id,b.data.id,'lost responses must not create duplicate rows');
+    const firstBaby=(await json('/api/records/growth?babyId='+babyId)).data.items;
+    const secondBaby=(await json('/api/records/growth?babyId='+secondBabyId)).data.items;
+    assert.equal(firstBaby.filter(x=>x.id===a.data.id).length,1);
+    assert.equal(secondBaby.some(x=>x.id===a.data.id),false);
+    const conflict=await json('/api/records/growth',{method:'POST',body:{...payload,babyId:secondBabyId}});
+    assert.equal(conflict.status,409,'the same client request ID cannot write to another baby');
+    assert.equal((await json('/api/records/growth/'+a.data.id,{method:'DELETE'})).status,200);
+  });
+  await step('cross-baby milestone CRUD and metadata are isolated',async()=>{
+    const created=await json('/api/records/milestones',{method:'POST',body:{
+      babyId:secondBabyId,day:'2026-08-02',title:'Baby B milestone',description:'not baby A'
+    }});
+    assert.equal(created.status,201,JSON.stringify(created.data));
+    assert.equal((await json('/api/records/milestones?babyId='+babyId)).data.items.some(x=>x.id===created.data.id),false);
+    assert.equal((await json('/api/records/milestones?babyId='+secondBabyId)).data.items.some(x=>x.id===created.data.id),true);
+    assert.equal((await json('/api/records/milestones/'+created.data.id,{method:'DELETE'})).status,200);
+    assert.equal((await json('/api/records/milestones?babyId='+secondBabyId)).data.items.some(x=>x.id===created.data.id),false);
+    assert.equal((await json('/api/trash/milestones/'+created.data.id+'/restore',{method:'POST',body:{}})).status,200);
+    assert.equal((await json('/api/records/milestones?babyId='+secondBabyId)).data.items.some(x=>x.id===created.data.id),true);
+  });
+  await step('write endpoints reject cross-origin requests even with a valid session',async()=>{
+    const attack=await json('/api/records/milestones',{method:'POST',
+      headers:{Origin:'https://attacker.invalid'},body:{babyId,day:'2026-08-01',title:'CSRF'}});
+    assert.equal(attack.status,403);
+    assert.equal(attack.data.error,'ORIGIN_REJECTED');
+    assert.equal((await json('/api/records/milestones?babyId='+babyId)).data.items.some(x=>x.title==='CSRF'),false);
+  });
   await step('growth measurement create, list, and delete',async()=>{
     const created=await json('/api/records/growth',{method:'POST',body:{
       babyId,day:'2026-01-15',weight:10.2,height:75,headCircumference:46,notes:'local test'
@@ -379,6 +416,48 @@ async function e2e() {
     const created=await json('/api/records/milestones',{method:'POST',body:eventPayload});
     const again=await json('/api/records/milestones',{method:'POST',body:eventPayload});
     assert.equal(created.status,201);assert.equal(again.status,200);assert.equal(again.data.id,created.data.id);
+  });
+  await step('media validation rejects invalid MIME, oversize and bad multipart parts',async()=>{
+    const invalid=await json('/api/upload/start',{method:'POST',body:{
+      babyId,day:'2026-08-05',title:'script.svg',mime:'image/svg+xml',size:200
+    }});
+    assert.equal(invalid.status,400);
+    const huge=await json('/api/upload/start',{method:'POST',body:{
+      babyId,day:'2026-08-05',title:'oversize.mov',mime:'video/quicktime',size:209715201
+    }});
+    assert.equal(huge.status,400);
+    const start=await json('/api/upload/start',{method:'POST',body:{
+      babyId:secondBabyId,day:'2026-08-05',title:'video.mp4',mime:'video/mp4',size:32
+    }});
+    assert.equal(start.status,201,JSON.stringify(start.data));
+    const id=start.data.id;
+    const badPart=await json('/api/upload/'+id+'/part/1',{method:'PUT',body:new Uint8Array(31),
+      headers:{'Content-Type':'application/octet-stream'}});
+    assert.equal(badPart.status,413);
+    const missingPart=await json('/api/upload/'+id+'/finish',{method:'POST',body:{}});
+    assert.equal(missingPart.status,400);
+    assert.equal(missingPart.data.error,'UPLOAD_INCOMPLETE');
+    const video=Uint8Array.from([0,0,0,24,102,116,121,112,105,115,111,109,0,0,0,0,109,112,52,50,
+      0,0,0,0,0,0,0,0,0,0,0,0]);
+    assert.equal((await json('/api/upload/'+id+'/part/1',{method:'PUT',body:video,
+      headers:{'Content-Type':'application/octet-stream'}})).status,200);
+    assert.ok([200,201].includes((await json('/api/upload/'+id+'/finish',{method:'POST',body:{}})).status));
+    const range=await request('/api/media/'+id+'/content',{headers:{Range:'bytes=4-11'}});
+    assert.equal(range.status,206);
+    assert.equal(range.headers.get('content-range'),'bytes 4-11/32');
+    assert.deepEqual(new Uint8Array(await range.arrayBuffer()),video.slice(4,12));
+    const listing=(await json('/api/media?babyId='+secondBabyId)).data.items;
+    assert.ok(listing.some(x=>x.id===id&&x.mime==='video/mp4'));
+    assert.equal((await json('/api/media?babyId='+babyId)).data.items.some(x=>x.id===id),false);
+    const saved=sessionCookie;sessionCookie='';
+    try{
+      assert.equal((await request('/api/media/'+id+'/content')).status,401);
+      assert.equal((await request('/api/media/'+id+'/thumbnail')).status,401);
+    }finally{sessionCookie=saved}
+    assert.equal((await json('/api/media/'+id,{method:'DELETE'})).status,200);
+    assert.equal((await request('/api/media/'+id+'/content')).status,404);
+    assert.equal((await json('/api/trash/media/'+id+'/restore',{method:'POST',body:{}})).status,200);
+    assert.equal((await request('/api/media/'+id+'/content')).status,200);
   });
   await step('records export protects private data',async()=>{
     assert.equal((await json('/api/export/records',{anonymous:true})).status,401);
