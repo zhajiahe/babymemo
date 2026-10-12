@@ -7,3 +7,6 @@ dist/
 *.tsbuildinfo
 .DS_Store
 coverage/
+
+# Complete family backup includes sensitive database content and private media
+.backup-private/

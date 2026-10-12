@@ -14,7 +14,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --no-audit --no-fund
-      - run: node --check scripts/provision-cloudflare.mjs && node --check scripts/smoke-check.mjs
+      - run: node --check scripts/provision-cloudflare.mjs && node --check scripts/smoke-check.mjs && node --check scripts/family-backup.mjs
       - run: npm run check
       - run: npm run test:unit
       - run: npm run build

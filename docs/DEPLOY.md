@@ -4,7 +4,7 @@
 
 ## 1. 架构和边界
 
-- Cloudflare Worker（Hono）：前端、API、认证、OpenRouter。
+- Cloudflare Worker（Hono）：前端、API、认证、微信工具路由。
 - D1：账号、宝宝、成长记录、里程碑、附件索引、凭据密文。
 - R2：私有照片和视频，所有媒体读取均由已登录的 Worker 代理。
 - SQLite-backed Durable Object + Alarm：微信 iLink Bot 消息轮询，无需 VPS。
@@ -73,13 +73,13 @@ Actions → **Deploy BabyMemo to Cloudflare** → **Run workflow**，默认 `dry
 
 Browser Auth 使用 `window.location.origin` 发起同源请求，而非 FlareMo 的固定公开 URL 模式。旧域名和新域名如果都指向同一个 Worker，可以分别登录（会话 Cookie 不共享）。由于 Cloudflare 全球网络在中国大陆的访问情况受运营商等因素影响，自定义域名并不保证全国无代理稳定可用。
 
-## 7. 微信 Bot 与 OpenRouter
+## 7. 微信操作与 OpenRouter 指令路由
 
-登录网站 → 设置 → OpenRouter，填 API Key + 模型 ID，保存并点击测试。密钥只在服务端解密发起请求，不向浏览器回传。
+登录网站 → 设置 → 微信操作引擎 · OpenRouter，填 API Key + 模型 ID，保存并点击测试。密钥只在服务端解密发起请求，不向浏览器回传。
 
-设置 → 微信 ClawBot → 扫码绑定，确认后手动启用 Bot。Durable Object 用 Alarm 反复拉取消息；只接受绑定微信用户的单聊文字。重新绑定会重置旧游标，避免漏读或串号。
+设置 → 微信操作 → 扫码绑定，确认后手动启用 Bot。Durable Object 用 Alarm 反复拉取消息；只接受绑定微信用户的单聊文字。重新绑定会重置旧游标，避免漏读或串号。
 
-**微信 iLink 为第三方适配，可能失效**。首次运行前测试二维码、扫码确认、文字消息发送、去重、记录查询、新增、暂停、重新启用和凭证过期处理。宝宝信息可能作为上下文发送到 OpenRouter；不要把医疗隐私写入公开分享链接。
+**微信 iLink 为第三方适配，可能失效**。首次运行前测试二维码、扫码确认、文字消息发送、去重、记录查询、新增、暂停、重新启用和凭证过期处理。微信用户文字、宝宝昵称与日期等用于工具路由的参数可能发送到 OpenRouter；不要把医疗隐私写入公开分享链接。
 
 ## 8. 排障
 
@@ -118,3 +118,8 @@ Browser Auth 使用 `window.location.origin` 发起同源请求，而非 FlareMo
 ### 初始化提示 PBKDF2 迭代次数超限
 
 如果之前部署的 Worker 在第一次注册时出现 `Pbkdf2 failed: iteration counts above 100000 are not supported (requested 120000)`，这是旧版本密码哈希使用了超过 Workers SubtleCrypto 上限的迭代次数。修复后初始化与登录统一使用 100,000 次 PBKDF2-SHA-256，不需要清空 D1、R2，也不需要轮换 `SESSION_SECRET` 或 `DATA_KEY`。旧版本若在派生密码哈希阶段失败，该次操作尚未写入 owner、宝宝资料；重新打开初始化页面完成注册即可。建议家庭密码选用较长随机短语（即使界面允许最低 6 位），不要使用生日等容易猜测的信息。
+
+
+## 微信增删改查验收
+
+启用微信操作后，在绑定账号的私聊分别验证：查询、增加、指定日期/编号修改、唯一目标软删除、从回收站恢复；在两个宝宝同时存在时，未写宝宝名字的消息应被拒绝。核对 D1 真实结果，而不仅仅相信微信文字回复。对于一个日期两条记录的情况，修改和删除必须提示补充编号；非绑定账户或群聊必须忽略。

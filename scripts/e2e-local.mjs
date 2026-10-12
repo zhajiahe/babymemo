@@ -174,6 +174,10 @@ async function e2e() {
     assert.equal(state.data.countsByBaby[secondBabyId]?.growth??0,0,'Other baby must not inherit first growth totals');
     assert.equal((await json('/api/records/growth/'+created.data.id,{method:'DELETE'})).status,200);
     assert.equal((await json('/api/records/growth?babyId='+babyId)).data.items.length,0);
+    assert.ok((await json('/api/trash')).data.growth.some(x=>x.id===created.data.id));
+    assert.equal((await json('/api/trash/growth/'+created.data.id+'/restore',{method:'POST',body:{}})).status,200);
+    assert.ok((await json('/api/growth/history?babyId='+babyId)).data.items.some(x=>x.id===created.data.id));
+    assert.equal((await json('/api/records/growth/'+created.data.id,{method:'DELETE'})).status,200);
   });
   await step('milestone create, list, and delete',async()=>{
     const created=await json('/api/records/milestones',{method:'POST',
@@ -182,6 +186,7 @@ async function e2e() {
     const list=await json('/api/records/milestones?babyId='+babyId);
     assert.equal(list.status,200);assert.equal(list.data.items[0].title,'First smile');
     assert.equal((await json('/api/records/milestones/'+created.data.id,{method:'DELETE'})).status,200);
+    assert.equal((await json('/api/trash/milestones/'+created.data.id+'/restore',{method:'POST',body:{}})).status,200);
   });
   await step('encrypted OpenRouter config without contacting external service',async()=>{
     const saved=await json('/api/settings/openrouter',{method:'POST',
@@ -264,11 +269,21 @@ async function e2e() {
     const list=await json('/api/media?babyId='+babyId);
     assert.equal(list.data.items[0].title,'Edited photo');
     assert.equal(list.data.items[0].day,'2026-02-01');
+    assert.equal((await json('/api/media/'+mediaId+'/favorite',{method:'POST',body:{favorite:true}})).status,200);
+    assert.ok((await json('/api/media?babyId='+babyId+'&q=Edited&favorite=1')).data.items.some(x=>x.id===mediaId));
+    assert.equal((await json('/api/media?babyId='+babyId+'&q=missing')).data.items.length,0);
+    const etag=(await request('/api/media/'+mediaId+'/thumbnail')).headers.get('etag');
+    assert.ok(etag);
+    assert.equal((await request('/api/media/'+mediaId+'/thumbnail',{headers:{'If-None-Match':etag}})).status,304);
   });
-  await step('media deletion removes original and thumbnail',async()=>{
+  await step('media deletion hides originals and supports recovery',async()=>{
     assert.equal((await json('/api/media/'+mediaId,{method:'DELETE'})).status,200);
     assert.equal((await json('/api/media/'+mediaId+'/content')).status,404);
     assert.equal((await json('/api/media/'+mediaId+'/thumbnail')).status,404);
+    assert.ok((await json('/api/trash')).data.media.some(x=>x.id===mediaId));
+    assert.equal((await json('/api/trash/media/'+mediaId+'/restore',{method:'POST',body:{}})).status,200);
+    assert.equal((await json('/api/media/'+mediaId+'/content')).status,200);
+    assert.equal((await json('/api/media/'+mediaId,{method:'DELETE'})).status,200);
   });
   await step('two-part 8MiB+ upload resumes the saved multipart state',async()=>{
     const chunkSize=8388608;
@@ -315,6 +330,25 @@ async function e2e() {
     assert.equal(created.status,201);
     assert.equal((await json('/api/upload/'+created.data.id+'/cancel',{method:'POST',body:{}})).status,200);
     assert.equal((await json('/api/upload/pending?babyId='+babyId)).data.items.length,0);
+  });
+  await step('record writes are idempotent after lost HTTP response',async()=>{
+    const requestId='c3843867-bf72-46e8-bc23-9936f60fc902';
+    const payload={babyId,day:'2026-02-02',weight:10.1,requestId};
+    const first=await json('/api/records/growth',{method:'POST',body:payload});
+    const retry=await json('/api/records/growth',{method:'POST',body:payload});
+    assert.equal(first.status,201);assert.equal(retry.status,200);
+    assert.equal(retry.data.id,first.data.id);
+    assert.equal((await json('/api/growth/history?babyId='+babyId)).data.items.filter(x=>x.id===first.data.id).length,1);
+    const eventPayload={babyId,day:'2026-02-02',title:'Idempotent milestone',requestId:'c3843867-bf72-46e8-bc23-9936f60fc903'};
+    const created=await json('/api/records/milestones',{method:'POST',body:eventPayload});
+    const again=await json('/api/records/milestones',{method:'POST',body:eventPayload});
+    assert.equal(created.status,201);assert.equal(again.status,200);assert.equal(again.data.id,created.data.id);
+  });
+  await step('records export protects private data',async()=>{
+    assert.equal((await json('/api/export/records',{anonymous:true})).status,401);
+    const v=await json('/api/export/records');assert.equal(v.status,200);
+    assert.equal(v.data.schema,'babymemo-family-export-v1');
+    assert.equal(JSON.stringify(v.data).includes('sk-or-local-fake'),false);
   });
   await step('scheduled cleanup handler accepts Cloudflare local Cron trigger',async()=>{
     const response=await request('/cdn-cgi/local/scheduled?format=json',{anonymous:true});
@@ -444,7 +478,7 @@ async function browserE2e(){
       const editedCard=page.locator('.photo-item').filter({hasText:'Browser E2E photo'});
       await editedCard.waitFor({state:'visible',timeout:15000});
       page.once('dialog',dialog=>void dialog.accept());
-      await editedCard.locator('.photo-caption .icon-btn').click();
+      await editedCard.getByRole('button',{name:/删除/}).click();
       await editedCard.waitFor({state:'detached',timeout:15000});
     });
     await step((useWebKit?'WebKit':'Chromium')+': 390px mobile navigation and horizontal overflow',async()=>{
@@ -472,6 +506,13 @@ try {
   await boot();
   await e2e();
   if(process.env.BROWSER_E2E==='1')await browserE2e();
+  await step('password change revokes all sessions',async()=>{
+    const result=await json('/api/settings/password',{method:'POST',body:{currentPassword:'123456',newPassword:'longer-new-password'}});
+    assert.equal(result.status,200,JSON.stringify(result.data));
+    assert.equal((await json('/api/state')).status,401);
+    assert.equal((await json('/api/login',{method:'POST',anonymous:true,body:{name:'Tester',password:'123456'}})).status,401);
+    assert.equal((await json('/api/login',{method:'POST',anonymous:true,body:{name:'Tester',password:'longer-new-password'}})).status,200);
+  });
 } catch (error) {
   console.error('E2E FAILED: '+(error instanceof Error?error.stack:error));
   if (!started) console.error('Wrangler output:\n'+serverLog);

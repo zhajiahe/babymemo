@@ -1,24 +1,14 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {api,post,ApiFailure,today,type State,type Tab,type RecordItem} from './lib/client';
+import {RecordView} from './features/growth/RecordView';
+import {Album} from './features/album/Album';
+import {Settings} from './features/settings/Settings';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
 import { MediaViewer, type MediaItem } from './components/MediaViewer';
-import { createAlbumThumbnail, createStoredThumbnail, fingerprintFile } from './media-upload';
+import { createAlbumThumbnail, createStoredThumbnail, createVideoThumbnail, fingerprintFile } from './media-upload';
 import { pickMatchingUpload, remainingPartNumbers } from './upload-plan.mjs';
 import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
 
-type BabyInfo={id:string;name:string;birthday:string;gender:string;time_zone:string;allergies:string;notes:string};
-type BabyCounts={growth:number;milestones:number;media:number};
-type State={ownerName:string;familyName:string;babies:BabyInfo[];counts:BabyCounts;countsByBaby:Record<string,BabyCounts>;openrouter:{configured:boolean;model:string};wechat:{connected:boolean;enabled:boolean}};
-type Tab='overview'|'growth'|'moments'|'album'|'assistant'|'settings';
-type RecordItem={id:string;day:string;weight?:number|null;height?:number|null;head_circumference?:number|null;title?:string;description?:string;notes?:string};
-class ApiFailure extends Error { constructor(readonly status:number,message:string){super(message);this.name='ApiFailure'} }
-async function api<T=any>(url:string, init?:RequestInit):Promise<T>{
- const r=await fetch(url,{credentials:'same-origin',...init,headers:{...(init?.body&&!(init.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...init?.headers}});
- let data:any={};try{data=await r.json();}catch{}
- if(!r.ok)throw new ApiFailure(r.status,typeof data.error==='string'?data.error:'HTTP_'+r.status);
- return data as T;
-}
-async function post<T=any>(url:string,body:unknown):Promise<T>{return api<T>(url,{method:'POST',body:JSON.stringify(body)})}
-const today=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
 const years=(date:string)=>{
  const days=Math.max(0,Math.floor((Date.now()-new Date(date+'T00:00:00+08:00').getTime())/86400000));
  return days<31?days+' 天':Math.floor(days/30.44)+' 个月';
@@ -49,13 +39,15 @@ function Gate({onReady}:{onReady:()=>void}){
  {mode==='setup'&&<div className="setup-guide"><strong>部署检查 · 2 个必需 Secret</strong><p>仅需 <code>SESSION_SECRET</code> 和 <code>DATA_KEY</code>。每个密钥分别用 <code>openssl rand -hex 32</code> 生成，再通过 GitHub Actions 同步或在 Cloudflare Worker 设置中配置。</p><p>配置完成后刷新页面，两项检查通过即可设置家庭管理员和密码；已存在的账号不会被重置。</p><a href="https://github.com/zhajiahe/babymemo/blob/main/docs/DEPLOY.md" target="_blank" rel="noreferrer">查看部署指南 ↗</a></div>}</div></div></div>;
 }
 function Nav({active,setActive,logout}:{active:Tab;setActive:(t:Tab)=>void;logout:()=>void}){
- const sections:[Tab,string,ReactNode][]=[['overview','概览',<Baby size={19}/>],['growth','成长曲线',<TrendingUp size={19}/>],['moments','成长瞬间',<BookHeart size={19}/>],['album','家庭相册',<Camera size={19}/>],['assistant','AI 助手',<Sparkles size={19}/>],['settings','设置',<Settings2 size={19}/>]];
+ const sections:[Tab,string,ReactNode][]=[['overview','概览',<Baby size={19}/>],['growth','成长曲线',<TrendingUp size={19}/>],['moments','成长瞬间',<BookHeart size={19}/>],['album','家庭相册',<Camera size={19}/>],['settings','设置',<Settings2 size={19}/>]];
  return <><aside className="sidebar"><Logo/><div className="side-label">MY SPACE</div><nav>{sections.map(([tab,label,icon])=><button className={'nav-link '+(tab===active?'active':'')} key={tab} type="button" aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)}>{icon}{label}{tab===active&&<span className="active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16}/> 私密家庭空间</div><button className="nav-link" onClick={logout}><LogOut size={18}/> 安全退出</button></div></aside><nav className="mobile-nav">{sections.map(([tab,label,icon])=><button key={tab} type="button" aria-label={label} aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)} className={tab===active?'active':''}>{icon}<span>{label.replace('成长','')}</span></button>)}</nav></>;
 }
 export default function App(){
  const [mode,setMode]=useState<'loading'|'gate'|'app'|'unavailable'>('loading');
  const [state,setState]=useState<State|null>(null),[active,setActive]=useState<Tab>('overview'),[babyId,setBabyId]=useState(''),[toast,setToast]=useState('');
  const [records,setRecords]=useState<RecordItem[]>([]),[milestones,setMilestones]=useState<RecordItem[]>([]),[media,setMedia]=useState<MediaItem[]>([]);
+ const [growthHistory,setGrowthHistory]=useState<RecordItem[]>([]),[historyLimited,setHistoryLimited]=useState(false);
+ const [albumQuery,setAlbumQuery]=useState(''),[favoriteOnly,setFavoriteOnly]=useState(false);
  const [growthPage,setGrowthPage]=useState(0),[momentPage,setMomentPage]=useState(0),[albumPage,setAlbumPage]=useState(0);
  const [hasMore,setHasMore]=useState({growth:false,moments:false,album:false});
  const [busy,setBusy]=useState(false);
@@ -81,20 +73,24 @@ export default function App(){
    loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/milestones?babyId='+id+'&page='+momentPage)
     .then(r=>{if(!cancelled){setMilestones(r.items);setHasMore(p=>({...p,moments:r.hasMore}))}}));
   }
+  if(active==='growth'){
+   loads.push(api<{items:RecordItem[];limited:boolean}>('/api/growth/history?babyId='+id)
+    .then(r=>{if(!cancelled){setGrowthHistory(r.items);setHistoryLimited(r.limited)}}));
+  }
   if(active==='album'){
-   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+albumPage)
+   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+albumPage+'&q='+encodeURIComponent(albumQuery)+(favoriteOnly?'&favorite=1':''))
     .then(r=>{if(!cancelled){setMedia(r.items);setHasMore(p=>({...p,album:r.hasMore}))}}));
   }
   void Promise.all(loads).catch(e=>{if(!cancelled)setToast(e instanceof Error?e.message:'数据读取失败')});
   return ()=>{cancelled=true};
- },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media]);
+ },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media,albumQuery,favoriteOnly]);
  function changed(){void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
  async function logout(){await post('/api/logout',{});setMode('gate');setState(null)}
  if(mode==='loading')return <div className="loading-screen"><Logo/><div>正在载入家庭空间…</div></div>;
  if(mode==='gate')return <Gate onReady={()=>void refresh()}/>;
  if(mode==='unavailable')return <div className="loading-screen"><Logo/><p>暂时无法连接家庭空间，已保留你的会话。</p><button className="secondary" onClick={()=>void refresh()}><RefreshCw size={16}/>重新连接</button></div>;
  if(!state||!baby)return <div className="loading-screen">家庭空间中暂无宝宝档案</div>;
- const titles:Record<Tab,string>={overview:'每一刻，都很珍贵',growth:'成长记录',moments:'小小里程碑',album:'家庭相册',assistant:'AI 成长助手',settings:'空间设置'};
+ const titles:Record<Tab,string>={overview:'每一刻，都很珍贵',growth:'成长记录',moments:'小小里程碑',album:'家庭相册',settings:'空间设置'};
  const currentCounts=state.countsByBaby?.[baby.id]??{growth:0,milestones:0,media:0};
  return <div className="app"><Nav active={active} setActive={setActive} logout={logout}/><main className="workspace"><div className="topbar"><div className="crumb">{state.familyName||'家庭空间'} <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
  <div className="page"><header className="page-heading"><div><div className="eyebrow">BABYMEMO / {active.toUpperCase()}</div><h1>{titles[active]}</h1><p className="muted">{active==='overview'?'把日常小事，变成以后回望的宝藏。':baby.name+' · '+years(baby.birthday)+' · 记录属于你们的故事'}</p></div><div className="baby-pill"><Heart size={15} fill="currentColor"/><select aria-label="选择宝宝" value={baby.id} onChange={e=>{setBabyId(e.target.value);setGrowthPage(0);setMomentPage(0);setAlbumPage(0)}}>{state.babies.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></div></header>
@@ -102,281 +98,10 @@ export default function App(){
  <div className="stats"><Card><div className="stat-icon peach"><TrendingUp size={20}/></div><div className="stat-value">{currentCounts.growth}</div><div className="muted">成长记录</div></Card><Card><div className="stat-icon lavender"><BookHeart size={20}/></div><div className="stat-value">{currentCounts.milestones}</div><div className="muted">珍贵时刻</div></Card><Card><div className="stat-icon mint"><Camera size={20}/></div><div className="stat-value">{currentCounts.media}</div><div className="muted">相册回忆</div></Card></div>
  <div className="two-panels"><Card><div className="section-title"><h3>最近的成长</h3><button className="text-btn" onClick={()=>setActive('growth')}>查看全部 <ChevronRight size={15}/></button></div>{records.slice(0,4).map(x=><div className="event" key={x.id}><span className="event-date">{x.day}</span><span>{[x.weight!=null?x.weight+' kg':null,x.height!=null?x.height+' cm':null].filter(Boolean).join(' · ')||'成长测量'}</span></div>)}{!records.length&&<div className="empty">还没有成长记录，记下第一次测量吧。</div>}</Card>
  <Card><div className="section-title"><h3>闪光的时刻</h3><button className="text-btn" onClick={()=>setActive('moments')}>查看全部 <ChevronRight size={15}/></button></div>{milestones.slice(0,4).map(x=><div className="event" key={x.id}><span className="event-date">{x.day}</span><span>{x.title}</span></div>)}{!milestones.length&&<div className="empty">成长中的惊喜，从现在开始收藏。</div>}</Card></div></>}
- {active==='growth'&&<RecordView baby={baby} kind="growth" items={records} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage}/>}
+ {active==='growth'&&<RecordView baby={baby} kind="growth" items={records} history={growthHistory} historyLimited={historyLimited} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage}/>}
  {active==='moments'&&<RecordView baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage}/>}
- {active==='album'&&<Album baby={baby} media={media} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
- {active==='assistant'&&<Assistant configured={state.openrouter.configured} babyId={baby.id} setActive={setActive}/>}
+ {active==='album'&&<Album baby={baby} media={media} query={albumQuery} onQuery={v=>{setAlbumQuery(v);setAlbumPage(0)}} favoriteOnly={favoriteOnly} onFavoriteOnly={v=>{setFavoriteOnly(v);setAlbumPage(0)}} favoriteUpdated={(id,favorite)=>setMedia(items=>items.map(item=>item.id===id?{...item,favorite:favorite?1:0}:item))} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
  {active==='settings'&&<Settings state={state} baby={baby} changed={changed} notify={setToast} onBabyCreated={id=>{setBabyId(id);setActive('overview');setGrowthPage(0);setMomentPage(0);setAlbumPage(0)}}/>}
  <footer className="footer">BabyMemo · 用爱记录，用心珍藏 <Heart size={13}/></footer>
  </div></main>{toast&&<Notice text={toast} onClose={()=>setToast('')}/>}</div>;
-}
-function RecordView({baby,kind,items,busy,setBusy,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;kind:'growth'|'milestones';items:RecordItem[];busy:boolean;setBusy:(v:boolean)=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
- const [form,setForm]=useState({day:today(),weight:'',height:'',headCircumference:'',notes:'',title:'',description:''});
- async function save(e:FormEvent){e.preventDefault();setBusy(true);try{
-  const payload=kind==='growth'?{babyId:baby.id,day:form.day,weight:form.weight?Number(form.weight):null,height:form.height?Number(form.height):null,headCircumference:form.headCircumference?Number(form.headCircumference):null,notes:form.notes}:{babyId:baby.id,day:form.day,title:form.title,description:form.description};
-  await post('/api/records/'+kind,payload);setForm({day:today(),weight:'',height:'',headCircumference:'',notes:'',title:'',description:''});notify('已保存到家庭记录');changed();
- }catch(e){notify(e instanceof Error?e.message:'保存失败')}finally{setBusy(false)}}
- async function remove(id:string){if(!confirm('确定要删除这条记录吗？'))return;await api('/api/records/'+kind+'/'+id,{method:'DELETE'});changed()}
- return <><div className="split-main"><Card><div className="section-title"><h3>{kind==='growth'?'新增测量':'记录一个第一次'}</h3><span className="icon-subtle">{kind==='growth'?<TrendingUp size={20}/>:<BookHeart size={20}/>}</span></div><form className="stack" onSubmit={save}><Field label="日期"><input type="date" max={today()} required value={form.day} onChange={e=>setForm({...form,day:e.target.value})}/></Field>
- {kind==='growth'?<><div className="two"><Field label="体重 · kg"><input type="number" min="0.1" max="150" step="0.01" placeholder="例如 9.5" value={form.weight} onChange={e=>setForm({...form,weight:e.target.value})}/></Field><Field label="身高 · cm"><input type="number" min="10" max="250" step="0.1" placeholder="例如 78" value={form.height} onChange={e=>setForm({...form,height:e.target.value})}/></Field></div><Field label="头围 · cm"><input type="number" min="10" max="100" step="0.1" placeholder="选填" value={form.headCircumference} onChange={e=>setForm({...form,headCircumference:e.target.value})}/></Field><Field label="备注"><textarea rows={3} placeholder="今天有什么新发现…" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}/></Field></>:<><Field label="事件标题"><input required maxLength={120} placeholder="第一次独立走路、第一次叫妈妈…" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></Field><Field label="故事内容"><textarea rows={4} placeholder="那个值得记住的瞬间…" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></Field></>}
- <Primary disabled={busy}>{busy?'正在保存…':<><Plus size={17}/> 保存记录</>}</Primary></form></Card>
- <Card><div className="section-title"><h3>记录时间线</h3><span className="muted small">最近 {items.length} 条</span></div><div className="timeline">{items.length?items.map(x=><div className="timeline-item" key={x.id}><div className="timeline-dot"/><div className="timeline-body"><div className="row-between"><time>{x.day}</time><button className="icon-btn" aria-label="删除" onClick={()=>void remove(x.id)}><Trash2 size={15}/></button></div><strong>{kind==='growth'?[x.weight!=null?'体重 '+x.weight+'kg':null,x.height!=null?'身高 '+x.height+'cm':null,x.head_circumference!=null?'头围 '+x.head_circumference+'cm':null].filter(Boolean).join(' · '):x.title}</strong><p>{kind==='growth'?x.notes:x.description}</p></div></div>):<div className="empty">还没有记录，左边可以创建第一条。</div>}</div><Pager page={page} setPage={setPage} hasMore={hasMore}/></Card></div>{kind==='growth'&&<GrowthChart items={items}/>}</>;
-}
-function GrowthChart({items}:{items:RecordItem[]}){
- const [metric,setMetric]=useState<'weight'|'height'>('weight');
- const points=items.filter(x=>typeof x[metric]==='number').slice().reverse();
- const values=points.map(p=>Number(p[metric]));
- const low=values.length?Math.min(...values):0,high=values.length?Math.max(...values):1;
- const spread=Math.max(0.2,high-low),min=low-spread*0.15,max=high+spread*0.15;
- const left=48,right=692,top=20,bottom=193;
- const x=(i:number)=>points.length===1?(left+right)/2:left+(right-left)*i/(points.length-1);
- const y=(v:number)=>bottom-(v-min)/(max-min)*(bottom-top);
- const poly=points.map((p,i)=>`${x(i)},${y(Number(p[metric]))}`).join(' ');
- return <Card className="growth-chart"><div className="section-title"><h3>成长趋势</h3><div className="chart-tabs"><button className={metric==='weight'?'active':''} onClick={()=>setMetric('weight')}>体重 · kg</button><button className={metric==='height'?'active':''} onClick={()=>setMetric('height')}>身高 · cm</button></div></div>{!points.length?<p className="empty">记录测量数据后，这里会显示变化趋势。</p>:<svg role="img" aria-label={`${metric==='weight'?'体重':'身高'}趋势，${points.length} 个测量点`} viewBox="0 0 720 235" className="growth-svg"><line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#e8e8ed"/>{[0,1,2,3].map(step=>{const value=min+(max-min)*step/3;const yy=y(value);return <g key={step}><line x1={left} x2={right} y1={yy} y2={yy} stroke="#edf0f3" strokeDasharray="3 5"/><text x={left-10} y={yy+4} textAnchor="end" fontSize={12} fill="#87919f">{value.toFixed(1)}</text></g>})}{points.length>1&&<polyline points={poly} fill="none" stroke="#dd8068" strokeWidth={3} strokeLinejoin="round" strokeLinecap="round"/>}{points.map((p,i)=><circle key={p.id} cx={x(i)} cy={y(Number(p[metric]))} r={4} fill="#df826c" stroke="#fff" strokeWidth={2}><title>{p.day}：{Number(p[metric])}{metric==='weight'?' kg':' cm'}</title></circle>)}<text x={left} y={226} fill="#8993a0" fontSize={11}>{points[0].day}</text><text x={right} y={226} fill="#8993a0" fontSize={11} textAnchor="end">{points.at(-1)?.day}</text></svg>}<p className="hint">展示当前页中有测量值的记录；支持切换体重与身高。</p></Card>;
-}
-function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];mediaEdited:(id:string,value:{title:string;day:string})=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
- const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
- const [selected,setSelected]=useState<MediaItem|null>(null);
- useEffect(()=>{setSelected(null)},[baby.id]);
- type PendingUpload={id:string;day:string;title:string;mime:string;size:number;fingerprint:string;completedParts:number[];created_at:string};
- const [pending,setPending]=useState<PendingUpload[]>([]);
- const [backfill,setBackfill]=useState({remaining:0,running:false,completed:0,skipped:0,failed:0});
- const stopBackfill=useRef(false);
- async function refreshBackfill(){
-  const response=await api<{items:{id:string;mime:string;size:number}[];remaining:number;cursor:string}>(
-   '/api/media/thumbnail-backfill?babyId='+encodeURIComponent(baby.id));
-  setBackfill(old=>({...old,remaining:response.remaining}));
-  return response;
- }
- useEffect(()=>{
-  stopBackfill.current=false;
-  setBackfill({remaining:0,running:false,completed:0,skipped:0,failed:0});
-  void refreshBackfill().catch(()=>{});
-  return()=>{stopBackfill.current=true};
- },[baby.id]);
- async function backfillThumbnails(){
-  if(backfill.running||uploading)return;
-  stopBackfill.current=false;
-  setBackfill(old=>({...old,running:true,completed:0,skipped:0,failed:0}));
-  let cursor='',completed=0,skipped=0,failed=0;
-  try{
-   while(!stopBackfill.current){
-    const result=await api<{items:{id:string;mime:string;size:number}[];remaining:number;cursor:string}>(
-     '/api/media/thumbnail-backfill?babyId='+encodeURIComponent(baby.id)+'&after='+encodeURIComponent(cursor));
-    if(!result.items.length)break;
-    for(const item of result.items){
-     if(stopBackfill.current)break;
-     try{
-      if(item.size>25*1024*1024){skipped++;continue;}
-      const thumb=await createStoredThumbnail(item.id,item.mime);
-      if(!thumb){skipped++;continue;}
-      await api('/api/media/'+item.id+'/thumbnail',{
-       method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}
-      });
-      completed++;
-     }catch{failed++}
-     finally{setBackfill(old=>({...old,completed,skipped,failed}))}
-    }
-    cursor=result.cursor;
-   }
-   const summary=await refreshBackfill();
-   notify('缩略图补全：成功 '+completed+' 张，跳过 '+skipped+' 张，失败 '+failed+' 张。剩余 '+summary.remaining+' 张可稍后重试。');
-  }catch(e){notify(e instanceof Error?e.message:'补全中断，可重新操作')}
-  finally{setBackfill(old=>({...old,running:false,completed,skipped,failed}))}
- }
-
- async function refreshPending(){
-  const response=await api<{items:PendingUpload[]}>('/api/upload/pending?babyId='+encodeURIComponent(baby.id));
-  setPending(response.items);
-  return response.items;
- }
- useEffect(()=>{
-  let live=true;
-  void api<{items:PendingUpload[]}>('/api/upload/pending?babyId='+encodeURIComponent(baby.id))
-    .then(response=>{if(live)setPending(response.items)})
-    .catch(()=>{if(live)setPending([])});
-  return()=>{live=false};
- },[baby.id]);
- async function finishPending(id:string){
-  if(uploading)return;
-  setUploading(true);
-  try{
-   await post('/api/upload/'+id+'/finish',{});
-   await refreshPending();
-   changed();
-   notify('上传已完成，照片或视频已保存。');
-  }catch(e){notify(e instanceof Error?e.message:'保存失败，可稍后重试')}
-  finally{setUploading(false)}
- }
- async function discard(id:string){
-  if(uploading||!confirm('确定取消这项未完成的上传吗？已上传的分片会被删除。'))return;
-  try{
-   await post('/api/upload/'+id+'/cancel',{});
-   await refreshPending();
-   notify('已取消未完成上传');
-  }catch(e){notify(e instanceof Error?e.message:'取消失败')}
- }
- async function upload(files:File[]){
-  if(!files.length||uploading)return;
-  setUploading(true);
-  try{
-   let queue=await refreshPending();
-   for(const file of files){
-    let uploadId:string|undefined;
-    try{
-     if(file.size<1||file.size>209715200)throw Error('文件大小需在 1B～200MB 之间');
-     const extension=file.name.toLowerCase().match(/\.(heic|heif|jpg|jpeg|png|webp|gif|mov|mp4|webm)$/)?.[1];
-     const formats:Record<string,string>={heic:'image/heic',heif:'image/heif',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',mov:'video/quicktime',mp4:'video/mp4',webm:'video/webm'};
-     const mime=file.type||(extension?formats[extension]:'application/octet-stream');
-     setProgress(file.name+' · 正在检查分片');
-     const fingerprint=await fingerprintFile(file);
-     const existing=pickMatchingUpload(queue,{title:file.name.slice(0,120),size:file.size,mime,fingerprint}) as PendingUpload|undefined;
-     const session=existing||await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:today(),title:file.name,mime,size:file.size,fingerprint});
-     uploadId=session.id;
-     const chunkSize=8388608;
-     const total=Math.ceil(file.size/chunkSize);
-     const numbers=remainingPartNumbers(total,existing?.completedParts||[]);
-     const completed=new Set(existing?.completedParts||[]);
-     if(existing)notify('找到上次的上传，正在续传：'+file.name);
-     let next=0,failed=false;
-     const sendPart=async(number:number)=>{
-      const part=file.slice((number-1)*chunkSize,Math.min(file.size,number*chunkSize));
-      for(let attempt=0;attempt<3;attempt++){
-       try{
-        await api('/api/upload/'+uploadId+'/part/'+number,{method:'PUT',body:part,headers:{'Content-Type':'application/octet-stream'}});
-        return;
-       }catch(error){
-        if(attempt===2||error instanceof ApiFailure&&[400,401,403,404,413].includes(error.status))throw error;
-        await new Promise(resolve=>setTimeout(resolve,1000*2**attempt));
-       }
-      }
-     };
-     const concurrency=window.matchMedia('(pointer:coarse)').matches?2:3;
-     const jobs=Array.from({length:Math.min(concurrency,numbers.length)},async()=>{
-      while(!failed&&next<numbers.length){
-       const number=numbers[next++];
-       try{
-        await sendPart(number);
-        completed.add(number);
-        setProgress(file.name+' · '+Math.round(completed.size/total*100)+'%');
-       }catch(error){failed=true;throw error}
-      }
-     });
-     const results=await Promise.allSettled(jobs);
-     const rejection=results.find((x):x is PromiseRejectedResult=>x.status==='rejected');
-     if(rejection)throw rejection.reason;
-     setProgress(file.name+' · 正在保存原文件');
-     for(let attempt=0;attempt<3;attempt++){
-      try{await post('/api/upload/'+uploadId+'/finish',{});break;}
-      catch(error){
-       if(attempt===2||error instanceof ApiFailure&&[400,401,403,404,409].includes(error.status))throw error;
-       await new Promise(resolve=>setTimeout(resolve,1000*2**attempt));
-      }
-     }
-     uploadId=undefined;
-     queue=queue.filter(x=>x.id!==session.id);
-     changed();
-     notify('已保存 '+file.name);
-     // Thumbnails are independent of the original multipart upload.
-     if(mime.startsWith('image/')){
-      try{
-       setProgress(file.name+' · 正在生成缩略图');
-       const thumb=await createAlbumThumbnail(file);
-       if(thumb)await api('/api/media/'+session.id+'/thumbnail',{method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}});
-      }catch{
-       notify(file.name+' 已保存，但缩略图暂不可用（相册仍可查看原图）');
-      }
-     }
-    }catch(error){
-     // Never abort a recoverable session automatically; Safari can lose connectivity.
-     notify(file.name+'：'+(error instanceof Error?error.message:'上传中断')+(uploadId?'。重新选择同一文件即可续传。':''));
-    }
-    try{queue=await refreshPending()}catch{}
-   }
-  }catch(error){
-   notify(error instanceof Error?error.message:'无法检查未完成上传，请检查网络后重试');
-  }finally{
-   setUploading(false);
-   setProgress('');
-  }
- }
- async function remove(id:string){if(!confirm('确定从相册删除这项媒体吗？'))return;try{await api('/api/media/'+id,{method:'DELETE'});if(selected?.id===id)setSelected(null);changed();notify('已从相册删除')}catch(e){notify(e instanceof Error?e.message:'删除失败')}}
- async function saveMedia(value:{title:string;day:string}){
-  if(!selected)return;
-  await api('/api/media/'+selected.id,{method:'PATCH',body:JSON.stringify(value)});
-  setSelected(current=>current?.id===selected.id?{...current,...value}:current);
-  // The list must update even when the media count stays unchanged.
-  mediaEdited(selected.id,value);
-  changed();notify('照片信息已更新');
- }
- function navigateMedia(step:number){
-  if(!selected)return;
-  const current=media.findIndex(item=>item.id===selected.id);
-  const next=media[current+step];
-  if(next)setSelected(next);
- }
- return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>{progress&&<p className="small">{progress}</p>}</Card>
- {backfill.remaining>0&&<Card className="thumbnail-backfill"><div className="section-title"><h3>补全旧照片缩略图</h3><span className="muted small">{backfill.remaining} 张待处理</span></div><p className="muted small">需要通过当前设备下载旧照片并生成私有缩略图。建议连接 Wi-Fi，保持页面开启。原图不会被修改；不支持解码或大于 25MB 的照片会跳过。</p><div className="backfill-actions">{backfill.running?<button className="secondary" type="button" onClick={()=>{stopBackfill.current=true}}>停止补全</button>:<button className="primary" type="button" disabled={uploading} onClick={()=>void backfillThumbnails()}>开始补全</button>}<span className="muted small">{backfill.running?'处理中 · ':''}成功 {backfill.completed} · 跳过 {backfill.skipped} · 失败 {backfill.failed}</span></div></Card>}
- {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">网络中断或刷新页面后，重新选择原来的文件，会自动识别并继续上传未完成的分片。文件不会保存在本网站中。</p>{pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><div className="pending-actions">{item.completedParts.length===Math.ceil(item.size/8388608)&&<button className="primary" type="button" disabled={uploading} onClick={()=>void finishPending(item.id)}>完成保存</button>}<button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div></div>)}</Card>}
- <div className="photo-grid">{media.map(item=><Card key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+(item.title||'成长回忆')}><span className="photo-frame">{item.mime.startsWith('image/')?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt="" />:<span className="video-placeholder" aria-hidden="true"><Camera size={32}/><span>视频 · 点击播放</span></span>}</span><span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button><div className="photo-caption"><div><strong>{item.title||'未命名'}</strong><p>{item.day}</p></div><button type="button" className="icon-btn" onClick={()=>void remove(item.id)} aria-label={'删除 '+(item.title||'媒体')}><Trash2 size={16}/></button></div></Card>)}</div>{!media.length&&<div className="empty card">还没有照片，试试上传第一张。</div>}<Pager page={page} setPage={setPage} hasMore={hasMore}/>{selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia}/> }</>;
-}
-function Assistant({configured,babyId,setActive}:{configured:boolean;babyId:string;setActive:(v:Tab)=>void}){
- const [input,setInput]=useState(''),[messages,setMessages]=useState<{role:'me'|'bot';text:string}[]>([]),[waiting,setWaiting]=useState(false);
- async function send(e:FormEvent){e.preventDefault();if(!input.trim()||waiting)return;const content=input;setInput('');setMessages(v=>[...v,{role:'me',text:content}]);setWaiting(true);
- try{const res=await post<{answer:string}>('/api/chat',{message:content,babyId});setMessages(v=>[...v,{role:'bot',text:res.answer}])}catch(e){setMessages(v=>[...v,{role:'bot',text:e instanceof Error?e.message:'请求失败'}])}finally{setWaiting(false)}}
- return <Card className="chat"><div className="chat-header"><span className="stat-icon peach"><Sparkles size={21}/></span><div><h3>BabyMemo AI</h3><p className="muted small">由你的 OpenRouter 配置提供支持 · 只读问答</p></div></div>{!configured?<div className="empty"><p>还没有配置 OpenRouter</p><button className="primary" onClick={()=>setActive('settings')}>前往设置 <ChevronRight size={16}/></button></div>:<>
- <div className="chat-messages">{!messages.length&&<div className="chat-placeholder"><Sparkles size={32}/><p>有什么想聊的？</p><span>可以聊聊宝宝成长、育儿灵感，或帮你梳理记录。</span></div>}{messages.map((m,i)=><div className={'bubble '+m.role} key={i}>{m.text}</div>)}{waiting&&<div className="bubble bot">正在思考…</div>}</div>
- <form onSubmit={send} className="chat-input"><input placeholder="问问 BabyMemo…" value={input} onChange={e=>setInput(e.target.value)}/><button disabled={waiting||!input.trim()} aria-label="发送"><ChevronRight size={20}/></button></form></>}</Card>;
-}
-function Settings({state,baby,changed,notify,onBabyCreated}:{state:State;baby:BabyInfo;changed:()=>void;notify:(s:string)=>void;onBabyCreated:(id:string)=>void}){
- const [model,setModel]=useState(state.openrouter.model),[apiKey,setApiKey]=useState(''),[saving,setSaving]=useState(false);
- const [name,setName]=useState(baby.name),[birthday,setBirthday]=useState(baby.birthday),[allergies,setAllergies]=useState(baby.allergies);
- const [showNewBaby,setShowNewBaby]=useState(false),[creatingBaby,setCreatingBaby]=useState(false),[createError,setCreateError]=useState('');
- const [newBaby,setNewBaby]=useState({name:'',birthday:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
- const [qr,setQr]=useState(''),[qrImage,setQrImage]=useState(''),[status,setStatus]=useState(''),[verifyCode,setVerifyCode]=useState(''),[botStatus,setBotStatus]=useState<any>(null);
- useEffect(()=>{setName(baby.name);setBirthday(baby.birthday);setAllergies(baby.allergies)},[baby.id,baby.name,baby.birthday,baby.allergies]);
- useEffect(()=>{if(qr)void import('qrcode').then(({default:QRCode})=>QRCode.toDataURL(qr,{width:220,margin:2,errorCorrectionLevel:'M'})).then(setQrImage).catch(()=>notify('二维码渲染失败'))},[qr]);
- useEffect(()=>{if(!qr||status==='confirmed'||status==='expired')return;let cancelled=false;let timeout:ReturnType<typeof setTimeout>;
-  const poll=async()=>{try{const r=await post<{status:string}>('/api/settings/wechat/qr/status',{verifyCode});if(cancelled)return;setStatus(r.status);if(r.status==='confirmed'){setQr('');setQrImage('');changed();notify('微信绑定成功，请手动启用 Bot');return;}}catch(e){if(!cancelled)setStatus('连接重试中');}if(!cancelled)timeout=setTimeout(poll,2000)};
-  timeout=setTimeout(poll,500);return()=>{cancelled=true;clearTimeout(timeout)};
- },[qr,verifyCode,status==='confirmed',status==='expired']);
- async function saveOpenrouter(e:FormEvent){e.preventDefault();setSaving(true);try{await post('/api/settings/openrouter',{model,...(apiKey?{apiKey}:{})});setApiKey('');changed();notify('OpenRouter 已保存')}catch(e){notify(String(e))}finally{setSaving(false)}}
- async function saveBaby(e:FormEvent){e.preventDefault();try{await api('/api/babies/'+baby.id,{method:'PATCH',body:JSON.stringify({name,birthday,allergies,notes:baby.notes})});changed();notify('宝宝资料已更新')}catch(e){notify(String(e))}}
- async function addBaby(e:FormEvent){
-  e.preventDefault();
-  if(creatingBaby)return;
-  setCreatingBaby(true);setCreateError('');
-  try{
-   const created=await post<{id:string}>('/api/babies',newBaby);
-   setNewBaby({name:'',birthday:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
-   setShowNewBaby(false);
-   changed();
-   onBabyCreated(created.id);
-   notify('新宝宝档案已创建，已切换到 '+newBaby.name.trim());
-  }catch(e){
-   setCreateError(e instanceof Error?e.message:'新增宝宝失败，请重试');
-  }finally{setCreatingBaby(false)}
- }
- async function pair(){try{setStatus('正在获取二维码…');const r=await post<{qrContent:string}>('/api/settings/wechat/qr',{});setQr(r.qrContent);setStatus('wait')}catch(e){notify(String(e))}}
- async function toggleBot(action:'start'|'pause'){try{await post('/api/settings/wechat/'+action,{});changed();notify(action==='start'?'微信 Bot 已启用':'微信 Bot 已暂停')}catch(e){notify(String(e))}}
- async function test(){try{const r=await post<any>('/api/settings/openrouter/test',{});notify('模型测试成功：'+r.answer)}catch(e){notify(String(e))}}
- async function inspect(){try{setBotStatus(await api('/api/settings/wechat/status'))}catch(e){notify(String(e))}}
- return <div className="settings-grid"><Card><div className="section-title"><h3>宝宝资料</h3><Baby size={20}/></div><form className="stack" onSubmit={saveBaby}><Field label="宝宝昵称"><input value={name} required onChange={e=>setName(e.target.value)}/></Field><Field label="出生日期"><input type="date" value={birthday} required onChange={e=>setBirthday(e.target.value)}/></Field><Field label="过敏与注意事项"><textarea rows={3} value={allergies} onChange={e=>setAllergies(e.target.value)}/></Field><Primary>保存资料 <Check size={16}/></Primary></form>
- <div className="baby-create-section"><div className="section-title"><div><h3>家庭成员 · 宝宝</h3><p className="muted small">当前家庭有 {state.babies.length} 位宝宝，可切换查看各自的照片与成长记录。</p></div></div>
- {!showNewBaby?<button type="button" className="secondary full" onClick={()=>setShowNewBaby(true)} aria-expanded={false}><Plus size={16}/>新增宝宝</button>:<form className="stack baby-create-form" onSubmit={addBaby}>
-  <div className="section-title"><strong>创建新的宝宝档案</strong><button type="button" className="text-btn" disabled={creatingBaby} onClick={()=>{setShowNewBaby(false);setCreateError('')}}>取消</button></div>
-  <Field label="宝宝名字"><input required maxLength={80} autoComplete="off" value={newBaby.name} onChange={e=>setNewBaby({...newBaby,name:e.target.value})} placeholder="宝宝昵称"/></Field>
-  <div className="two"><Field label="出生日期"><input required type="date" max={today()} value={newBaby.birthday} onChange={e=>setNewBaby({...newBaby,birthday:e.target.value})}/></Field><Field label="性别"><select value={newBaby.gender} onChange={e=>setNewBaby({...newBaby,gender:e.target.value})}><option value="girl">女孩</option><option value="boy">男孩</option><option value="other">暂不填写</option></select></Field></div>
-  <Field label="家庭时区"><select value={newBaby.timeZone} onChange={e=>setNewBaby({...newBaby,timeZone:e.target.value})}><option value="Asia/Shanghai">中国标准时间 · UTC+8</option><option value="Asia/Tokyo">日本标准时间 · UTC+9</option><option value="America/Los_Angeles">美国太平洋时间</option></select></Field>
-  <Field label="过敏与注意事项（可选）"><textarea rows={2} maxLength={2000} value={newBaby.allergies} onChange={e=>setNewBaby({...newBaby,allergies:e.target.value})} placeholder="可以以后填写"/></Field>
-  {createError&&<div className="error" role="alert">{createError}</div>}
-  <Primary disabled={creatingBaby}>{creatingBaby?'正在创建…':'创建并切换到新宝宝'} <Plus size={16}/></Primary>
- </form>}</div></Card>
- <Card><div className="section-title"><h3>OpenRouter</h3><WandSparkles size={20}/></div><p className="muted small">目前只支持 OpenRouter。API Key 在 Worker 内加密后保存到 D1，不返回到浏览器。</p><form className="stack" onSubmit={saveOpenrouter}><Field label="模型 ID"><input required value={model} onChange={e=>setModel(e.target.value)} placeholder="openai/gpt-4.1-mini"/></Field><Field label={'API Key · '+(state.openrouter.configured?'已配置，可留空不变':'尚未配置')}><input type="password" autoComplete="off" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-or-v1-…"/></Field><Primary disabled={saving}>保存 OpenRouter 设置 <Check size={16}/></Primary></form><button className="secondary full" onClick={()=>void test()} disabled={!state.openrouter.configured}>测试模型连通性</button></Card>
- <Card className="span-2"><div className="section-title"><h3>微信 ClawBot</h3><MessageCircle size={20}/></div><p className="muted">网页扫码绑定微信，不需要 VPS。绑定后由 Cloudflare Durable Objects 定时轮询消息，使用 OpenRouter 回答、记录明确的成长事件。</p>
- <div className="wechat-row"><div className="wechat-status"><span className={'status-dot '+(state.wechat.enabled?'online':'')}/><strong>{state.wechat.connected?(state.wechat.enabled?'已连接并启用':'已绑定，当前暂停'):'尚未绑定微信'}</strong></div><button className="secondary" onClick={()=>void inspect()}><RefreshCw size={15}/> 运行状态</button></div>
- {botStatus&&<pre className="status-json">{JSON.stringify(botStatus,null,2)}</pre>}
- <div className="wechat-actions"><button className="secondary" onClick={()=>void pair()}><MessageCircle size={16}/>{state.wechat.connected?'重新扫码绑定':'扫码绑定微信'}</button>{state.wechat.connected&&(state.wechat.enabled?<button className="secondary" onClick={()=>void toggleBot('pause')}><WifiOff size={16}/>暂停 Bot</button>:<button className="primary" onClick={()=>void toggleBot('start')}><Wifi size={16}/>启用 Bot</button>)}</div>
- {qrImage&&<div className="qr-panel"><img src={qrImage} alt="微信扫码绑定二维码"/><strong>请用微信扫描二维码</strong><span>扫码后在手机确认绑定；二维码属于敏感凭据，请勿分享。</span><p className="small">状态：{status}</p>{status==='need_verifycode'&&<Field label="微信显示的验证码"><input value={verifyCode} onChange={e=>setVerifyCode(e.target.value)}/></Field>}</div>}
- <p className="hint">微信 iLink 对接属于第三方协议适配；上线前请验证账号授权、消息去重、隐私与持续运行情况。</p></Card></div>;
 }

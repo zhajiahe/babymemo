@@ -24,7 +24,7 @@ test('semantic palette preserves readable brand and supporting text',()=>{
  assert.ok(contrast(token('error'),'#fff1ed')>=4.5,'error requires 4.5:1');
 });
 test('primary actions share the high-contrast brand token',()=>{
- for(const selector of ['.primary{','.upload-action{','.chat-input button{']){
+ for(const selector of ['.primary{','.upload-action{']){
   const start=css.indexOf(selector);
   assert.ok(start>=0,'missing '+selector);
   const block=css.slice(start,css.indexOf('}',start));
@@ -35,8 +35,8 @@ test('primary actions share the high-contrast brand token',()=>{
 });
 test('new typography floor and responsive touch targets stay explicit',()=>{
  assert.doesNotMatch(css,/font-size:\s*(?:10|11)px\b/);
- assert.match(css,/:where\(\.primary,\.secondary,\.light-btn,\.text-btn,\.icon-btn,\.pager button,\.chat-input button,\.notice button,\.upload-action\)\{min-height:44px\}/);
+ assert.match(css,/:where\(\.primary,\.secondary,\.light-btn,\.text-btn,\.icon-btn,\.pager button,\.notice button,\.upload-action\)\{min-height:44px\}/);
  assert.match(css,/\.mobile-nav button\{min-height:48px;min-width:48px\}/);
- assert.match(css,/\.field input,\.field textarea,\.field select,\.chat-input input\{font-size:16px\}/);
+ assert.match(css,/\.field input,\.field textarea,\.field select\{font-size:16px\}/);
  assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);
 });

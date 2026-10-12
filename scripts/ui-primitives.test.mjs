@@ -28,7 +28,7 @@ test('core component backgrounds reference semantic design tokens', () => {
   for (const token of ['surface-alt','surface-soft','input-bg','border-soft']) {
     assert.match(css, new RegExp('--bm-'+token+':#[a-fA-F0-9]{6}'), 'token '+token);
   }
-  for (const selector of ['.sidebar{','.card{','.topbar{','.secondary{','.chat-input{','.wechat-row{']) {
+  for (const selector of ['.sidebar{','.card{','.topbar{','.secondary{','.wechat-row{']) {
     const start = css.indexOf(selector);
     assert.ok(start !== -1, 'selector '+selector);
     const declaration = css.slice(start, css.indexOf('}', start));

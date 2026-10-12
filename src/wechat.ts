@@ -1,6 +1,7 @@
 import JSONBig from 'json-bigint';
 import type { Env, Baby } from './types';
-import { decryptSecret, setting } from './crypto';
+import { decryptSecret, encryptSecret, setting } from './crypto';
+import { wechatTools, wechatHelp, runWechatTool } from './wechat-harness.mjs';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
 const wireJSON=JSONBig({storeAsString:true,strict:true,protoAction:'error',constructorAction:'error'});
@@ -51,85 +52,59 @@ export async function qrStatus(qrcode:string,verifyCode?:string,base=API_BASE):P
 export function workerBot(env:Env):DurableObjectStub {
   return env.BOT.get(env.BOT.idFromName('family'));
 }
-export async function askOpenRouter(env:Env,message:string,baby?:Baby|null,test=false):Promise<string> {
-  const encrypted=await setting(env,'openrouter_key');
-  if(!encrypted)throw Error('OPENROUTER_KEY_MISSING');
-  const key=await decryptSecret(env,encrypted);
+// OpenRouter is exclusively the WeChat command interpreter; no website chat API.
+export async function testOpenRouterConnection(env:Env):Promise<boolean>{
+  const encrypted=await setting(env,'openrouter_key');if(!encrypted)throw Error('OPENROUTER_KEY_MISSING');
   const model=await setting(env,'openrouter_model')||'openai/gpt-4.1-mini';
-  const context=baby?'宝宝姓名：'+baby.name+'，生日：'+baby.birthday+'，已知过敏信息：'+baby.allergies+'。':'';
-  const instruction='你是 BabyMemo 家庭成长记录助手。回答要简明、温和、准确；没有记录的事情不能编造。对医学症状只提供一般信息，不做诊断。不要假装已经保存了任何记录。';
+  const key=await decryptSecret(env,encrypted);
   const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
-    method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'HTTP-Referer':'https://github.com/zhajiahe/babymemo','X-Title':'BabyMemo'},
+    method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key,'HTTP-Referer':'https://github.com/zhajiahe/babymemo','X-Title':'BabyMemo WeChat Operations'},
     redirect:'manual',signal:AbortSignal.timeout(25000),
-    body:JSON.stringify({model,messages:[{role:'system',content:instruction+(test?'':context)},{role:'user',content:message}],max_tokens:400,temperature:0.2})
-  });
-  if(!res.ok){await res.body?.cancel();throw Error('OPENROUTER_HTTP_'+res.status);}
-  const data=await res.json() as Json;
-  const answer=data?.choices?.[0]?.message?.content;
-  if(typeof answer!=='string'||!answer.trim())throw Error('OPENROUTER_EMPTY_RESPONSE');
-  return answer.slice(0,1800);
-}
-async function handleMessage(env:Env,text:string):Promise<string> {
-  const baby=await env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes FROM babies ORDER BY created_at LIMIT 1').first<Baby>();
-  if(!baby)return '请先在 BabyMemo 中完成宝宝信息设置。';
-  const encrypted=await setting(env,'openrouter_key');
-  if(!encrypted)return '请先在 BabyMemo 的设置中配置 OpenRouter。';
-  const model=await setting(env,'openrouter_model')||'openai/gpt-4.1-mini';
-  const key=await decryptSecret(env,encrypted);
-  const system='你是 BabyMemo 家庭成长助手。今天是 '+new Date().toISOString().slice(0,10)+'，宝宝：'+baby.name+'，出生日期：'+baby.birthday+'。'+
-    '你可以查询或记录成长数据。只有用户明确表达测量及单位时才调用记录工具；不确定时间/单位时先追问，不能捏造。'+
-    '体重统一 kg，身高/头围 cm，斤换算为0.5kg。工具一次最多一个。没有成功调用工具不能声称已保存。不提供医学诊断，不泄漏私有记录。';
-  const tools=[
-    {type:'function',function:{name:'list_growth_records',description:'查询宝宝真实存档的最近成长测量，包括体重、身高和头围',parameters:{type:'object',properties:{limit:{type:'integer',minimum:1,maximum:10}},additionalProperties:false}}},
-    {type:'function',function:{name:'list_milestones',description:'查询宝宝真实存档的最近成长里程碑和第一次事件',parameters:{type:'object',properties:{limit:{type:'integer',minimum:1,maximum:10}},additionalProperties:false}}},
-    {type:'function',function:{name:'create_growth_record',description:'将用户明确提供的一次测量写入成长记录',parameters:{type:'object',properties:{
-      day:{type:'string',description:'YYYY-MM-DD'},weight:{type:'number',description:'单位 kg'},height:{type:'number',description:'cm'},headCircumference:{type:'number',description:'cm'}
-    },required:['day'],additionalProperties:false}}},
-    {type:'function',function:{name:'create_milestone',description:'将用户明确描述的成长事件写入里程碑',parameters:{type:'object',properties:{
-      day:{type:'string',description:'YYYY-MM-DD'},title:{type:'string'},description:{type:'string'}
-    },required:['day','title'],additionalProperties:false}}}
-  ];
-  const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',
-    headers:{'Content-Type':'application/json',Authorization:'Bearer '+key,'HTTP-Referer':'https://github.com/zhajiahe/babymemo','X-Title':'BabyMemo'},
-    redirect:'manual',signal:AbortSignal.timeout(25000),
-    body:JSON.stringify({model,messages:[{role:'system',content:system},{role:'user',content:text.slice(0,3000)}],tools,tool_choice:'auto',temperature:0,max_tokens:600})
+    body:JSON.stringify({model,messages:[{role:'user',content:'Reply exactly: OK'}],temperature:0,max_tokens:16})
   });
   if(!res.ok){await res.body?.cancel();throw Error('OPENROUTER_HTTP_'+res.status);}
   const result=await res.json() as Json;
-  const msg=result?.choices?.[0]?.message;
-  if(!msg)throw Error('INVALID_OPENROUTER_REPLY');
-  if(!Array.isArray(msg.tool_calls)||msg.tool_calls.length===0)return typeof msg.content==='string'?msg.content.slice(0,1800):'请再说得具体一些。';
-  if(msg.tool_calls.length!==1) return '请每次只记录一项内容，我会逐条帮你保存。';
-  const call=msg.tool_calls[0];
-  if(call?.type!=='function'||typeof call.function?.arguments!=='string')throw Error('BAD_TOOL_CALL');
-  const args=JSON.parse(call.function.arguments) as Json;
-  if(call.function.name==='list_growth_records'){
-    const limit=Number.isInteger(args.limit)?Math.min(10,Math.max(1,args.limit)):5;
-    const found=await env.DB.prepare('SELECT day,weight,height,head_circumference FROM growth_records WHERE baby_id=? ORDER BY day DESC,created_at DESC LIMIT ?').bind(baby.id,limit).all<{day:string;weight:number|null;height:number|null;head_circumference:number|null}>();
-    if(!found.results.length)return '还没有保存成长测量记录。';
-    return baby.name+' 的最近成长测量：\n'+found.results.map(r=>r.day+' · '+[r.weight!=null?'体重 '+r.weight+' kg':null,r.height!=null?'身高 '+r.height+' cm':null,r.head_circumference!=null?'头围 '+r.head_circumference+' cm':null].filter(Boolean).join('，')).join('\n');
-  }
-  if(call.function.name==='list_milestones'){
-    const limit=Number.isInteger(args.limit)?Math.min(10,Math.max(1,args.limit)):5;
-    const found=await env.DB.prepare('SELECT day,title,description FROM milestones WHERE baby_id=? ORDER BY day DESC,created_at DESC LIMIT ?').bind(baby.id,limit).all<{day:string;title:string;description:string}>();
-    if(!found.results.length)return '还没有保存宝宝的成长里程碑。';
-    return baby.name+' 的最近里程碑：\n'+found.results.map(r=>r.day+' · '+r.title+(r.description?' — '+r.description.slice(0,80):'')).join('\n');
-  }
-  if(typeof args.day!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(args.day))return '请告诉我记录的准确日期。';
-  const id=crypto.randomUUID(),when=new Date().toISOString();
-  if(call.function.name==='create_growth_record'){
-    const values=[args.weight,args.height,args.headCircumference];
-    if(values.every(v=>v===undefined)||!values.every((v,i)=>v===undefined||(typeof v==='number'&&Number.isFinite(v)&&v>0&&v<=[100,250,100][i])))return '请确认测量数据和单位后再告诉我。';
-    await env.DB.prepare('INSERT INTO growth_records(id,baby_id,day,weight,height,head_circumference,notes,created_at) VALUES(?,?,?,?,?,?,?,?)')
-      .bind(id,baby.id,args.day,args.weight??null,args.height??null,args.headCircumference??null,'来自微信',when).run();
-    return '已记录 '+baby.name+' 的成长测量（'+args.day+'）。';
-  }
-  if(call.function.name==='create_milestone'&&typeof args.title==='string'&&args.title.trim()&&args.title.length<=120){
-    await env.DB.prepare('INSERT INTO milestones(id,baby_id,day,title,description,created_at) VALUES(?,?,?,?,?,?)')
-      .bind(id,baby.id,args.day,args.title.trim(),String(args.description||'').slice(0,2000),when).run();
-    return '已保存里程碑：'+args.title.trim()+'（'+args.day+'）。';
-  }
-  return '这条消息暂不支持自动记录，请换一种更明确的说法。';
+  return Array.isArray(result.choices)&&result.choices.length>0;
+}
+export async function handleWechatCommand(env:Env,text:string,messageId:string):Promise<string>{
+  const command=text.trim();
+  if(!command)return wechatHelp;
+  if(/^(帮助|使用说明|菜单|help|你能做什么|有什么功能)[？?!！]?$/i.test(command))return wechatHelp;
+  const babies=await env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all<Baby>();
+  if(!babies.results.length)return '请先在 BabyMemo 中添加宝宝资料';
+  if(/^(宝宝列表|列出宝宝|有哪些宝宝|查看所有宝宝)[？?]?$/i.test(command))return runWechatTool(env,null,'list_babies',{},messageId,command);
+  const matches=babies.results.filter(b=>b.name && command.includes(b.name));
+  if(matches.length>1||(babies.results.length>1&&matches.length!==1))
+    return '请明确写出一位宝宝的名字。可选：'+babies.results.map(b=>b.name).join('、')+'\n示例：'+babies.results[0].name+' 今天体重 10.5kg';
+  const baby=matches[0]||babies.results[0];
+  const encrypted=await setting(env,'openrouter_key');
+  if(!encrypted)return '请先在网页设置中配置微信操作所需的 OpenRouter Key';
+  const model=await setting(env,'openrouter_model')||'openai/gpt-4.1-mini';
+  const key=await decryptSecret(env,encrypted);
+  const localDay=new Date().toLocaleDateString('sv-SE',{timeZone:baby.time_zone||'Asia/Shanghai'});
+  const instruction='你是 BabyMemo 微信操作入口的工具路由器，不是聊天/育儿分析助手。'+
+    '当前本地日期 '+localDay+'，目标宝宝 '+baby.name+'。根据绑定用户指令，每次仅选择一个最匹配的工具调用。'+
+    '只提取用户明确说出的字段。必要参数不清楚时不要编造日期、测量值或目标记录；不确定就不调用工具。'+
+    '修改和删除已有记录必须指定完整日期或查询结果的记录编号；同日可能有多条，具体由工具执行时判定。'+
+    '只能使用提供的功能工具，绝不输出 SQL。不要回答育儿诊断、医学分析或与家庭记录无关的问答。';
+  const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+    method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key,
+      'HTTP-Referer':'https://github.com/zhajiahe/babymemo','X-Title':'BabyMemo WeChat Operations'},
+    redirect:'manual',signal:AbortSignal.timeout(25000),
+    body:JSON.stringify({model,messages:[{role:'system',content:instruction},{role:'user',content:command.slice(0,3000)}],
+      tools:wechatTools,tool_choice:'auto',temperature:0,max_tokens:450})
+  });
+  if(!res.ok){await res.body?.cancel();throw Error('OPENROUTER_HTTP_'+res.status);}
+  const response=await res.json() as Json;
+  const calls=response?.choices?.[0]?.message?.tool_calls;
+  if(!Array.isArray(calls)||calls.length===0)return '没能确定具体操作。请提供明确的宝宝、日期与动作。\n\n'+wechatHelp;
+  if(calls.length!==1)return '请一次只操作一条记录，其他操作请分开发送';
+  const call=calls[0];
+  if(call?.type!=='function'||typeof call.function?.name!=='string'||typeof call.function?.arguments!=='string')return '无法识别指令参数，请再说一遍';
+  if(!wechatTools.some(x=>x.function.name===call.function.name))return '不支持这项微信操作';
+  let args:Record<string,unknown>;
+  try{args=JSON.parse(call.function.arguments) as Record<string,unknown>}catch{return '无法解析指令参数，请再说一遍'}
+  return await runWechatTool(env,baby,call.function.name,args,messageId,command);
 }
 export class WechatSession {
   constructor(private readonly ctx: DurableObjectState,private readonly env: Env){}
@@ -167,27 +142,35 @@ export class WechatSession {
       const token=await decryptSecret(this.env,tokenEncrypted);
       const cursor=(await this.ctx.storage.get<string>('cursor'))||'';
       const response=await ilink(base,'ilink/bot/getupdates',{get_updates_buf:cursor,base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token,45000);
-      if(typeof response.get_updates_buf==='string')await this.ctx.storage.put('cursor',response.get_updates_buf);
       await this.ctx.storage.put('lastPoll',new Date().toISOString());
       await this.ctx.storage.put('lastError',null);
-      for(const raw of (Array.isArray(response.msgs)?response.msgs:[]).slice(0,8)){
+      for(const raw of (Array.isArray(response.msgs)?response.msgs:[])){
         if(!raw||raw.message_type!==1||(raw.message_state!==undefined&&raw.message_state!==0&&raw.message_state!==2)||raw.group_id||raw.from_user_id!==userId||raw.to_user_id&&raw.to_user_id!==botId||!raw.context_token)continue;
         if(!Array.isArray(raw.item_list))continue;
         const text=raw.item_list.filter((i:any)=>i?.type===1&&typeof i?.text_item?.text==='string').map((i:any)=>i.text_item.text).join('\n').trim();
         const msgid=String(raw.message_id||'');
         if(!text||!msgid||text.length>3000)continue;
         const unique=botId+':'+msgid;
-        const inserted=await this.env.DB.prepare("INSERT OR IGNORE INTO wechat_messages(message_id,state,created_at) VALUES(?,'processing',?)").bind(unique,new Date().toISOString()).run();
-        if(!inserted.meta.changes)continue;
-        let reply='';
-        try{reply=await handleMessage(this.env,text);}
-        catch {reply='暂时无法处理，请稍后再发送一次。';}
-        try{
-          await ilink(base,'ilink/bot/sendmessage',{msg:{from_user_id:'',to_user_id:userId,client_id:crypto.randomUUID(),message_type:2,message_state:2,context_token:raw.context_token,item_list:[{type:1,text_item:{text:reply.slice(0,1800)}}]},base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token);
-          await this.env.DB.prepare("UPDATE wechat_messages SET state='done' WHERE message_id=?").bind(unique).run();
-          await this.ctx.storage.put('lastMessage',new Date().toISOString());
-        }catch{await this.env.DB.prepare("UPDATE wechat_messages SET state='unknown' WHERE message_id=?").bind(unique).run();}
+        await this.env.DB.prepare("INSERT OR IGNORE INTO wechat_messages(message_id,state,created_at) VALUES(?,'processing',?)").bind(unique,new Date().toISOString()).run();
+        const row=await this.env.DB.prepare('SELECT state,reply_text,client_id FROM wechat_messages WHERE message_id=?').bind(unique)
+          .first<{state:string;reply_text:string|null;client_id:string|null}>();
+        if(row?.state==='done')continue;
+        let reply=row?.reply_text?await decryptSecret(this.env,row.reply_text):'';
+        if(!reply){
+          try{reply=await handleWechatCommand(this.env,text,unique)}
+          catch{reply='暂时无法处理，请稍后再发送一次。';}
+        }
+        // Save a deterministic response and client ID before sending. Replayed batches
+        // reuse both and cannot create duplicate growth rows for the same message.
+        const clientId=row?.client_id||crypto.randomUUID();
+        await this.env.DB.prepare("UPDATE wechat_messages SET state='processed',reply_text=?,client_id=? WHERE message_id=?")
+          .bind(await encryptSecret(this.env,reply.slice(0,1800)),clientId,unique).run();
+        await ilink(base,'ilink/bot/sendmessage',{msg:{from_user_id:'',to_user_id:userId,client_id:clientId,message_type:2,message_state:2,context_token:raw.context_token,item_list:[{type:1,text_item:{text:reply.slice(0,1800)}}]},base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token);
+        await this.env.DB.prepare("UPDATE wechat_messages SET state='done' WHERE message_id=?").bind(unique).run();
+        await this.ctx.storage.put('lastMessage',new Date().toISOString());
       }
+      // Acknowledgement advances only after all supported messages are durable.
+      if(typeof response.get_updates_buf==='string')await this.ctx.storage.put('cursor',response.get_updates_buf);
     }catch(e){
       const code=e instanceof Error&&/^WECHAT_[A-Z_0-9]+$/.test(e.message)?e.message:'POLL_OR_NETWORK_ERROR';
       await this.ctx.storage.put('lastError',code);
