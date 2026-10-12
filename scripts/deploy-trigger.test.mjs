@@ -21,7 +21,7 @@ test('Auto path deploys tested commit, ignores stale successes, never auto-provi
  assert.match(deploy,/npm run provision:remote -- --check/);
  assert.match(deploy,/cancel-in-progress: false/);
  assert.match(deploy,/wrangler d1 migrations apply DB --remote/);
- assert.match(deploy,/wrangler deploy --keep-vars/);
+ assert.match(deploy,/bash scripts\/deploy-worker-with-retry\.sh/);
 });
 test('Manual dry runs retained; auto never rotates secrets',()=>{
  assert.match(deploy,/workflow_dispatch:/);
