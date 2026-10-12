@@ -1,6 +1,10 @@
 import {contentHash, legacyDay, objectKey, validateSnapshot} from './mybaby-migration.mjs';
 import {createHash} from 'node:crypto';
 
+export function assertPrivateBucket(managed, custom) {
+  const domains = Array.isArray(custom) ? custom : custom?.domains;
+  if (managed?.enabled !== false || !Array.isArray(domains) || domains.some(domain => domain.enabled !== false)) throw Error('target_bucket_public_or_unknown');
+}
 export const importedTables = ['babies', 'growth_records', 'milestones', 'media'];
 export const destinationKey = key => 'private/import-my-baby/' + createHash('sha256').update(key).digest('hex');
 const nullable = value => value ?? null;

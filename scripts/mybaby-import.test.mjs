@@ -3,9 +3,18 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync, readdirSync} from 'node:fs';
 import {Readable} from 'node:stream';
-import {buildPlan, insertSQL, mergeBabySQL, verifyPlan, assertNoConflicts, destinationKey} from './mybaby-import-plan.mjs';
+import {buildPlan, insertSQL, mergeBabySQL, verifyPlan, assertNoConflicts, destinationKey, assertPrivateBucket} from './mybaby-import-plan.mjs';
 import {contentHash} from './mybaby-migration.mjs';
 import {streamDigest} from './mybaby-import.mjs';
+test('public and unknown R2 exposure fail closed without changing bucket settings', () => {
+  assertPrivateBucket({enabled: false}, {domains: []});
+  assertPrivateBucket({enabled: false}, [{enabled: false}]);
+  assert.throws(() => assertPrivateBucket({enabled: true}, {domains: []}));
+  assert.throws(() => assertPrivateBucket({enabled: false}, [{enabled: true}]));
+  assert.throws(() => assertPrivateBucket({}, []));
+  assert.throws(() => assertPrivateBucket({enabled: false}, [{domain: 'synthetic.example.test'}]));
+  assert.throws(() => assertPrivateBucket({enabled: false}, {}));
+});
 const at = '2025-01-01T00:00:00.000Z';
 function fixture() {
   const snapshot = {version: 1, exportedAt: at, rows: {

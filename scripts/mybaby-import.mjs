@@ -9,7 +9,7 @@ import {Transform} from 'node:stream';
 import {resolve, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {sourceConfiguration, save, contentHash, tables, validateSnapshot} from './mybaby-migration.mjs';
-import {buildPlan, importedTables, insertSQL, mergeBabySQL, assertNoConflicts, verifyPlan} from './mybaby-import-plan.mjs';
+import {buildPlan, importedTables, insertSQL, mergeBabySQL, assertNoConflicts, verifyPlan, assertPrivateBucket} from './mybaby-import-plan.mjs';
 
 function wrangler(args) {
   try {return execFileSync(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), ...args], {encoding: 'utf8', timeout: 180000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe']});}
@@ -92,6 +92,7 @@ async function main() {
   if (!domains.some(d => d.hostname === new URL(target.origin).hostname && d.service === target.worker)) throw Error('target_custom_domain_mismatch');
   const database = await api(dbPath);
   if (database.name !== target.databaseName) throw Error('target_database_name_mismatch');
+  assertPrivateBucket(await api(`/r2/buckets/${target.bucket}/domains/managed`), await api(`/r2/buckets/${target.bucket}/domains/custom`));
   const health = await fetch(target.origin + '/api/health');
   if (!health.ok || !(await health.json()).ok) throw Error('target_health_failed');
   const bootstrap = await fetch(target.origin + '/api/bootstrap/status');
@@ -247,7 +248,7 @@ async function main() {
     if (response.status !== 401) throw Error('private_media_authentication_failed');
   }
   const reportPath = join(directory, 'validation-' + Date.now() + '.json');
-  await save(reportPath, {version: 1, validatedAt: new Date().toISOString(), sourceHash: fixedPlan.sourceHash, tables: report, counts, copiesVerified: fixedPlan.copies.length, mediaHashesRechecked: command === 'verify', foreignKeysValid: true, unauthenticatedRequestsRejected: true});
+  await save(reportPath, {version: 1, validatedAt: new Date().toISOString(), sourceHash: fixedPlan.sourceHash, tables: report, counts, copiesVerified: fixedPlan.copies.length, mediaHashesRechecked: command === 'verify', foreignKeysValid: true, bucketPrivate: true, unauthenticatedRequestsRejected: true});
   console.log('Target fields, archived source fields, mappings, counts and foreign keys verified:', JSON.stringify(counts));
   console.log('Unauthenticated media/content/thumbnail access rejected. Report saved privately.');
 }

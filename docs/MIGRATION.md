@@ -86,7 +86,7 @@ npm run verify
 RUN=.migration-private/mybaby-<timestamp>
 INVENTORY=$RUN/inventory-<timestamp>.json
 
-# 核对账号、D1 名称、实际 Worker 绑定及自定义域名；纯规划。
+# 核对账号、D1 名称、实际 Worker 绑定、自定义域名及 R2 非公开状态；纯规划。
 node scripts/mybaby-import.mjs prepare "$RUN" "$INVENTORY"
 
 # 以下命令仅在获得本次生产迁移授权后运行。
@@ -113,8 +113,8 @@ node scripts/mybaby-import.mjs verify "$RUN" "$INVENTORY"
 - 目标对象键采用 `private/import-my-baby/<源对象键的SHA-256>`，这是命名摘要而不是文件内容校验。文件内容另外全量计算 SHA-256。已有同名对象必须与源完整哈希一致，不能以大小相同或 ETag 相同代替校验。
 - 文件经本机 `0600` 临时文件流式中转，不在 Worker 内全量读取，不公开 bucket。传输有网络重试、空闲超时与断点检查；恢复时核对源 ETag、大小与已完成校验的断点，独立 `verify` 阶段再次完整读取所有目标文件。进程强制中断可能遗留 `transfer-*.bin`，恢复后处理同一对象会清理该文件。复制记录保存在私有 `copy-checkpoints.ndjson`。
 - 旧 JPEG 图片缩略图如存在，会额外复制到现有受保护缩略图路由使用的对象键；视频缩略图和头像保存为私有对象键，目前 UI 不自动展示。缺失旧缩略图继续安全回退原图。不能只复制派生图而遗漏原文件。
-- `legacy_import_rows` 保留精确源 JSON、内容哈希与源/目标 ID 映射。导入不会操作 `owner`、`app_settings`、会话或微信凭据。D1 备份可能包含加密配置和认证哈希，因此禁止查看/回显正文、提交 Git 或上传 CI artifact。
-- 校验报告保存在私有快照目录中，含数量、内容哈希、外键结果及未登录访问拒绝结果。真实登录后的照片浏览、MOV/HEIC、长视频 Range 和真实 iPhone Safari 仍需要人工验收；完整哈希校验不等于设备兼容性验收。
+- `legacy_import_rows` 保留精确源 JSON、内容哈希与源/目标 ID 映射；其中 `imported_at` 使用固定的导出批次时间以支持幂等重试，实际执行/校验时间见私有报告。导入不会操作 `owner`、`app_settings`、会话或微信凭据。D1 备份可能包含加密配置和认证哈希，因此禁止查看/回显正文、提交 Git 或上传 CI artifact。
+- 目标 R2 的托管公开域名和自定义公开域名必须均未启用，状态未知也会停止，不擅自修改桶权限。校验报告保存在私有快照目录中，含数量、内容哈希、外键结果及未登录访问拒绝结果。真实登录后的照片浏览、MOV/HEIC、长视频 Range 和真实 iPhone Safari 仍需要人工验收；完整哈希校验不等于设备兼容性验收。
 - 本工具不发布 Worker，不改变公开 R2 权限，不切换旧站；失败回退优先使用保持不变的旧站，不能自动清库或把备份直接覆盖生产。
 
 仍需完成 UI 扩展和真实设备验收，因此 **不要把 BabyMemo 当作已完全替代 MyBaby**。
