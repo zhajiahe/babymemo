@@ -3,6 +3,7 @@ import {Card,Pager} from '../../components/ui';
 import {MediaViewer,type MediaItem} from '../../components/MediaViewer';
 import {createAlbumThumbnail,createStoredThumbnail,createVideoThumbnail,fingerprintFile} from '../../media-upload';
 import {pickMatchingUpload,remainingPartNumbers} from '../../upload-plan.mjs';
+import {bestEffortFileDay} from '../../media-date.mjs';
 import {CloudUpload,Camera,Heart,Trash2} from 'lucide-react';
 import {api,post,today,mediaDay,ApiFailure,type BabyInfo} from '../../lib/client';
 
@@ -104,7 +105,7 @@ export function Album({baby,media,query,onQuery,favoriteOnly,onFavoriteOnly,favo
      setProgress(file.name+' · 正在检查分片');
      const fingerprint=await fingerprintFile(file);
      const existing=pickMatchingUpload(queue,{title:file.name.slice(0,120),size:file.size,mime,fingerprint}) as PendingUpload|undefined;
-     const session=existing||await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:autoDate?mediaDay(file,uploadDay):uploadDay,title:file.name,mime,size:file.size,fingerprint});
+     const session=existing||await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:autoDate?await bestEffortFileDay(file,uploadDay):uploadDay,title:file.name,mime,size:file.size,fingerprint});
      uploadId=session.id;
      const chunkSize=8388608;
      const total=Math.ceil(file.size/chunkSize);
@@ -189,7 +190,7 @@ export function Album({baby,media,query,onQuery,favoriteOnly,onFavoriteOnly,favo
   const next=media[current+step];
   if(next)setSelected(next);
  }
- return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用文件日期（可能不是实际拍摄日）</label><label>默认日期 <input type="date" value={uploadDay} max={today()} onChange={e=>setUploadDay(e.target.value)}/></label></div><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>{progress&&<p className="small" role="status">{progress}</p>}</Card>
+ return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用 JPEG 拍摄日期；其他文件回退修改日期（可手动改）</label><label>默认日期 <input type="date" value={uploadDay} max={today()} onChange={e=>setUploadDay(e.target.value)}/></label></div><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>{progress&&<p className="small" role="status">{progress}</p>}</Card>
  {backfill.remaining>0&&<Card className="thumbnail-backfill"><div className="section-title"><h3>补全旧照片缩略图</h3><span className="muted small">{backfill.remaining} 张待处理</span></div><p className="muted small">需要通过当前设备下载旧照片并生成私有缩略图。建议连接 Wi-Fi，保持页面开启。原图不会被修改；不支持解码或大于 25MB 的照片会跳过。</p><div className="backfill-actions">{backfill.running?<button className="secondary" type="button" onClick={()=>{stopBackfill.current=true}}>停止补全</button>:<button className="primary" type="button" disabled={uploading} onClick={()=>void backfillThumbnails()}>开始补全</button>}<span className="muted small">{backfill.running?'处理中 · ':''}成功 {backfill.completed} · 跳过 {backfill.skipped} · 失败 {backfill.failed}</span></div></Card>}
  {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">网络中断或刷新页面后，重新选择原来的文件，会自动识别并继续上传未完成的分片。文件不会保存在本网站中。</p>{pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><div className="pending-actions">{item.completedParts.length===Math.ceil(item.size/8388608)&&<button className="primary" type="button" disabled={uploading} onClick={()=>void finishPending(item.id)}>完成保存</button>}<button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div></div>)}</Card>}
  <div className="album-toolbar"><label className="field">搜索名称<input type="search" value={query} maxLength={80} placeholder="查找照片或视频" onChange={e=>onQuery(e.target.value)}/></label><label className="album-favorite-filter"><input type="checkbox" checked={favoriteOnly} onChange={e=>onFavoriteOnly(e.target.checked)}/> <Heart size={15}/> 仅看收藏</label></div>
