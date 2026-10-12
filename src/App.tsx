@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
 import { MediaViewer, type MediaItem } from './components/MediaViewer';
+import { createAlbumThumbnail, fingerprintFile } from './media-upload';
+import { pickMatchingUpload, remainingPartNumbers } from './upload-plan.mjs';
 import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
 
 type BabyInfo={id:string;name:string;birthday:string;gender:string;time_zone:string;allergies:string;notes:string};
@@ -134,57 +136,101 @@ function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;m
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
  const [selected,setSelected]=useState<MediaItem|null>(null);
  useEffect(()=>{setSelected(null)},[baby.id]);
- async function upload(files:FileList|null){
-  if(!files?.length||uploading)return;
+ type PendingUpload={id:string;day:string;title:string;mime:string;size:number;fingerprint:string;completedParts:number[];created_at:string};
+ const [pending,setPending]=useState<PendingUpload[]>([]);
+ async function refreshPending(){
+  const response=await api<{items:PendingUpload[]}>('/api/upload/pending?babyId='+encodeURIComponent(baby.id));
+  setPending(response.items);
+  return response.items;
+ }
+ useEffect(()=>{
+  let live=true;
+  void api<{items:PendingUpload[]}>('/api/upload/pending?babyId='+encodeURIComponent(baby.id))
+    .then(response=>{if(live)setPending(response.items)})
+    .catch(()=>{if(live)setPending([])});
+  return()=>{live=false};
+ },[baby.id]);
+ async function discard(id:string){
+  if(uploading||!confirm('确定取消这项未完成的上传吗？已上传的分片会被删除。'))return;
+  try{
+   await post('/api/upload/'+id+'/cancel',{});
+   await refreshPending();
+   notify('已取消未完成上传');
+  }catch(e){notify(e instanceof Error?e.message:'取消失败')}
+ }
+ async function upload(files:File[]){
+  if(!files.length||uploading)return;
   setUploading(true);
-  try {
-   for(const file of Array.from(files)){
+  try{
+   let queue=await refreshPending();
+   for(const file of files){
     let uploadId:string|undefined;
     try{
      if(file.size<1||file.size>209715200)throw Error('文件大小需在 1B～200MB 之间');
      const extension=file.name.toLowerCase().match(/\.(heic|heif|jpg|jpeg|png|webp|gif|mov|mp4|webm)$/)?.[1];
      const formats:Record<string,string>={heic:'image/heic',heif:'image/heif',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',mov:'video/quicktime',mp4:'video/mp4',webm:'video/webm'};
      const mime=file.type||(extension?formats[extension]:'application/octet-stream');
-     setProgress(file.name+' · 正在准备');
-     const start=await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:today(),title:file.name,mime,size:file.size});
-     uploadId=start.id;
-     const total=Math.ceil(file.size/start.chunkSize);
-     let next=0,completed=0,failed=false;
-     const uploadPart=async(index:number)=>{
-      const part=file.slice(index*start.chunkSize,Math.min(file.size,(index+1)*start.chunkSize));
+     setProgress(file.name+' · 正在检查分片');
+     const fingerprint=await fingerprintFile(file);
+     const existing=pickMatchingUpload(queue,{title:file.name,size:file.size,mime,fingerprint}) as PendingUpload|undefined;
+     const session=existing||await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:today(),title:file.name,mime,size:file.size,fingerprint});
+     uploadId=session.id;
+     const chunkSize=8388608;
+     const total=Math.ceil(file.size/chunkSize);
+     const numbers=remainingPartNumbers(total,existing?.completedParts||[]);
+     const completed=new Set(existing?.completedParts||[]);
+     if(existing)notify('找到上次的上传，正在续传：'+file.name);
+     let next=0,failed=false;
+     const sendPart=async(number:number)=>{
+      const part=file.slice((number-1)*chunkSize,Math.min(file.size,number*chunkSize));
       for(let attempt=0;attempt<3;attempt++){
        try{
-        await api('/api/upload/'+start.id+'/part/'+(index+1),{method:'PUT',body:part,headers:{'Content-Type':'application/octet-stream'}});
+        await api('/api/upload/'+uploadId+'/part/'+number,{method:'PUT',body:part,headers:{'Content-Type':'application/octet-stream'}});
         return;
        }catch(error){
-        if(attempt===2)throw error;
-        await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+        if(attempt===2||error instanceof ApiFailure&&[400,401,403,404,413].includes(error.status))throw error;
+        await new Promise(resolve=>setTimeout(resolve,1000*2**attempt));
        }
       }
      };
-     const jobs=Array.from({length:Math.min(3,total)},async()=>{
-      while(!failed&&next<total){
-       const index=next++;
+     const concurrency=window.matchMedia('(pointer:coarse)').matches?2:3;
+     const jobs=Array.from({length:Math.min(concurrency,numbers.length)},async()=>{
+      while(!failed&&next<numbers.length){
+       const number=numbers[next++];
        try{
-        await uploadPart(index);
-        completed++;
-        setProgress(file.name+' · '+Math.round(completed/total*100)+'%');
-       }catch(error){failed=true;throw error;}
+        await sendPart(number);
+        completed.add(number);
+        setProgress(file.name+' · '+Math.round(completed.size/total*100)+'%');
+       }catch(error){failed=true;throw error}
       }
      });
      const results=await Promise.allSettled(jobs);
-     const rejection=results.find((r):r is PromiseRejectedResult=>r.status==='rejected');
+     const rejection=results.find((x):x is PromiseRejectedResult=>x.status==='rejected');
      if(rejection)throw rejection.reason;
-     setProgress(file.name+' · 正在保存');
-     await post('/api/upload/'+start.id+'/finish',{});
+     setProgress(file.name+' · 正在保存原文件');
+     await post('/api/upload/'+uploadId+'/finish',{});
      uploadId=undefined;
-     notify('已保存 '+file.name);
+     queue=queue.filter(x=>x.id!==session.id);
      changed();
+     notify('已保存 '+file.name);
+     // Thumbnails are independent of the original multipart upload.
+     if(mime.startsWith('image/')){
+      try{
+       setProgress(file.name+' · 正在生成缩略图');
+       const thumb=await createAlbumThumbnail(file);
+       if(thumb)await api('/api/media/'+session.id+'/thumbnail',{method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}});
+      }catch{
+       notify(file.name+' 已保存，但缩略图暂不可用（相册仍可查看原图）');
+      }
+     }
     }catch(error){
-     if(uploadId)await post('/api/upload/'+uploadId+'/cancel',{}).catch(()=>{});
-     notify(file.name+'：'+(error instanceof Error?error.message:'上传失败'));
+     // Never abort a recoverable session automatically; Safari can lose connectivity.
+     notify(file.name+'：'+(error instanceof Error?error.message:'上传中断')+'。重新选择同一文件即可续传。');
     }
+    try{queue=await refreshPending()}catch{}
    }
+  }catch(error){
+   notify(error instanceof Error?error.message:'无法检查未完成上传，请检查网络后重试');
   }finally{
    setUploading(false);
    setProgress('');
@@ -203,8 +249,9 @@ function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;m
   const next=media[current+step];
   if(next)setSelected(next);
  }
- return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const selected=e.target.files;void upload(selected);e.target.value='';}}/></label>{progress&&<p className="small">{progress}</p>}</Card>
- <div className="photo-grid">{media.map(item=><Card key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+(item.title||'成长回忆')}><span className="photo-frame">{item.mime.startsWith('image/')?<img src={'/api/media/'+item.id+'/content'} loading="lazy" decoding="async" alt="" />:<span className="video-placeholder" aria-hidden="true"><Camera size={32}/><span>视频 · 点击播放</span></span>}</span><span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button><div className="photo-caption"><div><strong>{item.title||'未命名'}</strong><p>{item.day}</p></div><button type="button" className="icon-btn" onClick={()=>void remove(item.id)} aria-label={'删除 '+(item.title||'媒体')}><Trash2 size={16}/></button></div></Card>)}</div>{!media.length&&<div className="empty card">还没有照片，试试上传第一张。</div>}<Pager page={page} setPage={setPage} hasMore={hasMore}/>{selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia}/> }</>;
+ return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>{progress&&<p className="small">{progress}</p>}</Card>
+ {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">网络中断或刷新页面后，重新选择原来的文件，会自动识别并继续上传未完成的分片。文件不会保存在本网站中。</p>{pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div>)}</Card>}
+ <div className="photo-grid">{media.map(item=><Card key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+(item.title||'成长回忆')}><span className="photo-frame">{item.mime.startsWith('image/')?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt="" />:<span className="video-placeholder" aria-hidden="true"><Camera size={32}/><span>视频 · 点击播放</span></span>}</span><span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button><div className="photo-caption"><div><strong>{item.title||'未命名'}</strong><p>{item.day}</p></div><button type="button" className="icon-btn" onClick={()=>void remove(item.id)} aria-label={'删除 '+(item.title||'媒体')}><Trash2 size={16}/></button></div></Card>)}</div>{!media.length&&<div className="empty card">还没有照片，试试上传第一张。</div>}<Pager page={page} setPage={setPage} hasMore={hasMore}/>{selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia}/> }</>;
 }
 function Assistant({configured,babyId,setActive}:{configured:boolean;babyId:string;setActive:(v:Tab)=>void}){
  const [input,setInput]=useState(''),[messages,setMessages]=useState<{role:'me'|'bot';text:string}[]>([]),[waiting,setWaiting]=useState(false);
