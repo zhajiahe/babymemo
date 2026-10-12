@@ -75,7 +75,7 @@ export default function App(){
     .then(r=>{if(!cancelled){setGrowthHistory(r.items);setHistoryLimited(r.limited)}}));
   }
   if(active==='overview'||active==='album'){
-   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+albumPage+(favoriteOnly?'&favorite=1':''))
+   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+(active==='overview'?0:albumPage)+(active==='album'&&favoriteOnly?'&favorite=1':''))
     .then(r=>{if(!cancelled){setMedia(r.items);setHasMore(p=>({...p,album:r.hasMore}))}}));
   }
   void Promise.all(loads).catch(e=>{if(!cancelled)setToast(e instanceof Error?e.message:'数据读取失败')});
