@@ -467,7 +467,7 @@ async function browserE2e(){
           httpOnly:true,secure:false,sameSite:'Lax'}]);
         await page.reload({waitUntil:'domcontentloaded'});
       }
-      await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
+      await page.getByRole('heading',{name:'Test Baby'}).waitFor({timeout:20000});
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
     });
     await step((useWebKit?'WebKit':'Chromium')+': page reload and new tab reuse the same login',async()=>{
@@ -475,25 +475,25 @@ async function browserE2e(){
       // The Worker HTTP test asserts persistent Max-Age and security flags;
       // this browser test verifies that reload/new tab actually remain signed in.
       await page.reload({waitUntil:'domcontentloaded'});
-      await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
+      await page.getByRole('heading',{name:'Test Baby'}).waitFor({timeout:20000});
       assert.equal(await page.locator('input[autocomplete="current-password"]').count(),0);
       const another=await context.newPage();
       try{
         await another.goto(base+'/',{waitUntil:'domcontentloaded'});
-        await another.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
+        await another.getByRole('heading',{name:'Test Baby'}).waitFor({timeout:20000});
         assert.equal(await another.locator('input[autocomplete="current-password"]').count(),0);
       }finally{await another.close();}
     });
     await step((useWebKit?'WebKit':'Chromium')+': add baby through Settings and switch back',async()=>{
       await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
-      await page.getByRole('heading',{name:'空间设置'}).waitFor();
+      await page.getByRole('heading',{name:'设置'}).waitFor();
       await page.getByRole('button',{name:'新增宝宝'}).click();
       const create=page.locator('.baby-create-form');
       await create.getByLabel('宝宝名字').fill('Browser New Baby');
       await create.getByLabel('出生日期').fill('2025-06-06');
       await create.getByLabel('性别').selectOption('girl');
       await create.getByRole('button',{name:/创建并切换到新宝宝/}).click();
-      await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor();
+      await page.getByRole('heading',{name:'Browser New Baby'}).waitFor();
       await page.locator('select[aria-label="选择宝宝"]').waitFor();
       await page.waitForFunction(()=>document.querySelector('select[aria-label="选择宝宝"]')?.selectedOptions[0]?.textContent==='Browser New Baby');
       const options=await page.locator('select[aria-label="选择宝宝"] option').allTextContents();
@@ -520,7 +520,7 @@ async function browserE2e(){
         body:new Uint8Array(png),headers:{'Content-Type':'application/octet-stream'}});
       assert.equal(part.status,200,JSON.stringify(part.data));
       assert.equal((await json('/api/upload/'+upload.data.id+'/finish',{method:'POST',body:{}})).status,201);
-      await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
+      await page.locator('.sidebar .nav-link').filter({hasText:'相册'}).click();
       await page.locator('.photo-preview').first().waitFor({state:'visible',timeout:15000});
       assert.equal(await page.locator('.thumbnail-backfill').count(),0);
       assert.equal(await page.locator('.upload-card').count(),0);
@@ -528,8 +528,8 @@ async function browserE2e(){
       assert.equal(state.data.items.some(item=>item.id===upload.data.id),true);
     });
     await step((useWebKit?'WebKit slow network':'Chromium')+': gallery image upload and private preview',async()=>{
-      await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
-      await page.getByRole('heading',{name:'家庭相册'}).waitFor();
+      await page.locator('.sidebar .nav-link').filter({hasText:'相册'}).click();
+      await page.getByRole('heading',{name:'相册'}).waitFor();
       // A tiny valid PNG; user photos and R2 production storage are untouched.
       const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ln0AAAAASUVORK5CYII=','base64');
       await page.getByRole('button',{name:'添加照片或视频'}).click();
@@ -548,24 +548,23 @@ async function browserE2e(){
             await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
       await page.getByRole('button',{name:/保存信息/}).click();
       await page.getByText('照片信息已更新').waitFor({timeout:15000});
-      await page.getByRole('button',{name:'关闭预览'}).click();
-      const editedCard=page.locator('.photo-item').filter({hasText:'2026-02-01'});
-      await editedCard.waitFor({state:'visible',timeout:15000});
+      const count=await page.locator('.photo-item').count();
       page.once('dialog',dialog=>void dialog.accept());
-      await editedCard.getByRole('button',{name:/删除/}).click();
-      await editedCard.waitFor({state:'detached',timeout:15000});
+      await page.getByRole('button',{name:'移入回收站'}).click();
+      await page.waitForFunction(previous=>document.querySelectorAll('.photo-item').length===previous-1,count);
+
     });
     await step((useWebKit?'WebKit':'Chromium')+': 390px mobile navigation and horizontal overflow',async()=>{
       await page.setViewportSize({width:390,height:844});
-      await page.locator('.mobile-nav button[aria-label="成长曲线"]').click();
+      await page.locator('.mobile-nav button[aria-label="成长"]').click();
       await page.getByRole('heading',{name:'成长记录'}).waitFor();
       const overflow=await page.evaluate(()=>({
         screen:window.innerWidth,scroll:document.documentElement.scrollWidth
       }));
       assert.ok(overflow.scroll<=overflow.screen+1,'mobile horizontal overflow '+JSON.stringify(overflow));
       await page.screenshot({path:join(evidence,'mobile-growth.png'),fullPage:true});
-      await page.locator('.mobile-nav button[aria-label="家庭相册"]').click();
-      await page.getByRole('heading',{name:'家庭相册'}).waitFor();
+      await page.locator('.mobile-nav button[aria-label="相册"]').click();
+      await page.getByRole('heading',{name:'相册'}).waitFor();
       assert.equal(await page.locator('.upload-card').count(),0);
       await page.screenshot({path:join(evidence,'mobile-album.png'),fullPage:true});
     });
