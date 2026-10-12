@@ -24,7 +24,7 @@ test('semantic palette preserves readable brand and supporting text',()=>{
  assert.ok(contrast(token('error'),'#fff1ed')>=4.5,'error requires 4.5:1');
 });
 test('primary actions share the high-contrast brand token',()=>{
- for(const selector of ['.primary{','.upload-action{','.chat-input button{']){
+ for(const selector of ['.primary{','.upload-action{']){
   const start=css.indexOf(selector);
   assert.ok(start>=0,'missing '+selector);
   const block=css.slice(start,css.indexOf('}',start));

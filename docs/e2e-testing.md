@@ -21,3 +21,8 @@ CI 另设 **Browser E2E (Chromium)**，安装固定版本的 Playwright Core，�
 - Chromium 与 WebKit：移动端相册上传、改名、软删除、图片预览、已完成分片恢复；对 WebKit 注入分片请求失败和模拟弱网。
 - 静态测试随着组件拆分迁至 `src/features` 路径；`scripts/media-date.test.mjs` 检查 JPEG EXIF 读取。
 - **仍缺**：实体 iPhone Safari、真实 HEIC/MOV 解码、微信授权稳定性、真实 Cloudflare D1+R2 备份恢复演练，以及长期弱网/大流量压力测试。
+
+
+### 微信工具 Harness 单元测试
+
+`scripts/wechat-harness.test.mjs` 使用模拟 D1 校验工具注册、宝宝 ID 限定、查询结果包含记录编号、日期合法性、目标唯一性，以及缺少用户明确删除/修改意图时不执行数据库变更。真实 iLink + OpenRouter 仍须真号验收。

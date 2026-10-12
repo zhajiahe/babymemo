@@ -4,13 +4,13 @@
 
 ## 1. 产品目标与不可改变的边界
 
-BabyMemo 是小型、隐私优先的家庭成长记录服务。核心体验是手机上快速记录宝宝的成长数据、里程碑、照片和视频；AI 与微信是附加入口，不应妨碍基本记录能力。
+BabyMemo 是小型、隐私优先的家庭成长记录服务。核心体验是手机上快速记录宝宝的成长数据、里程碑、照片和视频；微信私聊是核心远程操作入口（可插拔工具 Harness），网页负责管理与查阅；没有独立的网页 AI 聊天或育儿分析助手。
 
 - 前端：React 19 + TypeScript + Vite + `lucide-react`，目前主要页面在 `src/App.tsx`，样式在 `src/styles.css`。
 - 后端：Hono on Cloudflare Workers，路由在 `src/worker.ts`，登录/初始化在 `src/auth.ts`。
 - 持久化：Cloudflare D1（业务事实来源）；R2 `MEDIA`（私有照片和视频）；Durable Object `BOT` / `WechatSession`（微信 iLink 轮询）。
 - 配置：`wrangler.jsonc`；数据库迁移：`migrations/`；构建及脚本：`package.json`。
-- AI **仅 OpenRouter**，Key 在登录后的设置页保存，并通过 `DATA_KEY` 加密；微信 iLink 可选，不需要 OpenClaw、VPS 或常驻 Node 服务。
+- OpenRouter **仅用作微信消息→工具调用路由**，不是网页聊天模型。Key 在设置页保存并通过 `DATA_KEY` 加密；微信 iLink 可选，不需要 OpenClaw、VPS 或常驻 Node 服务。
 - 当前是**单家庭管理员**的初始化和登录流程，使用应用层 HttpOnly Cookie，不使用 FlareMo 的 Better Auth / PAT / Memos API。不要未经产品决策增设公开注册、多租户、第二套登录或匿名数据访问。
 - MyBaby 旧生产站（Vercel/Neon/R2）与 BabyMemo 新环境隔离。**没有授权不得触碰、迁移、覆盖旧生产数据**。迁移计划参见 `docs/MIGRATION.md`。
 
@@ -22,7 +22,7 @@ BabyMemo 是小型、隐私优先的家庭成长记录服务。核心体验是�
 | 初始化 / 登录 | `src/auth.ts`、`src/worker.ts`、`docs/DEPLOY.md` |
 | D1 / 成长记录 | `migrations/`、`src/worker.ts`、`src/types.ts` |
 | 相册上传 / 视频 | `src/App.tsx` 的 `Album`、`src/worker.ts` 的 `/api/upload/*` 和 `/api/media/*`、R2 binding |
-| AI / 微信 | `src/wechat.ts`、`src/crypto.ts`、`src/worker.ts` 的设置及 `/api/chat` 路由 |
+| 微信操作 Harness | `src/wechat-harness.mjs` 工具白名单与 D1 执行、`src/wechat.ts` 绑定/路由/轮询、`src/worker.ts` 配置 API |
 | 部署 / Cloudflare | `docs/agent-deploy.md`、`docs/github-action-deploy.md`、`.github/workflows/deploy.yml`、`wrangler.jsonc` |
 | 新旧系统迁移 | `docs/MIGRATION.md`；只做规划和核验，除非另获明确执行授权 |
 
@@ -73,7 +73,7 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 - 新触控控件争取至少 **44 × 44 CSS px**，焦点必须可见。对比度目标：普通正文至少 4.5:1，较大文字或 UI 图形至少 3:1，必要时调整颜色而不是降低字号。
 - 重点检查宽度 **320px、375px、768px 和桌面**，关注底部安全区、相册、长文件名、初始化表单和软键盘遮挡。
 - 尊重 `prefers-reduced-motion`；加载、上传、保存、失败都应有可理解的状态，不滥用 toast、持续动画和装饰性渐变。
-- 新增 UI 文案统一使用「成长记录 / 成长瞬间 / 家庭相册 / AI 助手 / 微信 ClawBot」，不随意改名。宝宝健康信息不做未经验证的医学诊断。
+- 新增 UI 文案统一使用「成长记录 / 成长瞬间 / 家庭相册 / 微信操作」，不随意改名。宝宝健康信息不做未经验证的医学诊断。
 
 ## 6. 密钥、隐私与安全
 
@@ -120,3 +120,11 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 - 旧照片缩略图只允许管理员在相册主动触发；旧原文件经私有 API 加载，浏览器以 10 条为上限的小批次处理，失败/大文件跳过，原图不能修改。
 - Cron 每天 UTC 19:00 执行，针对连续 14 天无成功分片活动的会话，以最多 30 条为一批检查。R2 存在完整对象时优先补记 D1；R2 不存在时可中止未完成 multipart 并删掉会话。检查失败保留记录，绝不能盲删可能已经完成的媒体。
 - WebKit Linux 测试是 Safari 引擎兼容性测试，**不构成真实 iPhone Safari 验收**。真实设备若未执行，必须如实标识。
+
+
+## 微信工具安全边界
+
+- 禁止重新新增网页 AI 助手或 `/api/chat` 作为主入口；OpenRouter 只生成工具名称及参数，真实读写必须通过白名单 Harness。
+- 每条指令最多执行一个操作。变更必须显式指明目标宝宝和记录日期或编号；目标不唯一、记录已删除、缺少修改或删除意图应拒绝执行。
+- 模型无 SQL、R2 密钥、管理员会话等工具权限。消息来自绑定微信的单聊账户；不可跨宝宝写入。不返回私有媒体的匿名链接。
+- 微信删除均应采用 30 天回收站；更新与删除应使用精确记录 ID，移动端网络重试不允许重复新增。
