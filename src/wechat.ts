@@ -2,6 +2,7 @@ import JSONBig from 'json-bigint';
 import type { Env, Baby } from './types';
 import { decryptSecret, encryptSecret, setting } from './crypto';
 import { wechatTools, wechatHelp, runWechatTool } from './wechat-harness.mjs';
+import {WechatPhotoError,photoItems,persistWeChatPhotos} from './wechat-media.mjs';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
 const wireJSON=JSONBig({storeAsString:true,strict:true,protoAction:'error',constructorAction:'error'});
@@ -106,6 +107,27 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string):
   try{args=JSON.parse(call.function.arguments) as Record<string,unknown>}catch{return '无法解析指令参数，请再说一遍'}
   return await runWechatTool(env,baby,call.function.name,args,messageId,command);
 }
+// The photo itself has no baby name. Use the caption when present, otherwise
+// an explicitly configured default baby; never silently choose first of many.
+export async function handleWechatPhotoMessage(env:Env,raw:Json,messageId:string):Promise<string>{
+  const babies=await env.DB.prepare('SELECT id,name,birthday,time_zone FROM babies ORDER BY created_at').all<Baby>();
+  if(!babies.results.length)return '请先在 BabyMemo 网页创建宝宝档案，再发送照片。';
+  const caption=(Array.isArray(raw.item_list)?raw.item_list:[])
+   .filter((item:any)=>item?.type===1&&typeof item?.text_item?.text==='string')
+   .map((item:any)=>item.text_item.text).join(' ').trim();
+  const found=babies.results.filter(b=>b.name&&caption.includes(b.name));
+  if(found.length>1)return '这张照片的文字中提到了多位宝宝，请每次只指定一位宝宝。';
+  let baby=found[0];
+  if(!baby){
+    if(babies.results.length===1)baby=babies.results[0];
+    else{
+      const preferred=await setting(env,'wechat_default_baby_id');
+      baby=babies.results.find(b=>b.id===preferred);
+      if(!baby)return '收到照片，但当前家庭有多位宝宝。请先在网页「设置 → 微信操作」选择默认收图宝宝，或发送带宝宝昵称的图片消息。照片尚未保存。';
+    }
+  }
+  return await persistWeChatPhotos(env,raw,baby,messageId);
+}
 export class WechatSession {
   constructor(private readonly ctx: DurableObjectState,private readonly env: Env){}
   async fetch(request:Request):Promise<Response>{
@@ -149,7 +171,8 @@ export class WechatSession {
         if(!Array.isArray(raw.item_list))continue;
         const text=raw.item_list.filter((i:any)=>i?.type===1&&typeof i?.text_item?.text==='string').map((i:any)=>i.text_item.text).join('\n').trim();
         const msgid=String(raw.message_id||'');
-        if(!text||!msgid||text.length>3000)continue;
+        const hasPhotos=photoItems(raw).length>0;
+        if((!text&&!hasPhotos)||!msgid||text.length>3000)continue;
         const unique=botId+':'+msgid;
         await this.env.DB.prepare("INSERT OR IGNORE INTO wechat_messages(message_id,state,created_at) VALUES(?,'processing',?)").bind(unique,new Date().toISOString()).run();
         const row=await this.env.DB.prepare('SELECT state,reply_text,client_id FROM wechat_messages WHERE message_id=?').bind(unique)
@@ -157,8 +180,14 @@ export class WechatSession {
         if(row?.state==='done')continue;
         let reply=row?.reply_text?await decryptSecret(this.env,row.reply_text):'';
         if(!reply){
-          try{reply=await handleWechatCommand(this.env,text,unique)}
-          catch{reply='暂时无法处理，请稍后再发送一次。';}
+          try{
+            reply=hasPhotos?await handleWechatPhotoMessage(this.env,raw,unique):await handleWechatCommand(this.env,text,unique);
+          }catch(e){
+            // Protocol-invalid or expired photos can be acknowledged with a helpful
+            // error. Network/R2/D1 failures are retried with the original cursor.
+            if(hasPhotos&&!(e instanceof WechatPhotoError))throw e;
+            reply=e instanceof WechatPhotoError?e.message:'暂时无法处理，请稍后再发送一次。';
+          }
         }
         // Save a deterministic response and client ID before sending. Replayed batches
         // reuse both and cannot create duplicate growth rows for the same message.

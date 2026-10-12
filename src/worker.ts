@@ -85,7 +85,7 @@ app.get('/api/state',async c=>{
   }
   return c.json({ownerName:user!.name,familyName:familyName||'家庭空间',babies:babies.results,counts:{growth:growth?.count??0,milestones:milestones?.count??0,media:media?.count??0},countsByBaby,
     openrouter:{configured:!!encryptedApiKey,model:model||'openai/gpt-4.1-mini'},
-    wechat:{connected:!!encryptedBot,enabled:botOn==='true'}});
+    wechat:{connected:!!encryptedBot,enabled:botOn==='true',defaultBabyId:await setting(c.env,'wechat_default_baby_id')||''}});
 });
 app.post('/api/babies',async c=>{
   try {
@@ -441,6 +441,16 @@ app.post('/api/settings/wechat/qr/status',async c=>{
     }
     return c.json({status:result.status});
   }catch{return fail(c,502,'WECHAT_PAIRING_FAILED');}
+});
+// The default target is used only for image-only WeChat messages in multi-baby families.
+app.post('/api/settings/wechat/default-baby',async c=>{
+  try{
+    const v=await json(c.req.raw);
+    if(typeof v.babyId!=='string')return fail(c,400,'INVALID_BABY');
+    if(v.babyId&&!await babyExists(c.env,v.babyId))return fail(c,404,'INVALID_BABY');
+    await setSetting(c.env,'wechat_default_baby_id',v.babyId);
+    return c.json({ok:true,defaultBabyId:v.babyId});
+  }catch{return fail(c,400,'INVALID_BABY')}
 });
 app.post('/api/settings/wechat/:action',async c=>{
   const action=c.req.param('action');
