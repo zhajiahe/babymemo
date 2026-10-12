@@ -9,7 +9,11 @@
     "deploy": "npm run build && wrangler deploy && wrangler d1 migrations apply DB --remote",
     "db:local": "wrangler d1 migrations apply DB --local",
     "db:remote": "wrangler d1 migrations apply DB --remote",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "deploy:dry-run": "npm run build && wrangler deploy --dry-run",
+    "provision:remote": "node scripts/provision-cloudflare.mjs",
+    "smoke:check": "node scripts/smoke-check.mjs",
+    "verify": "npm run check && npm run build"
   },
   "cloudflare": {
     "bindings": {
