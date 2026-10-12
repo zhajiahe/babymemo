@@ -8,7 +8,7 @@ import {spawnSync} from 'node:child_process';
 
 const script=fileURLToPath(new URL('./deploy-worker-with-retry.sh',import.meta.url));
 const oldSha='a'.repeat(40),newSha='b'.repeat(40);
-function scenario({messages=['success'],heads=[oldSha],event='workflow_run'}={}){
+function scenario({messages=['success'],heads=[oldSha],event='workflow_run',withSecret=false}={}){
  const dir=mkdtempSync(join(tmpdir(),'babymemo-retry-'));
  const make=(name,content)=>{
   const path=join(dir,name);writeFileSync(path,content);chmodSync(path,0o755);
@@ -16,7 +16,7 @@ function scenario({messages=['success'],heads=[oldSha],event='workflow_run'}={})
  make('npx',[
  '#!/usr/bin/env bash',
  'set -euo pipefail',
- '[[ "$*" == "wrangler deploy --keep-vars" ]] || exit 91',
+ '[[ "$*" == "wrangler deploy --keep-vars" || "$*" == "wrangler deploy --keep-vars --secrets-file $BABYMEMO_SECRETS_FILE" ]] || exit 91',
  'n=0',
  '[[ ! -f "$COUNT_FILE" ]] || n="$(cat "$COUNT_FILE")"',
  'n=$((n+1)); echo "$n" > "$COUNT_FILE"',
@@ -38,10 +38,12 @@ function scenario({messages=['success'],heads=[oldSha],event='workflow_run'}={})
  writeFileSync(join(dir,'messages'),messages.join('\n')+'\n');
  writeFileSync(join(dir,'heads'),heads.join('\n')+'\n');
  const countPath=join(dir,'count'),headCount=join(dir,'head-count'),sleepPath=join(dir,'sleeps');
+ const secretPath=join(dir,'openrouter.json');
+ if(withSecret)writeFileSync(secretPath,JSON.stringify({OPENROUTER_API_KEY:'sk-or-test-only'}));
  try{
   const result=spawnSync('bash',[script],{
    env:{...process.env,PATH:dir+':'+process.env.PATH,
-     GITHUB_EVENT_NAME:event,EXPECTED_SHA:oldSha,
+     GITHUB_EVENT_NAME:event,EXPECTED_SHA:oldSha,BABYMEMO_SECRETS_FILE:withSecret?secretPath:'',
      COUNT_FILE:countPath,MESSAGES_FILE:join(dir,'messages'),
      HEAD_COUNT_FILE:headCount,HEADS_FILE:join(dir,'heads'),SLEEP_FILE:sleepPath},
    encoding:'utf8',timeout:8000
@@ -83,4 +85,10 @@ test('manual releases do not require current main SHA',()=>{
  assert.equal(x.status,0,x.stdout);
  assert.equal(x.attempts,1);
  assert.equal(x.checks,0);
+});
+
+test('optional deployment secret file is supplied to the same Worker publish',()=>{
+ const x=scenario({withSecret:true});
+ assert.equal(x.status,0,x.stdout);
+ assert.equal(x.attempts,1);
 });

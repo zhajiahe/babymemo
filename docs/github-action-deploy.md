@@ -31,6 +31,9 @@ openssl rand -hex 32
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号 ID | 必填 |
 | `SESSION_SECRET` | 家庭登录 Cookie 签名 | 至少 32 字符，保持稳定 |
 | `DATA_KEY` | 加密 OpenRouter / 微信凭据 | **恰好 64 位十六进制字符**，保持稳定 |
+| `OPENROUTER_API_KEY` | 可选：部署时统一配置微信指令模型的 OpenRouter Key | 以 `sk-or-` 开头，不写入源码或 D1 |
+
+**重要：** 设置 `OPENROUTER_API_KEY` 后，下一次正式部署会把它作为 Cloudflare Worker Secret 写入，并优先于网页中原先加密保存的 Key。若部署 Secret 生效，网页只能修改模型 ID；要换 Key 请更新 GitHub Secret 后重新部署。若 GitHub Secret 缺失，部署会保留既有 Worker Secret 和原先的 D1 设置；**清空 GitHub Secret 不会撤销已经部署的 Worker Secret**，需要到 Cloudflare 控制台明确删除。
 
 **不可将密钥写进** workflow 文件、提交记录、Issue、PR、聊天、`workflow_dispatch` 的表单输入或浏览器地址。GitHub Secret 保存后不会回显原值。`SESSION_SECRET` 变化会令既有会话失效；`DATA_KEY` 变化会使已经保存的 OpenRouter 和微信凭据无法解密，**升级时必须复用旧值**。首次初始化已无需独立密钥。已配置在旧 Worker 中的初始化密钥不再使用，也不会自动删除。新实例应立即注册管理员，或先使用 Cloudflare Access 限制访问。
 
@@ -58,8 +61,8 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 1. 检查 Cloudflare Token、Account ID 是否存在。
 2. `npm run provision:remote`：根据 [`wrangler.jsonc`](../wrangler.jsonc) 查找或创建 D1 `babymemo`、R2 `babymemo-media`，并将解析出的 `database_id` 写入**本次 Actions 工作目录**，不会回写 GitHub。
 3. `npm run verify`：执行 TypeScript 检查、单元测试与 Vite 构建。
-4. `npx wrangler d1 migrations apply DB --remote`：运行 `migrations/` 下尚未应用的迁移。
-5. `npx wrangler deploy --keep-vars`：发布 Worker、静态资源以及 `WechatSession` Durable Object 绑定，并保留在 Cloudflare 控制台设定的变量。
+4. `node scripts/reconcile-birth-time.mjs` 先只读检查 `babies.birth_time` 与 D1 迁移历史：仅当字段已经存在、形状完全匹配且前置迁移已记录时，补记 `0012_birth_time.sql`；绝不重建字段或删除数据。然后 `npx wrangler d1 migrations apply DB --remote` 继续运行真正尚未执行的迁移。
+5. `npx wrangler deploy --keep-vars`：发布 Worker、静态资源以及 `WechatSession` Durable Object 绑定，并保留控制台变量。若 GitHub Actions 已配置 `OPENROUTER_API_KEY`，则通过临时 0600 权限 JSON 文件与 `--secrets-file` 在同一次发布中写入 Worker Secret；文件执行后删除，日志不打印密钥。
 6. **仅手动正式发布**：验证并同步 GitHub Secrets 中的 `SESSION_SECRET`、`DATA_KEY` 到 Worker。**CI 自动发布绝不重新写入这两项密钥**，保持 Cloudflare Worker 中既有值；必须确保首次安装时已经通过手动发布或控制台配置好密钥。
 7. `npm run smoke:check`：检查 `/api/health`（包含 D1 可用性）和 `/api/bootstrap/status`（只验证两项 Secret 是否配置，不泄露其值）。
 
@@ -78,7 +81,7 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 1. 退出并以家庭管理员名称、密码重新登录。
 2. 新增、查看、删除一条测试成长记录；确认只在当前宝宝下显示。
 3. 上传一张照片，在手机浏览器打开相册并确认可读取；再测试视频和弱网络上传。
-4. 在设置中填写 OpenRouter Key 和模型 ID，点击测试；**不要**把 API Key 放入 GitHub Secrets。
+4. OpenRouter Key 二选一：推荐管理员预先设置 GitHub Actions Secret `OPENROUTER_API_KEY` 再运行正式发布（页面会显示「部署 Secret 管理」）；或部署后在网页设置中填写 Key（加密保存在 D1）。填写模型 ID 后点击连接测试。不要把 Key 写入工作流输入框或日志。
 5. 如需微信 Bot，在设置中扫码绑定 iLink，确认授权后再**手动启用**，检查运行状态和白名单单聊；iLink 可能因第三方协议变化而失效。
 
 ## 5. 后续升级及自定义域名
@@ -127,3 +130,7 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 新增 `scripts/deploy-worker-with-retry.sh`：仅针对 502/503/504、429 和短时网络错误，最多尝试 3 次，失败后等待 15 秒、45 秒。每次自动重试前校验待部署 SHA 仍等于远端 `main`，阻止旧版覆盖新提交；权限/配置错误不重试。数据库迁移只在部署前执行一次，**重试阶段只重新执行 `wrangler deploy --keep-vars`**，不删除 D1/R2、不重写 `SESSION_SECRET` 或 `DATA_KEY`。发布成功后仍执行 Smoke Check。
 
 如果三次均失败，应查看 [Cloudflare Status](https://www.cloudflarestatus.com/) 并保留 Actions 错误信息；不要用重建数据库或轮换密钥的方式处理 Cloudflare 网关异常。
+
+## 迁移记录修复说明（0012）
+
+如果线上 `babies.birth_time` 已经由其他发布或人工操作创建，但 `d1_migrations` 未记录 `0012_birth_time.sql`，旧流程会报 `duplicate column name: birth_time`。新版部署先只读检查列类型、NOT NULL、默认值和 `0011_wechat_photo.sql` 记录，符合条件时仅向 `d1_migrations` 添加对应的迁移名称，再由 Wrangler 正常处理其他迁移。若不符合精确条件，部署会明确失败，禁止直接删列、重建数据库或手动跳过整批迁移。修复不等同于生产数据备份。
