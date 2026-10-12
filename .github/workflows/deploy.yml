@@ -1,6 +1,10 @@
 name: Deploy BabyMemo to Cloudflare
 
 on:
+  workflow_run:
+    workflows: ["Check BabyMemo"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -20,7 +24,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  gate:
+    name: Select tested revision
+    # Trust only successful same-repository main push CI, never PR or fork CI.
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'workflow_run' &&
+           github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.event == 'push' &&
+           github.event.workflow_run.head_branch == 'main' &&
+           github.event.workflow_run.head_repository.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.select.outputs.proceed }}
+      revision: ${{ steps.select.outputs.revision }}
+      dry_run: ${{ steps.select.outputs.dry_run }}
+      provision: ${{ steps.select.outputs.provision }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select tested revision or manual ref
+        id: select
+        shell: bash
+        env:
+          EVENT_KIND: ${{ github.event_name }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          MANUAL_SHA: ${{ github.sha }}
+          MANUAL_DRY_RUN: ${{ inputs.dry_run }}
+          MANUAL_PROVISION: ${{ inputs.provision }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_KIND" == "workflow_dispatch" ]]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            echo "revision=$MANUAL_SHA" >> "$GITHUB_OUTPUT"
+            echo "dry_run=$MANUAL_DRY_RUN" >> "$GITHUB_OUTPUT"
+            echo "provision=$MANUAL_PROVISION" >> "$GITHUB_OUTPUT"
+          else
+            current="$(git ls-remote origin refs/heads/main | cut -f1)"
+            [[ "$current" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Unable to verify main revision"; exit 1; }
+            if [[ "$current" != "$TESTED_SHA" ]]; then
+              echo "::notice::Skipping outdated CI revision $TESTED_SHA; current main is $current"
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            echo "revision=$TESTED_SHA" >> "$GITHUB_OUTPUT"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+            # An unattended release must never create a new D1 or R2 resource.
+            echo "provision=false" >> "$GITHUB_OUTPUT"
+          fi
   deploy:
+    needs: gate
+    if: ${{ needs.gate.outputs.proceed == 'true' }}
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 25
@@ -29,8 +83,12 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       BABYMEMO_PUBLIC_URL: ${{ vars.BABYMEMO_PUBLIC_URL }}
+      DRY_RUN: ${{ needs.gate.outputs.dry_run }}
+      PROVISION: ${{ needs.gate.outputs.provision }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.revision }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -40,8 +98,8 @@ jobs:
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "CLOUDFLARE_API_TOKEN is missing"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "CLOUDFLARE_ACCOUNT_ID is missing"; exit 1; }
-      - name: Validate production secrets
-        if: ${{ inputs.dry_run != true }}
+      - name: Validate production secrets (manual release)
+        if: ${{ github.event_name == 'workflow_dispatch' && needs.gate.outputs.dry_run == 'false' }}
         shell: bash
         env:
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
@@ -61,24 +119,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ inputs.dry_run }}" == "true" || "${{ inputs.provision }}" != "true" ]]; then
+          if [[ "$DRY_RUN" == "true" || "$PROVISION" != "true" ]]; then
             npm run provision:remote -- --check
           else
             npm run provision:remote
           fi
       - name: Typecheck and build
         run: npm run verify
+      - name: Recheck latest main before unattended release
+        id: latest
+        if: ${{ github.event_name == 'workflow_run' }}
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.gate.outputs.revision }}
+        run: |
+          set -euo pipefail
+          current="$(git ls-remote origin refs/heads/main | cut -f1)"
+          [[ "$current" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Unable to verify main revision"; exit 1; }
+          if [[ "$current" == "$EXPECTED_SHA" ]]; then
+            echo "safe_to_publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "safe_to_publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping stale revision $EXPECTED_SHA; latest main is $current"
+          fi
       - name: Wrangler publish preview
-        if: ${{ inputs.dry_run == true }}
+        if: ${{ needs.gate.outputs.dry_run == 'true' }}
         run: npx wrangler deploy --dry-run
       - name: Apply remote database migrations
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ needs.gate.outputs.dry_run == 'false' && (github.event_name == 'workflow_dispatch' || steps.latest.outputs.safe_to_publish == 'true') }}
         run: npx wrangler d1 migrations apply DB --remote
       - name: Publish Worker
-        if: ${{ inputs.dry_run != true }}
-        run: npx wrangler deploy
-      - name: Sync configured Worker secrets
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ needs.gate.outputs.dry_run == 'false' && (github.event_name == 'workflow_dispatch' || steps.latest.outputs.safe_to_publish == 'true') }}
+        run: npx wrangler deploy --keep-vars
+      # Auto-deploy preserves existing Worker secrets; never replay GitHub values.
+      - name: Sync configured Worker secrets (manual release only)
+        if: ${{ github.event_name == 'workflow_dispatch' && needs.gate.outputs.dry_run == 'false' }}
         shell: bash
         env:
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
@@ -93,5 +168,5 @@ jobs:
             fi
           done
       - name: Smoke-check the published instance
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ needs.gate.outputs.dry_run == 'false' && (github.event_name == 'workflow_dispatch' || steps.latest.outputs.safe_to_publish == 'true') }}
         run: npm run smoke:check
