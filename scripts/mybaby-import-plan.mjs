@@ -81,12 +81,18 @@ export function buildPlan(snapshot, inventory, target, publicDomain) {
 export function rowEqual(expected, actual) {
   return !!actual && Object.entries(expected).every(([key, value]) => actual[key] === value);
 }
+function recordEqual(table, expected, actual) {
+  // Browser backfill may add a derivative while migration verification runs.
+  // It must not invalidate original-file or source business-field verification.
+  if (table === 'media' && expected.thumbnail_ready === 0 && actual?.thumbnail_ready === 1 && expected.mime.startsWith('image/')) return rowEqual({...expected, thumbnail_ready: 1}, actual);
+  return rowEqual(expected, actual);
+}
 export function assertNoConflicts(plan, target) {
   for (const table of importedTables) {
     const existing = new Map((target[table] ?? []).map(row => [row.id, row]));
     for (const row of plan.rows[table]) {
       const actual = existing.get(row.id);
-      if (actual && !rowEqual(row, actual) && !(table === 'babies' && plan.mergedBabies.some(b => b.after.id === row.id && rowEqual(b.before, actual)))) throw Error('target_row_conflict_' + table);
+      if (actual && !recordEqual(table, row, actual) && !(table === 'babies' && plan.mergedBabies.some(b => b.after.id === row.id && rowEqual(b.before, actual)))) throw Error('target_row_conflict_' + table);
     }
   }
   const archive = new Map((target.legacy_import_rows ?? []).map(row => [row.source_table + ':' + row.source_id, row]));
@@ -114,7 +120,7 @@ export function mergeBabySQL(before, after) {
 export function verifyPlan(plan, actual) {
   for (const table of importedTables) {
     const rows = new Map(actual[table].map(row => [row.id, row]));
-    for (const expected of plan.rows[table]) if (!rowEqual(expected, rows.get(expected.id))) throw Error('target_verification_failed_' + table);
+    for (const expected of plan.rows[table]) if (!recordEqual(table, expected, rows.get(expected.id))) throw Error('target_verification_failed_' + table);
   }
   const archive = new Map(actual.legacy_import_rows.map(row => [row.source_table + ':' + row.source_id, row]));
   for (const expected of plan.archive) if (!rowEqual(expected, archive.get(expected.source_table + ':' + expected.source_id))) throw Error('target_archive_verification_failed');

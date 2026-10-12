@@ -49,17 +49,20 @@ async function main() {
   if (env.R2_BUCKET_NAME === target.bucket) throw Error('independent_source_and_target_buckets_required');
   const snapshot = await readJSON(join(directory, 'source.json')), inventory = await readJSON(inventoryPath);
   validateSnapshot(snapshot);
+  // auth token only retrieves credentials; whoami first renews expired OAuth.
+  wrangler(['whoami']);
   const credentials = JSON.parse(wrangler(['auth', 'token', '--json']));
   if (!credentials.token) throw Error('cloudflare_login_required');
-  const token = credentials.token; // Memory only; never saved or printed.
+  let token = credentials.token; // Memory only; never saved or printed.
   const base = `https://api.cloudflare.com/client/v4/accounts/${target.accountId}`;
   async function request(path, init = {}, missing = false) {
     for (let attempt = 0; attempt < 6; attempt++) {
       let response;
       const controller = new AbortController();
+      const requestToken = token;
       const timer = setTimeout(() => controller.abort(), init.method === 'PUT' ? 180000 : 60000);
       try {
-        response = await fetch(base + path, {...init, headers: {Authorization: 'Bearer ' + token, ...init.headers}, signal: controller.signal});
+        response = await fetch(base + path, {...init, headers: {Authorization: 'Bearer ' + requestToken, ...init.headers}, signal: controller.signal});
       } catch {
         if (attempt < 5 && init.method !== 'PUT') {await sleep(Math.min(16000, 1000 * 2 ** attempt)); continue;}
         throw Error('cloudflare_network_unavailable');
@@ -69,6 +72,18 @@ async function main() {
       if (missing && response.status === 404) {await response.body?.cancel(); return null;}
       if (response.ok) return response;
       await response.body?.cancel();
+      if (response.status === 401 && attempt < 5) {
+        // Another concurrent reader may already have renewed this token.
+        if (requestToken === token) {
+          wrangler(['whoami']);
+          const renewed = JSON.parse(wrangler(['auth', 'token', '--json'])).token;
+          if (!renewed || renewed === requestToken) throw Error('cloudflare_authentication_expired');
+          token = renewed;
+        }
+        // A PUT body is a consumed file stream: the outer upload retry reopens it.
+        if (init.method === 'PUT') throw Error('cloudflare_authentication_renewed_retry_upload');
+        continue;
+      }
       if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 5 && init.method !== 'PUT') {await sleep(Math.min(16000, 1000 * 2 ** attempt)); continue;}
       throw Error('cloudflare_http_' + response.status);
     }
@@ -227,10 +242,29 @@ async function main() {
     }
     console.log('Insert-only business import finished; administrator, settings and auth tables untouched.');
   } else {
-    for (const object of fixedPlan.copies) {
-      const digest = await targetDigest(object), checkpoint = confirmed.get(object.targetKey);
-      if (digest.size !== object.size || digest.sha256 !== checkpoint.sha256) throw Error('final_target_object_hash_mismatch');
+    const verificationJournal = join(directory, 'verify-checkpoints.ndjson');
+    let prior = [];
+    try {prior = (await readFile(verificationJournal, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));}
+    catch (error) {if (error.code !== 'ENOENT') throw error;}
+    const verified = new Map(prior.map(row => [row.targetKey, row]));
+    let cursor = 0, completed = 0, stopping = false;
+    async function verifyWorker() {
+      while (!stopping && cursor < fixedPlan.copies.length) {
+        const object = fixedPlan.copies[cursor++], checkpoint = confirmed.get(object.targetKey), previous = verified.get(object.targetKey);
+        try {
+          const age = Date.now() - Date.parse(previous?.verifiedAt ?? '');
+          if (!(previous?.sourceHash === fixedPlan.sourceHash && previous.sha256 === checkpoint.sha256 && previous.size === object.size && age >= 0 && age < 3600000)) {
+            const digest = await targetDigest(object);
+            if (digest.size !== object.size || digest.sha256 !== checkpoint.sha256) throw Error('final_target_object_hash_mismatch');
+            await appendFile(verificationJournal, JSON.stringify({sourceHash: fixedPlan.sourceHash, targetKey: object.targetKey, ...digest, verifiedAt: new Date().toISOString()}) + '\n', {mode: 0o600});
+          }
+          completed++;
+          if (completed % 20 === 0 || completed === fixedPlan.copies.length) console.log('Independent target SHA-256 recheck:', completed + '/' + fixedPlan.copies.length);
+        } catch (error) {stopping = true; throw error;}
+      }
     }
+    const results = await Promise.allSettled([verifyWorker(), verifyWorker()]);
+    const failed = results.find(result => result.status === 'rejected'); if (failed) throw failed.reason;
   }
   const actual = await targetRows();
   const report = verifyPlan(fixedPlan, actual);

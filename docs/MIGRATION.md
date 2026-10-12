@@ -77,7 +77,7 @@ node scripts/mybaby-migration.mjs inventory ../my-baby .migration-private/mybaby
 }
 ```
 
-在操作员终端完成 `npx wrangler login`。工具仅在子进程内捕获 `wrangler auth token --json`，当前 Cloudflare 授权令牌只在内存使用，不回显、不保存，也不读取或轮换 Worker 的 `SESSION_SECRET` / `DATA_KEY`。需要先安装 BabyMemo 的 npm 依赖。
+在操作员终端完成 `npx wrangler login`。工具先通过 `wrangler whoami` 续期过期的 OAuth，再在子进程内捕获 `wrangler auth token --json`；长任务遇到 401 会再次续期并重试（PUT 重新打开文件流），当前 Cloudflare 授权令牌只在内存使用，不回显、不保存，也不读取或轮换 Worker 的 `SESSION_SECRET` / `DATA_KEY`。需要先安装 BabyMemo 的 npm 依赖。
 
 ```bash
 npm install --no-audit --no-fund
@@ -109,9 +109,9 @@ node scripts/mybaby-import.mjs verify "$RUN" "$INVENTORY"
 ### 执行约束
 
 - 源桶与目标桶必须独立。绝不修改旧 Neon、旧 R2、旧站流量、测试环境或管理员认证数据。
-- 初始化宝宝仅合并空字段或相同字段，更新带有完整的预检值条件，防止覆盖并发编辑；已有记录只插入，不执行冲突覆盖。中途失败允许重跑同一份不可变计划；源数据变更需另行核对，不自动覆盖旧导入记录。
+- 初始化宝宝仅合并空字段或相同字段，更新带有完整的预检值条件，防止覆盖并发编辑；校验允许浏览器正常新增图片缩略图（`thumbnail_ready` 从 0 变成 1），但不允许原文件或业务字段冲突；已有记录只插入，不执行冲突覆盖。中途失败允许重跑同一份不可变计划；源数据变更需另行核对，不自动覆盖旧导入记录。
 - 目标对象键采用 `private/import-my-baby/<源对象键的SHA-256>`，这是命名摘要而不是文件内容校验。文件内容另外全量计算 SHA-256。已有同名对象必须与源完整哈希一致，不能以大小相同或 ETag 相同代替校验。
-- 文件经本机 `0600` 临时文件流式中转，不在 Worker 内全量读取，不公开 bucket。传输有网络重试、空闲超时与断点检查；恢复时核对源 ETag、大小与已完成校验的断点，独立 `verify` 阶段再次完整读取所有目标文件。进程强制中断可能遗留 `transfer-*.bin`，恢复后处理同一对象会清理该文件。复制记录保存在私有 `copy-checkpoints.ndjson`。
+- 文件经本机 `0600` 临时文件流式中转，不在 Worker 内全量读取，不公开 bucket。传输有网络重试、空闲超时与断点检查；恢复时核对源 ETag、大小与已完成校验的断点，独立 `verify` 阶段再次完整读取所有目标文件。进程强制中断可能遗留 `transfer-*.bin`，恢复后处理同一对象会清理该文件。复制记录保存在私有 `copy-checkpoints.ndjson`。独立复读最多 2 并发，记录到 `verify-checkpoints.ndjson`；网络/授权中断后重跑会复用同批次一小时内已完成的复读结果。
 - 旧 JPEG 图片缩略图如存在，会额外复制到现有受保护缩略图路由使用的对象键；视频缩略图和头像保存为私有对象键，目前 UI 不自动展示。缺失旧缩略图继续安全回退原图。不能只复制派生图而遗漏原文件。
 - `legacy_import_rows` 保留精确源 JSON、内容哈希与源/目标 ID 映射；其中 `imported_at` 使用固定的导出批次时间以支持幂等重试，实际执行/校验时间见私有报告。导入不会操作 `owner`、`app_settings`、会话或微信凭据。D1 备份可能包含加密配置和认证哈希，因此禁止查看/回显正文、提交 Git 或上传 CI artifact。
 - 目标 R2 的托管公开域名和自定义公开域名必须均未启用，状态未知也会停止，不擅自修改桶权限。校验报告保存在私有快照目录中，含数量、内容哈希、外键结果及未登录访问拒绝结果。真实登录后的照片浏览、MOV/HEIC、长视频 Range 和真实 iPhone Safari 仍需要人工验收；完整哈希校验不等于设备兼容性验收。

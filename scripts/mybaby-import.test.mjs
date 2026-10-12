@@ -103,6 +103,19 @@ test('stream hashes cover every byte and verify lengths', async () => {
   assert.equal(actual.sha256.length, 64);
   assert.deepEqual(actual, await streamDigest(Readable.from([bytes])));
 });
+test('browser-generated thumbnails do not invalidate original business data verification', () => {
+  const data = fixture();
+  data.snapshot.rows.media_items[0].thumbnailUrl = null;
+  data.inventory.sourceHash = contentHash(data.snapshot);
+  const plan = planFor(data);
+  const target = structuredClone({...plan.rows, legacy_import_rows: plan.archive});
+  target.media[0].thumbnail_ready = 1;
+  assertNoConflicts(plan, target);
+  assert.equal(verifyPlan(plan, target).media.count, 1);
+  target.media[0].title = 'a concurrent synthetic business edit';
+  assert.throws(() => assertNoConflicts(plan, target), /target_row_conflict_media/);
+  assert.throws(() => verifyPlan(plan, target), /target_verification_failed_media/);
+});
 test('full-file hashing drains multi-megabyte Web streams without truncation', async () => {
   const chunk = Buffer.alloc(16384, 5);
   let remaining = 1000;
