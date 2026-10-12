@@ -1,6 +1,6 @@
 import JSONBig from 'json-bigint';
 import type { Env, Baby } from './types';
-import { decryptSecret, setting } from './crypto';
+import { decryptSecret, encryptSecret, setting } from './crypto';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
 const wireJSON=JSONBig({storeAsString:true,strict:true,protoAction:'error',constructorAction:'error'});
@@ -184,7 +184,7 @@ export class WechatSession {
         const row=await this.env.DB.prepare('SELECT state,reply_text,client_id FROM wechat_messages WHERE message_id=?').bind(unique)
           .first<{state:string;reply_text:string|null;client_id:string|null}>();
         if(row?.state==='done')continue;
-        let reply=row?.reply_text||'';
+        let reply=row?.reply_text?await decryptSecret(this.env,row.reply_text):'';
         if(!reply){
           try{reply=await handleMessage(this.env,text,unique)}
           catch{reply='暂时无法处理，请稍后再发送一次。';}
@@ -193,7 +193,7 @@ export class WechatSession {
         // reuse both and cannot create duplicate growth rows for the same message.
         const clientId=row?.client_id||crypto.randomUUID();
         await this.env.DB.prepare("UPDATE wechat_messages SET state='processed',reply_text=?,client_id=? WHERE message_id=?")
-          .bind(reply.slice(0,1800),clientId,unique).run();
+          .bind(await encryptSecret(this.env,reply.slice(0,1800)),clientId,unique).run();
         await ilink(base,'ilink/bot/sendmessage',{msg:{from_user_id:'',to_user_id:userId,client_id:clientId,message_type:2,message_state:2,context_token:raw.context_token,item_list:[{type:1,text_item:{text:reply.slice(0,1800)}}]},base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token);
         await this.env.DB.prepare("UPDATE wechat_messages SET state='done' WHERE message_id=?").bind(unique).run();
         await this.ctx.storage.put('lastMessage',new Date().toISOString());
