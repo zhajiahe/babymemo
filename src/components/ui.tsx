@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 
 /**
- * Shared Warm Archive primitives.
+ * Shared BabyMemo primitives; visual identity lives in editorial.css.
  * Keep business-specific forms, APIs, navigation state and data access in App.
  * Visual contracts live in src/styles.css and docs/design-system.md.
  */

@@ -117,7 +117,7 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 
 ## 10. 旧照片与上传过期回收
 
-- 旧照片缩略图只允许管理员在相册主动触发；旧原文件经私有 API 加载，浏览器以 10 条为上限的小批次处理，失败/大文件跳过，原图不能修改。
+- 旧照片缩略图属于用户历史迁移的一次性运营维护，不得作为普通相册功能、按钮或自动扫描任务展示；保留私有认证 API，维护者通过 scripts/maintenance-thumbnail-backfill.mjs 明确 --apply 确认后处理，严禁覆盖原图。
 - Cron 每天 UTC 19:00 执行，针对连续 14 天无成功分片活动的会话，以最多 30 条为一批检查。R2 存在完整对象时优先补记 D1；R2 不存在时可中止未完成 multipart 并删掉会话。检查失败保留记录，绝不能盲删可能已经完成的媒体。
 - WebKit Linux 测试是 Safari 引擎兼容性测试，**不构成真实 iPhone Safari 验收**。真实设备若未执行，必须如实标识。
 
@@ -143,3 +143,8 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 - `src/openrouter-retry.mjs` 的重试只覆盖模型调用，不可重复执行写入工具；429/503 尊重短 `Retry-After`，长时间退避告知用户。
 - `src/wechat-memory.mjs` 仅在已绑定微信的一对一 Durable Object 会话里缓存 4 轮文本、20 分钟 TTL；不能跨账号/绑定凭据复用，不能让模型从历史回复编造未被用户授权的删除操作。
 - `src/wechat-media.mjs` 处理图片/视频最大 50 MiB；大文件必须采用分片上传，不可 Buffer.concat 完整视频、不可公开 R2 对象。
+
+## 出生时间与相册界面
+
+- `migrations/0012_birth_time.sql` 是已迁移数据库的增量列，`birth_time=''` 表示未知；年龄由生日、宝宝时区及可选出生时间动态计算，不能凭空补齐出生时间。
+- 媒体旧 `title` 字段仍需兼容迁移/续传/微信消息，但家庭相册界面不显示、不要求输入或编辑标题。首页要加载成长历史曲线；手机相册默认先显示照片，再按需展开上传工具。

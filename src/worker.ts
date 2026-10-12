@@ -22,13 +22,14 @@ const dayOk = (s:unknown):s is string => {
   const day=new Date(s+'T00:00:00Z');
   return !Number.isNaN(day.getTime())&&day.toISOString().slice(0,10)===s;
 };
+const validBirthTime=(v:unknown):v is string=>typeof v==='string'&&(v===''||/^([01]\d|2[0-3]):[0-5]\d$/.test(v));
 const validNum=(v:unknown,min:number,max:number):boolean=>v===null||v===undefined||(typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max);
 const now=()=>new Date().toISOString();
 const allowedMime=(s:string)=>/^(image\/(jpeg|png|webp|heic|heif|gif)|video\/(mp4|quicktime|webm))$/.test(s);
 const thumbKey=(id:string)=>'private/thumbnails/'+id+'.jpg';
 const uploadFingerprintOk=(s:unknown):s is string=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
 async function babyExists(env:Env,id:string):Promise<boolean>{return !!await env.DB.prepare('SELECT id FROM babies WHERE id=?').bind(id).first();}
-async function currentBaby(env:Env):Promise<Baby|null>{return (await env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes FROM babies ORDER BY created_at LIMIT 1').first<Baby>())??null;}
+async function currentBaby(env:Env):Promise<Baby|null>{return (await env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes FROM babies ORDER BY created_at LIMIT 1').first<Baby>())??null;}
 app.use('/api/*',async(c,next)=>{
   c.header('Cache-Control','private, no-store');
   c.header('X-Content-Type-Options','nosniff');
@@ -52,7 +53,7 @@ app.get('/api/bootstrap/status',async c=>c.json({
 app.post('/api/bootstrap',async c=>{
   try {
     const v=await json(c.req.raw);
-    const id=await setup(c,{ownerName:String(v.ownerName??''),familyName:String(v.familyName??''),password:String(v.password??''),babyName:String(v.babyName??''),birthday:String(v.birthday??''),gender:String(v.gender??''),timeZone:String(v.timeZone??'Asia/Shanghai'),allergies:String(v.allergies??'')});
+    const id=await setup(c,{ownerName:String(v.ownerName??''),familyName:String(v.familyName??''),password:String(v.password??''),babyName:String(v.babyName??''),birthday:String(v.birthday??''),birthTime:String(v.birthTime??''),gender:String(v.gender??''),timeZone:String(v.timeZone??'Asia/Shanghai'),allergies:String(v.allergies??'')});
     return c.json({ok:true,babyId:id},201);
   }catch(e){return fail(c,400,e instanceof Error?e.message:'SETUP_FAILED');}
 });
@@ -68,7 +69,7 @@ app.post('/api/logout',c=>{clearSession(c);return c.json({ok:true});});
 app.get('/api/state',async c=>{
   const [user,babies,growth,milestones,media,byBaby]=await Promise.all([
     owner(c.env),
-    c.env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all(),
+    c.env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all(),
     c.env.DB.prepare('SELECT count(*) AS count FROM growth_records WHERE deleted_at IS NULL').first<{count:number}>(),
     c.env.DB.prepare('SELECT count(*) AS count FROM milestones WHERE deleted_at IS NULL').first<{count:number}>(),
     c.env.DB.prepare('SELECT count(*) AS count FROM media WHERE deleted_at IS NULL').first<{count:number}>(),
@@ -89,17 +90,17 @@ app.get('/api/state',async c=>{
 });
 app.post('/api/babies',async c=>{
   try {
-    const v=await json(c.req.raw);if(typeof v.name!=='string'||!v.name.trim()||v.name.length>80||!dayOk(v.birthday)||!['boy','girl','other'].includes(v.gender))return fail(c,400,'INVALID_BABY');
+    const v=await json(c.req.raw);if(typeof v.name!=='string'||!v.name.trim()||v.name.length>80||!dayOk(v.birthday)||!validBirthTime(v.birthTime??'')||!['boy','girl','other'].includes(v.gender))return fail(c,400,'INVALID_BABY');
     const id=crypto.randomUUID();
-    await c.env.DB.prepare('INSERT INTO babies(id,name,birthday,gender,time_zone,allergies,notes,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,v.name.trim(),v.birthday,v.gender,String(v.timeZone||'Asia/Shanghai'),String(v.allergies||'').slice(0,2000),'',now()).run();
+    await c.env.DB.prepare('INSERT INTO babies(id,name,birthday,birth_time,gender,time_zone,allergies,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,v.name.trim(),v.birthday,v.birthTime??'',v.gender,String(v.timeZone||'Asia/Shanghai'),String(v.allergies||'').slice(0,2000),'',now()).run();
     return c.json({id},201);
   }catch{return fail(c,400,'INVALID_INPUT');}
 });
 app.patch('/api/babies/:id',async c=>{
   const id=c.req.param('id');try{
     const v=await json(c.req.raw);
-    if(typeof v.name!=='string'||!v.name.trim()||v.name.length>80||!dayOk(v.birthday))return fail(c,400,'INVALID_BABY');
-    const r=await c.env.DB.prepare('UPDATE babies SET name=?,birthday=?,allergies=?,notes=? WHERE id=?').bind(v.name.trim(),v.birthday,String(v.allergies||'').slice(0,2000),String(v.notes||'').slice(0,4000),id).run();
+    if(typeof v.name!=='string'||!v.name.trim()||v.name.length>80||!dayOk(v.birthday)||v.birthTime!==undefined&&!validBirthTime(v.birthTime))return fail(c,400,'INVALID_BABY');
+    const r=await c.env.DB.prepare('UPDATE babies SET name=?,birthday=?,birth_time=COALESCE(?,birth_time),allergies=?,notes=? WHERE id=?').bind(v.name.trim(),v.birthday,v.birthTime??null,String(v.allergies||'').slice(0,2000),String(v.notes||'').slice(0,4000),id).run();
     return r.meta.changes?c.json({ok:true}):fail(c,404,'NOT_FOUND');
   }catch{return fail(c,400,'INVALID_INPUT');}
 });
@@ -321,10 +322,14 @@ app.patch('/api/media/:id',async c=>{
   try{value=await json(c.req.raw)}catch{return fail(c,400,'INVALID_INPUT')}
   if(!value||typeof value!=='object')return fail(c,400,'INVALID_MEDIA_METADATA');
   const v=value as Record<string,unknown>;
-  if(typeof v.title!=='string'||!v.title.trim()||v.title.trim().length>120||!dayOk(v.day))return fail(c,400,'INVALID_MEDIA_METADATA');
+  if(!dayOk(v.day)||(v.title!==undefined&&(typeof v.title!=='string'||!v.title.trim()||v.title.trim().length>120)))return fail(c,400,'INVALID_MEDIA_METADATA');
   const record=await c.env.DB.prepare('SELECT id FROM media WHERE id=? AND deleted_at IS NULL').bind(c.req.param('id')).first();
   if(!record)return fail(c,404,'NOT_FOUND');
-  await c.env.DB.prepare('UPDATE media SET title=?,day=? WHERE id=? AND deleted_at IS NULL').bind(v.title.trim(),v.day,c.req.param('id')).run();
+  if(v.title!==undefined){
+    await c.env.DB.prepare('UPDATE media SET title=?,day=? WHERE id=? AND deleted_at IS NULL').bind(v.title.trim(),v.day,c.req.param('id')).run();
+  }else{
+    await c.env.DB.prepare('UPDATE media SET day=? WHERE id=? AND deleted_at IS NULL').bind(v.day,c.req.param('id')).run();
+  }
   return c.json({ok:true});
 });
 app.get('/api/media/:id/content',async c=>{

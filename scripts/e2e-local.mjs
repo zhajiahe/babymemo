@@ -197,6 +197,23 @@ async function e2e() {
     assert.deepEqual(firstGrowth.data.items,[]);
     assert.deepEqual(secondGrowth.data.items,[]);
   });
+  await step('birth time stays optional and updates reject invalid clock values',async()=>{
+    const before=(await json('/api/state')).data.babies;
+    const baby=before[0];
+    assert.equal(baby.birth_time,'');
+    const saved=await json('/api/babies/'+baby.id,{method:'PATCH',body:{
+      name:baby.name,birthday:baby.birthday,birthTime:'08:45',allergies:baby.allergies,notes:baby.notes
+    }});
+    assert.equal(saved.status,200);
+    const after=(await json('/api/state')).data.babies;
+    assert.equal(after.length,before.length);
+    assert.equal(after.find(item=>item.id===baby.id)?.birth_time,'08:45');
+    const bad=await json('/api/babies/'+baby.id,{method:'PATCH',body:{
+      name:baby.name,birthday:baby.birthday,birthTime:'25:61',allergies:baby.allergies,notes:baby.notes
+    }});
+    assert.equal(bad.status,400);
+    assert.equal((await json('/api/state')).data.babies.find(item=>item.id===baby.id)?.birth_time,'08:45');
+  });
   await step('concurrent record creation is idempotent and baby-scoped',async()=>{
     const requestId='e1000000-0000-4000-8000-000000000001';
     const payload={babyId,requestId,day:'2026-08-01',weight:11.2,notes:'race regression'};
@@ -529,7 +546,13 @@ async function browserE2e(){
           httpOnly:true,secure:false,sameSite:'Lax'}]);
         await page.reload({waitUntil:'domcontentloaded'});
       }
-      await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
+      await page.getByRole('heading',{name:'Test Baby'}).waitFor({timeout:20000});
+      const imageAssets=await page.evaluate(async()=>{
+        return Promise.all(['/icon-512.png','/icon-192.png','/apple-touch-icon.png','/favicon-32.png'].map(async path=>{
+          const image=new Image();image.src=path;await image.decode();return [image.naturalWidth,image.naturalHeight];
+        }));
+      });
+      assert.deepEqual(imageAssets,[[512,512],[192,192],[180,180],[32,32]],'PWA icons must decode in a real browser');
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
     });
     await step((useWebKit?'WebKit':'Chromium')+': page reload and new tab reuse the same login',async()=>{
@@ -537,25 +560,25 @@ async function browserE2e(){
       // The Worker HTTP test asserts persistent Max-Age and security flags;
       // this browser test verifies that reload/new tab actually remain signed in.
       await page.reload({waitUntil:'domcontentloaded'});
-      await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
+      await page.getByRole('heading',{name:'Test Baby'}).waitFor({timeout:20000});
       assert.equal(await page.locator('input[autocomplete="current-password"]').count(),0);
       const another=await context.newPage();
       try{
         await another.goto(base+'/',{waitUntil:'domcontentloaded'});
-        await another.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
+        await another.getByRole('heading',{name:'Test Baby'}).waitFor({timeout:20000});
         assert.equal(await another.locator('input[autocomplete="current-password"]').count(),0);
       }finally{await another.close();}
     });
     await step((useWebKit?'WebKit':'Chromium')+': add baby through Settings and switch back',async()=>{
       await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
-      await page.getByRole('heading',{name:'空间设置'}).waitFor();
+      await page.getByRole('heading',{name:'设置'}).waitFor();
       await page.getByRole('button',{name:'新增宝宝'}).click();
       const create=page.locator('.baby-create-form');
       await create.getByLabel('宝宝名字').fill('Browser New Baby');
       await create.getByLabel('出生日期').fill('2025-06-06');
       await create.getByLabel('性别').selectOption('girl');
       await create.getByRole('button',{name:/创建并切换到新宝宝/}).click();
-      await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor();
+      await page.getByRole('heading',{name:'Browser New Baby'}).waitFor();
       await page.locator('select[aria-label="选择宝宝"]').waitFor();
       await page.waitForFunction(()=>document.querySelector('select[aria-label="选择宝宝"]')?.selectedOptions[0]?.textContent==='Browser New Baby');
       const options=await page.locator('select[aria-label="选择宝宝"] option').allTextContents();
@@ -565,7 +588,7 @@ async function browserE2e(){
       await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
       await page.waitForFunction(()=>document.querySelector('select[aria-label="选择宝宝"]')?.selectedOptions[0]?.textContent==='Test Baby');
     });
-    await step((useWebKit?'WebKit':'Chromium')+': bulk backfill of an existing private photo',async()=>{
+    await step((useWebKit?'WebKit':'Chromium')+': gallery is photo-first; maintenance is out of product',async()=>{
       // Generate a browser-native PNG so WebKit and Chromium decode the same valid fixture.
       const pngBase64=await page.evaluate(()=>{
         const canvas=document.createElement('canvas');canvas.width=16;canvas.height=16;
@@ -582,19 +605,19 @@ async function browserE2e(){
         body:new Uint8Array(png),headers:{'Content-Type':'application/octet-stream'}});
       assert.equal(part.status,200,JSON.stringify(part.data));
       assert.equal((await json('/api/upload/'+upload.data.id+'/finish',{method:'POST',body:{}})).status,201);
-      await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
-      await page.locator('.thumbnail-backfill').waitFor({state:'visible',timeout:15000});
-      await page.getByRole('button',{name:'开始补全'}).click();
-      // A successful backfill removes the panel once no pending photos remain.
-      await page.locator('.thumbnail-backfill').waitFor({state:'detached',timeout:30000});
+      await page.locator('.sidebar .nav-link').filter({hasText:'相册'}).click();
+      await page.locator('.photo-preview').first().waitFor({state:'visible',timeout:15000});
+      assert.equal(await page.locator('.thumbnail-backfill').count(),0);
+      assert.equal(await page.locator('.upload-card').count(),0);
       const state=await json('/api/media/thumbnail-backfill?babyId='+(await json('/api/state')).data.babies[0].id);
-      assert.equal(state.data.items.some(item=>item.id===upload.data.id),false);
+      assert.equal(state.data.items.some(item=>item.id===upload.data.id),true);
     });
     await step((useWebKit?'WebKit slow network':'Chromium')+': gallery image upload and private preview',async()=>{
-      await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
-      await page.getByRole('heading',{name:'家庭相册'}).waitFor();
+      await page.locator('.sidebar .nav-link').filter({hasText:'相册'}).click();
+      await page.getByRole('heading',{name:'相册'}).waitFor();
       // A tiny valid PNG; user photos and R2 production storage are untouched.
       const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ln0AAAAASUVORK5CYII=','base64');
+      await page.getByRole('button',{name:'添加照片或视频'}).click();
       await page.locator('input[type="file"]').setInputFiles({
         name:'browser-e2e.png',mimeType:'image/png',buffer:png
       });
@@ -607,37 +630,41 @@ async function browserE2e(){
       await page.screenshot({path:join(evidence,'desktop-album-viewer.png'),fullPage:false});
     });
     await step((useWebKit?'WebKit':'Chromium')+': gallery metadata edit and delete',async()=>{
-      await page.locator('.media-viewer-edit input').first().fill('Browser E2E photo');
-      await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
+            await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
       await page.getByRole('button',{name:/保存信息/}).click();
       await page.getByText('照片信息已更新').waitFor({timeout:15000});
-      await page.getByRole('button',{name:'关闭预览'}).click();
-      const editedCard=page.locator('.photo-item').filter({hasText:'Browser E2E photo'});
-      await editedCard.waitFor({state:'visible',timeout:15000});
+      const source=await page.locator('.media-viewer-stage img').getAttribute('src');
+      const deletedId=source?.match(/\/api\/media\/([^/]+)\/content/)?.[1];
+      assert.ok(deletedId,'viewer must point to real saved media');
       page.once('dialog',dialog=>void dialog.accept());
-      await editedCard.getByRole('button',{name:/删除/}).click();
-      await editedCard.waitFor({state:'detached',timeout:15000});
+      await page.getByRole('button',{name:'移入回收站'}).click();
+      await page.getByRole('dialog',{name:'相册预览'}).waitFor({state:'hidden',timeout:15000});
+      await page.getByText('已移入回收站，可在设置中恢复').waitFor({timeout:15000});
+      const remaining=await json('/api/media?babyId='+(await json('/api/state')).data.babies[0].id);
+      assert.equal(remaining.data.items.some(item=>item.id===deletedId),false,'deleted media must not appear in the authenticated list');
+
     });
     await step((useWebKit?'WebKit':'Chromium')+': 390px mobile navigation and horizontal overflow',async()=>{
       await page.setViewportSize({width:390,height:844});
-      await page.locator('.mobile-nav button[aria-label="成长曲线"]').click();
+      await page.locator('.mobile-nav button[aria-label="成长"]').click();
       await page.getByRole('heading',{name:'成长记录'}).waitFor();
       const overflow=await page.evaluate(()=>({
         screen:window.innerWidth,scroll:document.documentElement.scrollWidth
       }));
       assert.ok(overflow.scroll<=overflow.screen+1,'mobile horizontal overflow '+JSON.stringify(overflow));
       await page.screenshot({path:join(evidence,'mobile-growth.png'),fullPage:true});
-      await page.locator('.mobile-nav button[aria-label="家庭相册"]').click();
-      await page.getByRole('heading',{name:'家庭相册'}).waitFor();
+      await page.locator('.mobile-nav button[aria-label="相册"]').click();
+      await page.getByRole('heading',{name:'相册'}).waitFor();
+      assert.equal(await page.locator('.upload-card').count(),0);
       await page.screenshot({path:join(evidence,'mobile-album.png'),fullPage:true});
     });
     await step((useWebKit?'WebKit':'Chromium')+': four responsive widths across primary views',async()=>{
       // Browser viewports prove layout contracts, not physical iPhone behavior.
       const cases=[320,375,390,768],views=[
-        ['概览','每一刻，都很珍贵'],
-        ['成长曲线','成长记录'],
-        ['家庭相册','家庭相册'],
-        ['设置','空间设置']
+        ['首页','Test Baby'],
+        ['成长','成长记录'],
+        ['相册','相册'],
+        ['设置','设置']
       ];
       for(const width of cases){
         await page.setViewportSize({width,height:844});
@@ -663,13 +690,18 @@ async function browserE2e(){
       await page.setViewportSize({width:390,height:844});
     });
     await step((useWebKit?'WebKit':'Chromium')+': draft persistence and multi-baby separation',async()=>{
-      await page.locator('.mobile-nav button[aria-label="成长瞬间"]').click();
-      await page.getByRole('heading',{name:'小小里程碑'}).waitFor();
+      // Moments are intentionally not a mobile tab in the new photo-first layout.
+      const openMoments=async()=>{
+        await page.locator('.mobile-nav button[aria-label="首页"]').click();
+        await page.getByRole('button',{name:'记录新瞬间'}).click();
+        await page.getByRole('heading',{name:'成长瞬间',exact:true}).waitFor();
+      };
+      await openMoments();
       const input=page.locator('input[placeholder*="第一次独立走路"]');
       await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
       await input.fill('只属于宝宝A的临时草稿');
-      await page.locator('.mobile-nav button[aria-label="成长曲线"]').click();
-      await page.locator('.mobile-nav button[aria-label="成长瞬间"]').click();
+      await page.locator('.mobile-nav button[aria-label="成长"]').click();
+      await openMoments();
       await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
       await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Second Baby'});
       await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='');
@@ -680,8 +712,8 @@ async function browserE2e(){
     });
     await step((useWebKit?'WebKit':'Chromium')+': reduced motion and accessible gallery dialog',async()=>{
       await page.emulateMedia({reducedMotion:'reduce'});
-      await page.locator('.mobile-nav button[aria-label="家庭相册"]').click();
-      await page.getByRole('heading',{name:'家庭相册'}).waitFor();
+      await page.locator('.mobile-nav button[aria-label="相册"]').click();
+      await page.getByRole('heading',{name:'相册'}).waitFor();
       const preview=page.locator('.photo-preview').first();
       await preview.waitFor({timeout:12000});
       await preview.click();
