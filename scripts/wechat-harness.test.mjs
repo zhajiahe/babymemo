@@ -35,7 +35,7 @@ test('update refuses absent selector and invalid measurement',async()=>{
  calls.length=0;
  const r=await runWechatTool(fake(),baby,'update_growth',{weight:10},'x','把小好的体重改成10kg');
  assert.match(r,/指定记录日期/);
- const bad=await runWechatTool(fake(),baby,'update_growth',{id:'aaaaaaaa',weight:999},'x','把小好的体重改成999kg');
+ const bad=await runWechatTool(fake(),baby,'update_growth',{id:'aaaaaaaa',weight:999},'x','把小好的 aaaaaaaa 记录体重改成999kg');
  assert.match(bad,/不合法/);
  assert.equal(calls.filter(x=>x.sql.includes('UPDATE')).length,0);
 });
@@ -50,4 +50,13 @@ test('creation validates date and does not write invented measurements',async()=
  assert.match(await runWechatTool(fake(),baby,'create_growth',{day:'2026-02-31',weight:10},'x','小好10kg'),/有效日期/);
  assert.match(await runWechatTool(fake(),baby,'create_growth',{day:'2026-10-01'},'x','记录小好'),/请明确体重/);
  assert.equal(calls.filter(x=>x.sql.includes('INSERT')).length,0);
+});
+
+test('model cannot invent target record IDs or dates for a destructive command',async()=>{
+ calls.length=0;
+ const invented=await runWechatTool(fake(),baby,'delete_growth',{id:'aaaaaaaa'},'x','删除小好的最新体重');
+ assert.match(invented,/写明需要删除的日期或记录编号/);
+ const wrongDay=await runWechatTool(fake(),baby,'delete_growth',{day:'2026-10-01'},'x','删除小好昨天的体重');
+ assert.match(wrongDay,/写明需要删除的日期或记录编号/);
+ assert.equal(calls.length,0);
 });
