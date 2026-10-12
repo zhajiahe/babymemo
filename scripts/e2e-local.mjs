@@ -331,6 +331,19 @@ async function e2e() {
     assert.equal((await json('/api/upload/'+created.data.id+'/cancel',{method:'POST',body:{}})).status,200);
     assert.equal((await json('/api/upload/pending?babyId='+babyId)).data.items.length,0);
   });
+  await step('record writes are idempotent after lost HTTP response',async()=>{
+    const requestId='c3843867-bf72-46e8-bc23-9936f60fc902';
+    const payload={babyId,day:'2026-02-02',weight:10.1,requestId};
+    const first=await json('/api/records/growth',{method:'POST',body:payload});
+    const retry=await json('/api/records/growth',{method:'POST',body:payload});
+    assert.equal(first.status,201);assert.equal(retry.status,200);
+    assert.equal(retry.data.id,first.data.id);
+    assert.equal((await json('/api/growth/history?babyId='+babyId)).data.items.filter(x=>x.id===first.data.id).length,1);
+    const eventPayload={babyId,day:'2026-02-02',title:'Idempotent milestone',requestId:'c3843867-bf72-46e8-bc23-9936f60fc903'};
+    const created=await json('/api/records/milestones',{method:'POST',body:eventPayload});
+    const again=await json('/api/records/milestones',{method:'POST',body:eventPayload});
+    assert.equal(created.status,201);assert.equal(again.status,200);assert.equal(again.data.id,created.data.id);
+  });
   await step('records export protects private data',async()=>{
     assert.equal((await json('/api/export/records',{anonymous:true})).status,401);
     const v=await json('/api/export/records');assert.equal(v.status,200);
