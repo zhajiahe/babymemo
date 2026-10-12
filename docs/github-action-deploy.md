@@ -118,3 +118,12 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 部署会修改远端 Cloudflare 资源、运行 D1 migration。**不能**将 Dry Run 当成数据库备份，也不能把 D1 migration 当成可自动回滚的步骤。发布前先备份现有数据和 R2 媒体；失败时优先排查并前向修复，不要随意删除 D1、R2 或直接重建 Worker。
 
 本流程**不会**自动迁移旧 MyBaby 的 Vercel、Neon 或 R2 生产数据，也尚未完成真实生产端到端验收。参考 [Agent 部署指南](./agent-deploy.md) 与 [项目 README](../README.md)。
+
+
+## 自动部署遇到 Cloudflare API 504
+
+2026-10-12 发布日志出现 Cloudflare Workers API `GET /accounts/.../workers/services/babymemo` 及 `.../scripts/babymemo/secrets` 返回 `504 Gateway Timeout`。这是服务端网关超时；该次 D1 增量迁移已成功，但 `wrangler deploy` 返回非零，不能视为 Worker 已更新。
+
+新增 `scripts/deploy-worker-with-retry.sh`：仅针对 502/503/504、429 和短时网络错误，最多尝试 3 次，失败后等待 15 秒、45 秒。每次自动重试前校验待部署 SHA 仍等于远端 `main`，阻止旧版覆盖新提交；权限/配置错误不重试。数据库迁移只在部署前执行一次，**重试阶段只重新执行 `wrangler deploy --keep-vars`**，不删除 D1/R2、不重写 `SESSION_SECRET` 或 `DATA_KEY`。发布成功后仍执行 Smoke Check。
+
+如果三次均失败，应查看 [Cloudflare Status](https://www.cloudflarestatus.com/) 并保留 Actions 错误信息；不要用重建数据库或轮换密钥的方式处理 Cloudflare 网关异常。
