@@ -315,7 +315,7 @@ async function browserE2e(){
       await page.route('**/api/login',async route=>{
         const response=await route.fetch();
         const headers={...response.headers()};
-        if(headers['set-cookie'])headers['set-cookie']=headers['set-cookie'].replace(/;\\s*Secure(?=;|$)/ig,'');
+        if(headers['set-cookie'])headers['set-cookie']=headers['set-cookie'].replace(/;\s*Secure(?=;|$)/ig,'');
         await route.fulfill({response,headers});
       });
     }
