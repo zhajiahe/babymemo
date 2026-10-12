@@ -8,6 +8,7 @@ const password=process.env.BABYMEMO_PASSWORD;
 const apply=process.argv.includes('--apply');
 const max=Math.min(100,Math.max(1,Number.parseInt(process.env.BABYMEMO_BACKFILL_LIMIT||'20',10)||20));
 let cursor=process.env.BABYMEMO_BACKFILL_AFTER||'';
+const targetBabyId=process.env.BABYMEMO_BACKFILL_BABY_ID||'';
 if(!base||!name||!password)throw Error('Set BABYMEMO_URL, BABYMEMO_USER and BABYMEMO_PASSWORD locally (never in git).');
 if(apply&&process.env.BABYMEMO_BACKFILL_CONFIRM!=='YES')throw Error('--apply requires BABYMEMO_BACKFILL_CONFIRM=YES');
 const u=new URL(base);
@@ -24,7 +25,10 @@ try{
  },{name,password});
  if(!loggedIn)throw Error('Authentication failed; check credentials and rate limits');
  const state=await page.evaluate(async ()=>{const r=await fetch('/api/state');if(!r.ok)throw Error('STATE_'+r.status);return r.json()});
+ if(state.babies.length>1&&!targetBabyId)throw Error('Multiple babies: set BABYMEMO_BACKFILL_BABY_ID to avoid ambiguous maintenance cursor');
+ if(targetBabyId&&!state.babies.some(b=>b.id===targetBabyId))throw Error('Unknown BABYMEMO_BACKFILL_BABY_ID');
  for(const baby of state.babies){
+  if(targetBabyId&&baby.id!==targetBabyId)continue;
   if(scanned>=max)break;
   let after=cursor;
   for(;;){
@@ -75,5 +79,5 @@ try{
    if(scanned>=max)break;
   }
  }
- console.log(JSON.stringify({mode:apply?'apply':'dry-run',scanned,completed,skipped,failed,estimatedRemaining:remaining,nextCursor:cursor,note:'Cursor is ordered by id per baby; to resume a multi-baby import, run per baby or restart dry-run to inspect.'},null,2));
+ console.log(JSON.stringify({mode:apply?'apply':'dry-run',scanned,completed,skipped,failed,estimatedRemaining:remaining,nextCursor:cursor,note:'Cursor is scoped to one baby. For multi-baby families supply BABYMEMO_BACKFILL_BABY_ID and resume with BABYMEMO_BACKFILL_AFTER.'},null,2));
 }finally{await browser.close()}
