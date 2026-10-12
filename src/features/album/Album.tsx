@@ -167,6 +167,6 @@ export function Album({baby,media,favoriteOnly,onFavoriteOnly,favoriteUpdated,me
  {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">中断后重新选择原文件，可以继续上传已经保存的分片。</p>
   {pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><div className="pending-actions">{item.completedParts.length===Math.ceil(item.size/8388608)&&<button className="primary" type="button" disabled={uploading} onClick={()=>void finishPending(item.id)}>完成保存</button>}<button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div></div>)}
  </Card>}
- {selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia} onFavorite={()=>void toggleFavorite(selected)} onDelete={()=>void remove(selected.id)}/>}
+ {selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia} onFavorite={()=>{if(selected)void toggleFavorite(selected)}} onDelete={()=>{if(selected)void remove(selected.id)}}/>}
  </>;
 }
