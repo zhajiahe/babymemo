@@ -111,6 +111,8 @@ h1,h2,h3 { letter-spacing:normal; }
  .home-empty-photos { min-height:215px; }
  .home-photo-strip { gap:5px; margin-top:5px; }
  .home-measurements .growth-chart { padding:12px; }
+ .growth-svg text { font-size:23px; }
+ .notice { bottom:calc(104px + env(safe-area-inset-bottom)); max-width:calc(100vw - 32px); }
  .record-layout { display:flex; flex-direction:column; gap:14px; }
  .record-layout>.card { width:100%; padding:18px 16px; }
  .record-layout .timeline { max-height:none; }
