@@ -121,13 +121,25 @@ app.post('/api/records/:kind',async c=>{
   try {
     const v=await json(c.req.raw);
     if(typeof v.babyId!=='string'||!await babyExists(c.env,v.babyId)||!dayOk(v.day))return fail(c,400,'INVALID_BABY_OR_DATE');
+    const requestId=v.requestId===undefined?null:v.requestId;
+    if(requestId!==null&&(typeof requestId!=='string'||!/^[a-f0-9-]{36}$/i.test(requestId)))return fail(c,400,'INVALID_REQUEST_ID');
+    const table=kind==='growth'?'growth_records':'milestones';
+    if(requestId){
+      const previous=await c.env.DB.prepare('SELECT id,baby_id FROM '+table+' WHERE client_request_id=?').bind(requestId).first<{id:string;baby_id:string}>();
+      if(previous)return previous.baby_id===v.babyId?c.json({id:previous.id,alreadyExists:true}):fail(c,409,'REQUEST_ID_CONFLICT');
+    }
     const id=crypto.randomUUID(),date=now();
     if(kind==='growth'){
       if(!validNum(v.weight,0.1,150)||!validNum(v.height,10,250)||!validNum(v.headCircumference,10,100)||[v.weight,v.height,v.headCircumference].every(x=>x===undefined||x===null))return fail(c,400,'INVALID_MEASUREMENTS');
-      await c.env.DB.prepare('INSERT INTO growth_records(id,baby_id,day,weight,height,head_circumference,notes,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,v.babyId,v.day,v.weight??null,v.height??null,v.headCircumference??null,String(v.notes||'').slice(0,1500),date).run();
+      await c.env.DB.prepare('INSERT OR IGNORE INTO growth_records(id,baby_id,day,weight,height,head_circumference,notes,created_at,client_request_id) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,v.day,v.weight??null,v.height??null,v.headCircumference??null,String(v.notes||'').slice(0,1500),date,requestId).run();
     }else{
       if(typeof v.title!=='string'||!v.title.trim()||v.title.length>120)return fail(c,400,'INVALID_TITLE');
-      await c.env.DB.prepare('INSERT INTO milestones(id,baby_id,day,title,description,created_at) VALUES(?,?,?,?,?,?)').bind(id,v.babyId,v.day,v.title.trim(),String(v.description||'').slice(0,3000),date).run();
+      await c.env.DB.prepare('INSERT OR IGNORE INTO milestones(id,baby_id,day,title,description,created_at,client_request_id) VALUES(?,?,?,?,?,?,?)').bind(id,v.babyId,v.day,v.title.trim(),String(v.description||'').slice(0,3000),date,requestId).run();
+    }
+    if(requestId){
+      const saved=await c.env.DB.prepare('SELECT id,baby_id FROM '+table+' WHERE client_request_id=?').bind(requestId).first<{id:string;baby_id:string}>();
+      if(!saved)return fail(c,409,'RECORD_NOT_SAVED');
+      if(saved.id!==id)return saved.baby_id===v.babyId?c.json({id:saved.id,alreadyExists:true}):fail(c,409,'REQUEST_ID_CONFLICT');
     }
     return c.json({id},201);
   }catch{return fail(c,400,'INVALID_INPUT');}

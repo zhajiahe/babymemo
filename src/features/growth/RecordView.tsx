@@ -9,7 +9,7 @@ export function RecordView({baby,kind,items,history,historyLimited,busy,setBusy,
  useEffect(()=>{setForm(readDraft(draftKey))},[draftKey]);
  useEffect(()=>{try{sessionStorage.setItem(draftKey,JSON.stringify(form))}catch{}},[draftKey,form]);
  async function save(e:FormEvent){e.preventDefault();setBusy(true);try{
-  const payload=kind==='growth'?{babyId:baby.id,day:form.day,weight:form.weight?Number(form.weight):null,height:form.height?Number(form.height):null,headCircumference:form.headCircumference?Number(form.headCircumference):null,notes:form.notes}:{babyId:baby.id,day:form.day,title:form.title,description:form.description};
+  const payload=kind==='growth'?{babyId:baby.id,requestId:form.requestId,day:form.day,weight:form.weight?Number(form.weight):null,height:form.height?Number(form.height):null,headCircumference:form.headCircumference?Number(form.headCircumference):null,notes:form.notes}:{babyId:baby.id,requestId:form.requestId,day:form.day,title:form.title,description:form.description};
   await post('/api/records/'+kind,payload);try{sessionStorage.removeItem(draftKey)}catch{}setForm(emptyRecordForm());notify('已保存到家庭记录');changed();
  }catch(e){notify(e instanceof Error?e.message:'保存失败')}finally{setBusy(false)}}
  async function remove(id:string){if(!confirm('移入回收站？30 天内可恢复。'))return;try{await api('/api/records/'+kind+'/'+id,{method:'DELETE'});changed();notify('已移入回收站，可在设置中恢复')}catch(e){notify(e instanceof Error?e.message:'删除失败')}}
