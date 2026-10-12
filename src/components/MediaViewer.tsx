@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ChevronLeft, ChevronRight, Download, Save, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Save, X, Heart, Trash2 } from 'lucide-react';
 
 export type MediaItem = {
   id: string;
@@ -12,13 +12,15 @@ export type MediaItem = {
 };
 type MediaEdit = { day: string };
 
-export function MediaViewer({ item, index, count, onNavigate, onClose, onSave }: {
+export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, onFavorite, onDelete }: {
   item: MediaItem;
   index: number;
   count: number;
   onNavigate: (direction: number) => void;
   onClose: () => void;
   onSave: (value: MediaEdit) => Promise<void>;
+  onFavorite: () => void;
+  onDelete: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [day, setDay] = useState(item.day);
@@ -58,7 +60,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave }:
       <div className="media-viewer">
         <header className="media-viewer-header">
           <div>
-            <strong>成长回忆</strong>
+            <strong>{item.day}</strong>
             <span className="muted">第 {index + 1} / {count} 项</span>
           </div>
           <button type="button" className="icon-btn" onClick={() => dialogRef.current?.close()} aria-label="关闭预览"><X size={20} /></button>
@@ -73,7 +75,11 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave }:
             <button type="button" className="secondary" disabled={index <= 0 || saving} onClick={() => onNavigate(-1)}><ChevronLeft size={16} /> 上一项</button>
             <button type="button" className="secondary" disabled={index >= count - 1 || saving} onClick={() => onNavigate(1)}>下一项 <ChevronRight size={16} /></button>
           </div>
-          <a className="secondary media-download" href={src + '?download=1'}><Download size={16} />下载原文件</a>
+          <div className="media-detail-actions">
+           <button type="button" className={'icon-btn'+(item.favorite?' is-favorite':'')} onClick={onFavorite} aria-label={item.favorite?'取消收藏':'收藏'}><Heart size={19} fill={item.favorite?'currentColor':'none'}/></button>
+           <a className="secondary media-download" href={src + '?download=1'}><Download size={16}/>下载</a>
+           <button type="button" className="icon-btn media-remove" onClick={onDelete} aria-label="移入回收站"><Trash2 size={19}/></button>
+          </div>
         </div>
         <form className="media-viewer-edit" onSubmit={event => void save(event)}>
           <label className="field"><span>拍摄日期</span><input type="date" value={day} onChange={event => setDay(event.target.value)} required /></label>
