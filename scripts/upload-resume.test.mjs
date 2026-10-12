@@ -3,7 +3,7 @@ import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import {pickMatchingUpload,remainingPartNumbers} from '../src/upload-plan.mjs';
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
-const worker=read('src/worker.ts'),ui=read('src/App.tsx');
+const worker=read('src/worker.ts'),ui=read('src/features/album/Album.tsx');
 const migration=read('migrations/0003_upload_fingerprints.sql');
 
 test('resumption skips only confirmed parts, ignores duplicates and invalid parts',()=>{

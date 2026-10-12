@@ -4,7 +4,7 @@ import test from 'node:test';
 import { mediaDownloadHeader } from '../src/media-filename.mjs';
 
 const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
-const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+const app = readFileSync(new URL('../src/features/album/Album.tsx', import.meta.url), 'utf8');
 const viewer = readFileSync(new URL('../src/components/MediaViewer.tsx', import.meta.url), 'utf8');
 
 test('download filenames use a safe ASCII fallback and encoded UTF-8 names', () => {
