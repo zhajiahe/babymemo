@@ -371,8 +371,8 @@ async function browserE2e(){
       await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
       await page.locator('.thumbnail-backfill').waitFor({state:'visible',timeout:15000});
       await page.getByRole('button',{name:'开始补全'}).click();
-      // Wait for the request loop to finish, not for the panel to disappear.
-      await page.getByRole('button',{name:'开始补全'}).waitFor({state:'visible',timeout:30000});
+      // A successful backfill removes the panel once no pending photos remain.
+      await page.locator('.thumbnail-backfill').waitFor({state:'detached',timeout:30000});
       const state=await json('/api/media/thumbnail-backfill?babyId='+(await json('/api/state')).data.babies[0].id);
       assert.equal(state.data.items.some(item=>item.id===upload.data.id),false);
     });
