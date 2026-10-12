@@ -34,5 +34,7 @@ test('album preview uses native modal and private same-origin media URLs', () =>
   assert.match(viewer, /dialog\.showModal\(\)/);
   assert.match(viewer, /onClose=\{onClose\}/);
   assert.match(viewer, /src \+ '\?download=1'/);
-  assert.match(viewer, /onSave\(\{ title: title\.trim\(\), day \}\)/);
+  assert.match(viewer, /onSave\(\{ day \}\)/);
+  assert.doesNotMatch(viewer, /<span>名称<\/span>/);
+  assert.doesNotMatch(app, /thumbnail-backfill/);
 });
