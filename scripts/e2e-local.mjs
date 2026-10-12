@@ -335,7 +335,19 @@ async function browserE2e(){
       await page.goto(base+'/',{waitUntil:'domcontentloaded'});
       await page.locator('input[autocomplete="username"]').fill('Tester');
       await page.locator('input[autocomplete="current-password"]').fill('123456');
+      const loginResponse=page.waitForResponse(r=>r.url().endsWith('/api/login')&&r.request().method()==='POST');
       await page.getByRole('button',{name:/登录我的空间/}).click();
+      assert.equal((await loginResponse).status(),200);
+      if(useWebKit){
+        // Linux WebKit doesn't accept Secure cookies from loopback HTTP.
+        // The server keeps HttpOnly + Secure; seed an isolated test session
+        // after verifying /api/login worked, then load the authenticated UI.
+        const token=sessionCookie.slice('babymemo_session='.length);
+        assert.ok(token,'Expected authenticated isolated HTTP fixture');
+        await context.addCookies([{name:'babymemo_session',value:token,url:base,
+          httpOnly:true,secure:false,sameSite:'Lax'}]);
+        await page.reload({waitUntil:'domcontentloaded'});
+      }
       await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
     });
