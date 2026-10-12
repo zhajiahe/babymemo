@@ -132,3 +132,5 @@ Browser Auth 使用 `window.location.origin` 发起同源请求，而非 FlareMo
 技术链路：微信 `item_list[].image_item.media` → 官方 CDN 受限 HTTPS 下载（拒绝重定向）→ 解析各种 AES Key 编码 → AES-128-ECB/PKCS7 解密 → 校验 JPEG/PNG/GIF/WebP/HEIC 文件签名与大小 → 私有 R2 原图 → D1 media 元数据。
 
 验收应覆盖：绑定用户的普通照片、带 caption 的照片、多宝宝默认选择、同一微信消息重复投递、非法 CDN URL、过大图片、CDN 临时失败重试、模拟 R2 成功/D1 失败后的恢复；真机含微信 iOS/Android。无需另购 VPS；不能借用 MyBaby 中的公开 R2 域名方案。
+
+照片媒体下载失败采用 3 次有界重试；超过上限将提示检查相册并重发未保存的照片，避免同一过期 CDN 消息长期阻塞消息队列。重发会生成新的微信消息 ID，因此请先确认是否已有部分照片。

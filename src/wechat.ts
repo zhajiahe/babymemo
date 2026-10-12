@@ -167,7 +167,7 @@ export class WechatSession {
       await this.ctx.storage.put('lastPoll',new Date().toISOString());
       await this.ctx.storage.put('lastError',null);
       for(const raw of (Array.isArray(response.msgs)?response.msgs:[])){
-        if(!raw||raw.message_type!==1||(raw.message_state!==undefined&&raw.message_state!==0&&raw.message_state!==2)||raw.group_id||raw.from_user_id!==userId||raw.to_user_id&&raw.to_user_id!==botId||!raw.context_token)continue;
+        if(!raw||raw.message_type!==1||(raw.message_state!==undefined&&raw.message_state!==0&&raw.message_state!==2)||raw.group_id||raw.from_user_id!==userId||raw.to_user_id&&raw.to_user_id!==botId)continue;
         if(!Array.isArray(raw.item_list))continue;
         const text=raw.item_list.filter((i:any)=>i?.type===1&&typeof i?.text_item?.text==='string').map((i:any)=>i.text_item.text).join('\n').trim();
         const msgid=String(raw.message_id||raw.msg_id||'');
