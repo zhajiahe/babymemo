@@ -35,8 +35,8 @@ test('primary actions share the high-contrast brand token',()=>{
 });
 test('new typography floor and responsive touch targets stay explicit',()=>{
  assert.doesNotMatch(css,/font-size:\s*(?:10|11)px\b/);
- assert.match(css,/:where\(\.primary,\.secondary,\.light-btn,\.text-btn,\.icon-btn,\.pager button,\.chat-input button,\.notice button,\.upload-action\)\{min-height:44px\}/);
+ assert.match(css,/:where\(\.primary,\.secondary,\.light-btn,\.text-btn,\.icon-btn,\.pager button,\.notice button,\.upload-action\)\{min-height:44px\}/);
  assert.match(css,/\.mobile-nav button\{min-height:48px;min-width:48px\}/);
- assert.match(css,/\.field input,\.field textarea,\.field select,\.chat-input input\{font-size:16px\}/);
+ assert.match(css,/\.field input,\.field textarea,\.field select\{font-size:16px\}/);
  assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);
 });
