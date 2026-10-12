@@ -74,6 +74,16 @@ export async function decryptSecret(env:Env,value:string):Promise<string> {
   const data=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(unbase64url(parts[1]))},await dataKey(env),new Uint8Array(unbase64url(parts[2])));
   return new TextDecoder().decode(data);
 }
+// A deployment-managed key is authoritative; never serialize its value to D1 or the browser.
+export function deployedOpenRouterKey(env:Env):string|null {
+  return typeof env.OPENROUTER_API_KEY==='string'&&env.OPENROUTER_API_KEY.trim()?env.OPENROUTER_API_KEY.trim():null;
+}
+export async function resolveOpenRouterKey(env:Env):Promise<string|null> {
+  const configured=deployedOpenRouterKey(env);
+  if(configured)return configured;
+  const encrypted=await setting(env,'openrouter_key');
+  return encrypted?decryptSecret(env,encrypted):null;
+}
 export async function setting(env:Env,name:string):Promise<string|null> {
   const row=await env.DB.prepare('SELECT value FROM app_settings WHERE name=?').bind(name).first<{value:string}>();
   return row?.value??null;

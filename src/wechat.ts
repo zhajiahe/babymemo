@@ -1,6 +1,6 @@
 import JSONBig from 'json-bigint';
 import type { Env, Baby } from './types';
-import { decryptSecret, encryptSecret, setting } from './crypto';
+import { decryptSecret, encryptSecret, setting, resolveOpenRouterKey } from './crypto';
 import { wechatTools, wechatHelp, runWechatTool } from './wechat-harness.mjs';
 import {WechatPhotoError,mediaItems,persistWeChatMedia} from './wechat-media.mjs';
 import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.mjs';
@@ -57,9 +57,8 @@ export function workerBot(env:Env):DurableObjectStub {
 }
 // OpenRouter is exclusively the WeChat command interpreter; no website chat API.
 export async function testOpenRouterConnection(env:Env):Promise<boolean>{
-  const encrypted=await setting(env,'openrouter_key');if(!encrypted)throw Error('OPENROUTER_KEY_MISSING');
+  const key=await resolveOpenRouterKey(env);if(!key)throw Error('OPENROUTER_KEY_MISSING');
   const model=await setting(env,'openrouter_model')||'openai/gpt-4.1-mini';
-  const key=await decryptSecret(env,encrypted);
   const result=await openRouterCompletion({key,model,messages:[{role:'user',content:'Reply exactly: OK'}],max_tokens:16});
   return Array.isArray(result.choices)&&result.choices.length>0;
 }
@@ -76,10 +75,9 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
   const baby=matches[0]||babies.results.find(b=>b.id===thread?.babyId)||babies.results[0];
   if(thread)thread.selectedBabyId=baby.id;
   const context=thread?buildCommandContext(command,thread):{modelMessages:[{role:'user',content:command}],groundedText:command};
-  const encrypted=await setting(env,'openrouter_key');
-  if(!encrypted)return '请先在网页设置中配置微信操作所需的 OpenRouter Key';
+  const key=await resolveOpenRouterKey(env);
+  if(!key)return '请先在网页设置中配置 OpenRouter Key，或在部署时设置 OPENROUTER_API_KEY Secret';
   const model=await setting(env,'openrouter_model')||'openai/gpt-4.1-mini';
-  const key=await decryptSecret(env,encrypted);
   const localDay=new Date().toLocaleDateString('sv-SE',{timeZone:baby.time_zone||'Asia/Shanghai'});
   const instruction='你是 BabyMemo 微信操作入口的工具路由器，不是聊天/育儿分析助手。'+
     '当前本地日期 '+localDay+'，目标宝宝 '+baby.name+'。根据绑定用户指令，每次仅选择一个最匹配的工具调用。'+
