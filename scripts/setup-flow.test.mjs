@@ -32,3 +32,12 @@ test('album card avoids metadata loading for every video in grid',()=>{
  assert.doesNotMatch(ui,/<video muted playsInline preload="metadata"/);
  assert.match(ui,/decoding="async"/);
 });
+
+test('PBKDF2 iteration count remains supported by production Workers',()=>{
+ const crypto=read('src/crypto.ts');
+ // Local Wrangler/Node may accept 120,000 while production Workers rejects it.
+ assert.match(crypto,/iterations:100000/);
+ assert.doesNotMatch(crypto,/iterations:120000/);
+ assert.match(auth,/const salt=randomHex\(16\),hash=await passwordHash\(input.password,salt\)/);
+ assert.match(auth,/const hash=await passwordHash\(password,existing.password_salt\)/);
+});
