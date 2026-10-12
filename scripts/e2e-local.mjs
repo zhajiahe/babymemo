@@ -55,7 +55,7 @@ async function boot() {
   port = await freePort();
   base = 'http://127.0.0.1:' + port;
   runCli(['d1','migrations','apply','DB','--local','--persist-to',dir]);
-  worker = spawn(wrangler, ['dev','--local','--port',String(port),'--ip','127.0.0.1','--persist-to',dir],{
+  worker = spawn(wrangler, ['dev','--local','--test-scheduled','--port',String(port),'--ip','127.0.0.1','--persist-to',dir],{
     cwd:root,
     env:{...process.env,CI:'true',BROWSER:'none'},
     stdio:['ignore','pipe','pipe'],
@@ -292,6 +292,10 @@ async function e2e() {
     assert.equal((await json('/api/upload/'+created.data.id+'/cancel',{method:'POST',body:{}})).status,200);
     assert.equal((await json('/api/upload/pending?babyId='+babyId)).data.items.length,0);
   });
+  await step('scheduled cleanup handler accepts Cloudflare local Cron trigger',async()=>{
+    const response=await request('/cdn-cgi/local/scheduled?format=json',{anonymous:true});
+    assert.equal(response.status,200,await response.text());
+  });
   console.log('All isolated Worker E2E assertions passed.');
 }
 // Browser E2E runs in Chromium (including mobile viewport emulation), not
@@ -334,6 +338,24 @@ async function browserE2e(){
       await page.getByRole('button',{name:/登录我的空间/}).click();
       await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': bulk backfill of an existing private photo',async()=>{
+      const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ln0AAAAASUVORK5CYII=','base64');
+      const upload=await json('/api/upload/start',{method:'POST',body:{
+        babyId:(await json('/api/state')).data.babies[0].id,
+        day:'2025-04-15',title:'legacy-photo.png',mime:'image/png',size:png.length,fingerprint:'f'.repeat(64)
+      }});
+      assert.equal(upload.status,201,JSON.stringify(upload.data));
+      const part=await json('/api/upload/'+upload.data.id+'/part/1',{method:'PUT',
+        body:new Uint8Array(png),headers:{'Content-Type':'application/octet-stream'}});
+      assert.equal(part.status,200,JSON.stringify(part.data));
+      assert.equal((await json('/api/upload/'+upload.data.id+'/finish',{method:'POST',body:{}})).status,201);
+      await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
+      await page.locator('.thumbnail-backfill').waitFor({state:'visible',timeout:15000});
+      await page.getByRole('button',{name:'开始补全'}).click();
+      await page.locator('.thumbnail-backfill').waitFor({state:'detached',timeout:30000});
+      const state=await json('/api/media/thumbnail-backfill?babyId='+(await json('/api/state')).data.babies[0].id);
+      assert.equal(state.data.items.some(item=>item.id===upload.data.id),false);
     });
     await step((useWebKit?'WebKit slow network':'Chromium')+': gallery image upload and private preview',async()=>{
       await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
