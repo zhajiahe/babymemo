@@ -11,14 +11,15 @@
 | MyBaby / Prisma | BabyMemo / D1 | 说明 |
 | --- | --- | --- |
 | `Baby.id` | `babies.id` | 尽量原样保留，避免外键重映射 |
-| `Baby.name`、`birthDate`、`gender` | `babies.name`、`birthday`、`gender` | 时间统一转为宝宝时区下 YYYY-MM-DD |
+| `Baby.name`、`birthDate`、`gender` | `babies.name`、`birthday`、`gender` | 日期统一转为宝宝时区下 YYYY-MM-DD |
+| `Baby.birthTime` | `babies.birth_time`（迁移 0012） | 可选 HH:mm，本地时区时间；旧数据不自动推断，需要按真实资料回填 |
 | `Baby.allergies`、`notes` | `babies.allergies`、`notes` | 防止空值覆盖 |
 | `GrowthRecord` | `growth_records` | weight kg，height 和头围 cm |
 | `Milestone` | `milestones` | title、description、day |
 | `MediaItem` | `media` + R2 | 原 URL 必须定位底层对象；严禁仅迁移缩略图 |
 | `owner` | 新实例独立管理员 | 不复用旧系统认证 Cookie 或凭据 |
 
-暂不完整映射的字段：`Baby.birthTime`、`avatar`、出生体格数据、血型，`Milestone.tags`，`MediaItem.description`、`format`、`thumbnailUrl`、`duration`。**在完成字段扩展前，不能称为无损迁移**。
+暂不完整映射的字段：`avatar`、出生体格数据、血型，`Milestone.tags`，`MediaItem.description`、`format`、`thumbnailUrl`、`duration`。**在完成字段扩展前，不能称为无损迁移**。
 
 ## 迁移原则
 
@@ -39,3 +40,8 @@
 - 迁移程序必须支持 dry-run、断点续传及幂等重试，再允许用于生产。
 
 目前没有迁移脚本，因此 **不要把 BabyMemo 当作已完整替代 MyBaby**。
+## 已有正式数据的追加维护
+
+- 生产已导入数据不应再使用此历史迁移计划进行第二次全量导入。
+- `0012_birth_time.sql` 仅新增默认空字符串的出生时间列，已有宝宝 ID、记录、媒体索引保持不变。请在设置页手工录入原 MyBaby 中真实的 HH:mm；无法确认时保持空值，不做推测。
+- 旧照片缩略图不属于产品常规功能。需一次性补图时，请通过 [媒体维护手册](MEDIA_MAINTENANCE.md) 执行操作者脚本；不动原图，明确确认后才写入衍生图。
