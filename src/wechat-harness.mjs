@@ -8,7 +8,7 @@ const tool=(name,description,properties={},required=[])=>({type:'function',funct
 export const wechatTools=[
  tool('list_babies','列出这个家庭已经创建的宝宝'),
  tool('get_baby','读取当前宝宝的生日、昵称、过敏等档案'),
- tool('update_baby','修改宝宝档案，只根据用户明确说出的字段修改',{name:str,allergies:str,notes:str,birthday:day}),
+ tool('update_baby','修改宝宝档案，只根据用户明确说出的字段修改',{name:str,allergies:str,notes:str,birthday:day,birthTime:{type:'string',description:'出生时间 HH:mm'}}),
  tool('list_growth','查询成长测量，结果中含记录编号',{day,limit:{type:'integer',minimum:1,maximum:10}}),
  tool('create_growth','新增一条体重/身高/头围测量，必须有用户明确提供的数值和单位',{day,weight:number('kg',150),height:number('cm',250),headCircumference:number('cm',100),notes:str},['day']),
  tool('update_growth','更正已有测量，只修改用户明确要求变动的字段',{...selector,weight:number('kg',150),height:number('cm',250),headCircumference:number('cm',100),notes:str}),
@@ -17,8 +17,8 @@ export const wechatTools=[
  tool('create_milestone','新增一条成长事件',{day,title:str,description:str},['day','title']),
  tool('update_milestone','修改某条成长事件标题/描述/日期',{...selector,newDay:day,title:str,description:str}),
  tool('delete_milestone','把唯一一条成长事件移入 30 天回收站，必须有删除意图',selector),
- tool('list_media','列出相册里的照片和视频（仅元数据），支持日期和名称筛选',{day,title:str,limit:{type:'integer',minimum:1,maximum:10}}),
- tool('update_media','重命名/修改日期/收藏一项相册内容',{...selector,title:str,newDay:day,favorite:{type:'boolean'}}),
+ tool('list_media','列出相册里的照片和视频（仅元数据），支持日期筛选',{day,limit:{type:'integer',minimum:1,maximum:10}}),
+ tool('update_media','修改日期或收藏一项相册内容',{...selector,newDay:day,favorite:{type:'boolean'}}),
  tool('delete_media','把一项相册内容移入 30 天回收站，必须有删除意图',selector),
  tool('list_trash','查看当前宝宝的回收站',{kind:{type:'string',enum:['growth','milestones','media']}}),
  tool('restore_trash','从回收站中恢复一项内容',{kind:{type:'string',enum:['growth','milestones','media']},...selector},['kind'])
@@ -38,7 +38,7 @@ const dateText=(x)=>x.day;
 const maxLimit=(args)=>Number.isInteger(args.limit)?Math.min(10,Math.max(1,args.limit)):5;
 const listLine=(kind,r)=>{
  const bits=kind==='growth'?[r.weight!=null?'体重 '+r.weight+' kg':'',r.height!=null?'身高 '+r.height+' cm':'',r.head_circumference!=null?'头围 '+r.head_circumference+' cm':'',r.notes||'']:
- kind==='milestones'?[r.title||'',r.description||'']:[r.title||'',r.mime||'',r.favorite?'已收藏':''];
+ kind==='milestones'?[r.title||'',r.description||'']:[r.mime||'',r.favorite?'已收藏':''];
  return short(r.id)+' · '+r.day+' · '+bits.filter(Boolean).join('，');
 };
 function groundedTarget(args,text,baby){
@@ -112,7 +112,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    return '家庭宝宝：\n'+r.results.map(x=>x.name+'（'+x.birthday+'）').join('\n');
   }
   if(!baby)return '请先在 BabyMemo 中建立宝宝档案';
-  if(action==='get_baby')return baby.name+' 的档案：生日 '+baby.birthday+'，过敏和注意事项：'+(baby.allergies||'未填写')+'，备注：'+(baby.notes||'无');
+  if(action==='get_baby')return baby.name+' 的档案：生日 '+baby.birthday+(baby.birth_time?' '+baby.birth_time:'（出生时间未填写）')+'，过敏和注意事项：'+(baby.allergies||'未填写')+'，备注：'+(baby.notes||'无');
   if(action==='update_baby'){
    if(!/修改|更正|更改|更新|设置|改成|改为|改一下|记为|添加过敏|补充过敏/.test(originalText))return '请明确说明“修改宝宝资料”，防止误操作';
    const changes={};
@@ -120,6 +120,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    if(args.allergies!==undefined){if(typeof args.allergies!=='string'||args.allergies.length>2000)throw Error('过敏备注最长 2000 字');changes.allergies=args.allergies}
    if(args.notes!==undefined){if(typeof args.notes!=='string'||args.notes.length>4000)throw Error('备注最长 4000 字');changes.notes=args.notes}
    if(args.birthday!==undefined){if(!validDate(args.birthday))throw Error('生日日期不正确');changes.birthday=args.birthday}
+    if(args.birthTime!==undefined){if(typeof args.birthTime!=='string'||args.birthTime!==''&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(args.birthTime))throw Error('出生时间应为 HH:mm');changes.birth_time=args.birthTime}
    if(!Object.keys(changes).length)return '请说明要修改的字段';
    await env.DB.prepare('UPDATE babies SET '+Object.keys(changes).map(x=>x+'=?').join(',')+' WHERE id=?').bind(...Object.values(changes),baby.id).run();
    return '已更新 '+baby.name+' 的宝宝档案。';

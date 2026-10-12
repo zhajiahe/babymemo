@@ -67,7 +67,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
   const command=text.trim();
   if(!command)return wechatHelp;
   if(/^(帮助|使用说明|菜单|help|你能做什么|有什么功能)[？?!！]?$/i.test(command))return wechatHelp;
-  const babies=await env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all<Baby>();
+  const babies=await env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all<Baby>();
   if(!babies.results.length)return '请先在 BabyMemo 中添加宝宝资料';
   if(/^(宝宝列表|列出宝宝|有哪些宝宝|查看所有宝宝)[？?]?$/i.test(command))return runWechatTool(env,null,'list_babies',{},messageId,command);
   const matches=babies.results.filter(b=>b.name && command.includes(b.name));
