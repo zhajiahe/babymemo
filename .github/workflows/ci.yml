@@ -14,5 +14,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --no-audit --no-fund
+      - name: Check deployment scripts syntax
+        run: node --check scripts/provision-cloudflare.mjs && node --check scripts/smoke-check.mjs
       - run: npm run check
       - run: npm run build
