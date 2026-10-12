@@ -67,13 +67,28 @@ export default function App(){
   catch(e){if(e instanceof ApiFailure&&e.status===401){setMode('gate');setState(null);}else{setToast('连接暂时中断，已保留当前页面。请检查网络并重试。');setMode(old=>old==='loading'?'unavailable':old);}}
  }
  useEffect(()=>{refresh()},[]);
- useEffect(()=>{if(!baby?.id)return;
-  Promise.all([
-   api<any>('/api/records/growth?babyId='+encodeURIComponent(baby.id)+'&page='+growthPage),
-   api<any>('/api/records/milestones?babyId='+encodeURIComponent(baby.id)+'&page='+momentPage),
-   api<any>('/api/media?babyId='+encodeURIComponent(baby.id)+'&page='+albumPage)
-  ]).then(([g,m,a])=>{setRecords(g.items);setMilestones(m.items);setMedia(a.items);setHasMore({growth:g.hasMore,moments:m.hasMore,album:a.hasMore})}).catch(e=>setToast(String(e)));
- },[baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media]);
+ // Load only the resource required by the active view; avoid three D1 reads on
+ // every navigation. Ignore late responses when baby or tab changes.
+ useEffect(()=>{
+  if(!baby?.id)return;
+  let cancelled=false;
+  const id=encodeURIComponent(baby.id);
+  const loads:Promise<void>[]=[];
+  if(active==='overview'||active==='growth'){
+   loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/growth?babyId='+id+'&page='+growthPage)
+    .then(r=>{if(!cancelled){setRecords(r.items);setHasMore(p=>({...p,growth:r.hasMore}))}}));
+  }
+  if(active==='overview'||active==='moments'){
+   loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/milestones?babyId='+id+'&page='+momentPage)
+    .then(r=>{if(!cancelled){setMilestones(r.items);setHasMore(p=>({...p,moments:r.hasMore}))}}));
+  }
+  if(active==='album'){
+   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+albumPage)
+    .then(r=>{if(!cancelled){setMedia(r.items);setHasMore(p=>({...p,album:r.hasMore}))}}));
+  }
+  void Promise.all(loads).catch(e=>{if(!cancelled)setToast(e instanceof Error?e.message:'数据读取失败')});
+  return ()=>{cancelled=true};
+ },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media]);
  function changed(){void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
  async function logout(){await post('/api/logout',{});setMode('gate');setState(null)}
  if(mode==='loading')return <div className="loading-screen"><Logo/><div>正在载入家庭空间…</div></div>;
@@ -116,10 +131,32 @@ function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;m
    const mime=file.type||(/\.mov$/i.test(file.name)?'video/quicktime':'application/octet-stream');
    const start=await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:today(),title:file.name,mime,size:file.size});
    const parts=Math.ceil(file.size/start.chunkSize);
-   for(let i=0;i<parts;i++){
-    setProgress(file.name+' · '+Math.round(i/parts*100)+'%');
-    await api('/api/upload/'+start.id+'/part/'+(i+1),{method:'PUT',body:file.slice(i*start.chunkSize,Math.min(file.size,(i+1)*start.chunkSize)),headers:{'Content-Type':'application/octet-stream'}});
-   }
+   // Keep three bounded uploads in flight; retry transient failures per part.
+   // Worker never buffers the whole file, so iPhone MOV uploads remain chunked.
+   let next=0,completed=0;
+   const uploadPart=async(index:number)=>{
+    for(let attempt=0;attempt<3;attempt++){
+     try {
+      await api('/api/upload/'+start.id+'/part/'+(index+1),{
+       method:'PUT',
+       body:file.slice(index*start.chunkSize,Math.min(file.size,(index+1)*start.chunkSize)),
+       headers:{'Content-Type':'application/octet-stream'}
+      });
+      return;
+     }catch(e){
+      if(attempt===2)throw e;
+      await new Promise(resolve=>setTimeout(resolve,600*(2**attempt)));
+     }
+    }
+   };
+   await Promise.all(Array.from({length:Math.min(3,parts)},async()=>{
+    while(next<parts){
+     const index=next++;
+     await uploadPart(index);
+     completed++;
+     setProgress(file.name+' · '+Math.round(completed/parts*100)+'%');
+    }
+   }));
    await post('/api/upload/'+start.id+'/finish',{});
    notify('已保存 '+file.name);changed();
   }catch(e){notify(file.name+'：'+(e instanceof Error?e.message:'上传失败'));}}

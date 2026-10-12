@@ -135,6 +135,11 @@ export class WechatSession {
       await this.ctx.storage.deleteAlarm();
       return Response.json({ok:true});
     }
+    if(path==='/reset'){
+      await this.ctx.storage.deleteAlarm();
+      await Promise.all(['cursor','lastPoll','lastError','lastMessage'].map(key=>this.ctx.storage.delete(key)));
+      return Response.json({ok:true});
+    }
     return new Response('Not found',{status:404});
   }
   async alarm():Promise<void>{

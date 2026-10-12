@@ -233,6 +233,9 @@ app.post('/api/settings/wechat/qr/status',async c=>{
       await setSetting(c.env,'wechat_user_id',result.userId);
       await setSetting(c.env,'wechat_base',result.base||'https://ilinkai.weixin.qq.com');
       await setSetting(c.env,'wechat_enabled','false');
+      // A newly linked account must never reuse the previous bot's getupdates cursor.
+      const reset=await workerBot(c.env).fetch('https://bot.internal/reset',{method:'POST'});
+      if(!reset.ok)throw Error('WECHAT_RESET_FAILED');
       await setSetting(c.env,'pairing_qr','');
       return c.json({status:'confirmed'});
     }
