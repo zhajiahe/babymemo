@@ -352,7 +352,13 @@ async function browserE2e(){
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
     });
     await step((useWebKit?'WebKit':'Chromium')+': bulk backfill of an existing private photo',async()=>{
-      const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ln0AAAAASUVORK5CYII=','base64');
+      // Generate a browser-native PNG so WebKit and Chromium decode the same valid fixture.
+      const pngBase64=await page.evaluate(()=>{
+        const canvas=document.createElement('canvas');canvas.width=16;canvas.height=16;
+        const ctx=canvas.getContext('2d');ctx.fillStyle='#cc5544';ctx.fillRect(0,0,16,16);
+        return canvas.toDataURL('image/png').split(',')[1];
+      });
+      const png=Buffer.from(pngBase64,'base64');
       const upload=await json('/api/upload/start',{method:'POST',body:{
         babyId:(await json('/api/state')).data.babies[0].id,
         day:'2025-04-15',title:'legacy-photo.png',mime:'image/png',size:png.length,fingerprint:'f'.repeat(64)
@@ -365,7 +371,8 @@ async function browserE2e(){
       await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
       await page.locator('.thumbnail-backfill').waitFor({state:'visible',timeout:15000});
       await page.getByRole('button',{name:'开始补全'}).click();
-      await page.locator('.thumbnail-backfill').waitFor({state:'detached',timeout:30000});
+      // Wait for the request loop to finish, not for the panel to disappear.
+      await page.getByRole('button',{name:'开始补全'}).waitFor({state:'visible',timeout:30000});
       const state=await json('/api/media/thumbnail-backfill?babyId='+(await json('/api/state')).data.babies[0].id);
       assert.equal(state.data.items.some(item=>item.id===upload.data.id),false);
     });
@@ -391,10 +398,11 @@ async function browserE2e(){
       await page.getByRole('button',{name:/保存信息/}).click();
       await page.getByText('照片信息已更新').waitFor({timeout:15000});
       await page.getByRole('button',{name:'关闭预览'}).click();
-      await page.waitForFunction(()=>document.querySelector('.photo-caption strong')?.textContent==='Browser E2E photo');
+      const editedCard=page.locator('.photo-item').filter({hasText:'Browser E2E photo'});
+      await editedCard.waitFor({state:'visible',timeout:15000});
       page.once('dialog',dialog=>void dialog.accept());
-      await page.locator('.photo-caption .icon-btn').first().click();
-      await page.locator('.photo-preview').first().waitFor({state:'detached',timeout:15000});
+      await editedCard.locator('.photo-caption .icon-btn').click();
+      await editedCard.waitFor({state:'detached',timeout:15000});
     });
     await step((useWebKit?'WebKit':'Chromium')+': 390px mobile navigation and horizontal overflow',async()=>{
       await page.setViewportSize({width:390,height:844});
