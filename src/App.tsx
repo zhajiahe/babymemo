@@ -148,8 +148,9 @@ function GrowthChart({items,limited}:{items:RecordItem[];limited?:boolean}){
  const poly=points.map((p,i)=>`${x(i)},${y(Number(p[metric]))}`).join(' ');
  return <Card className="growth-chart"><div className="section-title"><h3>成长趋势</h3><div className="chart-tabs"><button className={metric==='weight'?'active':''} onClick={()=>setMetric('weight')}>体重 · kg</button><button className={metric==='height'?'active':''} onClick={()=>setMetric('height')}>身高 · cm</button></div></div>{!points.length?<p className="empty">记录测量数据后，这里会显示变化趋势。</p>:<svg role="img" aria-label={`${metric==='weight'?'体重':'身高'}趋势，${points.length} 个测量点`} viewBox="0 0 720 235" className="growth-svg"><line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#e8e8ed"/>{[0,1,2,3].map(step=>{const value=min+(max-min)*step/3;const yy=y(value);return <g key={step}><line x1={left} x2={right} y1={yy} y2={yy} stroke="#edf0f3" strokeDasharray="3 5"/><text x={left-10} y={yy+4} textAnchor="end" fontSize={12} fill="#87919f">{value.toFixed(1)}</text></g>})}{points.length>1&&<polyline points={poly} fill="none" stroke="#dd8068" strokeWidth={3} strokeLinejoin="round" strokeLinecap="round"/>}{points.map((p,i)=><circle key={p.id} cx={x(i)} cy={y(Number(p[metric]))} r={4} fill="#df826c" stroke="#fff" strokeWidth={2}><title>{p.day}：{Number(p[metric])}{metric==='weight'?' kg':' cm'}</title></circle>)}<text x={left} y={226} fill="#8993a0" fontSize={11}>{points[0].day}</text><text x={right} y={226} fill="#8993a0" fontSize={11} textAnchor="end">{points.at(-1)?.day}</text></svg>}<p className="hint">横轴按真实测量日期绘制，展示历史记录（最多 2000 条）。{limited?'历史数据达到查询上限。':''}</p></Card>;
 }
-function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];mediaEdited:(id:string,value:{title:string;day:string})=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
+function Album({baby,media,query,onQuery,favoriteOnly,onFavoriteOnly,favoriteUpdated,mediaEdited,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];query:string;onQuery:(v:string)=>void;favoriteOnly:boolean;onFavoriteOnly:(v:boolean)=>void;favoriteUpdated:(id:string,favorite:boolean)=>void;mediaEdited:(id:string,value:{title:string;day:string})=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
+ const [uploadDay,setUploadDay]=useState(today()),[autoDate,setAutoDate]=useState(true);
  const [selected,setSelected]=useState<MediaItem|null>(null);
  useEffect(()=>{setSelected(null)},[baby.id]);
  type PendingUpload={id:string;day:string;title:string;mime:string;size:number;fingerprint:string;completedParts:number[];created_at:string};
@@ -245,7 +246,7 @@ function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{bab
      setProgress(file.name+' · 正在检查分片');
      const fingerprint=await fingerprintFile(file);
      const existing=pickMatchingUpload(queue,{title:file.name.slice(0,120),size:file.size,mime,fingerprint}) as PendingUpload|undefined;
-     const session=existing||await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:today(),title:file.name,mime,size:file.size,fingerprint});
+     const session=existing||await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:autoDate?mediaDay(file,uploadDay):uploadDay,title:file.name,mime,size:file.size,fingerprint});
      uploadId=session.id;
      const chunkSize=8388608;
      const total=Math.ceil(file.size/chunkSize);
@@ -292,13 +293,13 @@ function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{bab
      changed();
      notify('已保存 '+file.name);
      // Thumbnails are independent of the original multipart upload.
-     if(mime.startsWith('image/')){
+     if(mime.startsWith('image/')||mime.startsWith('video/')){
       try{
-       setProgress(file.name+' · 正在生成缩略图');
-       const thumb=await createAlbumThumbnail(file);
+       setProgress(file.name+' · 正在生成预览图');
+       const thumb=mime.startsWith('image/')?await createAlbumThumbnail(file):await createVideoThumbnail(file);
        if(thumb)await api('/api/media/'+session.id+'/thumbnail',{method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}});
       }catch{
-       notify(file.name+' 已保存，但缩略图暂不可用（相册仍可查看原图）');
+       notify(file.name+' 已保存，但预览图暂不可用（仍可查看原文件）');
       }
      }
     }catch(error){
@@ -314,7 +315,8 @@ function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{bab
    setProgress('');
   }
  }
- async function remove(id:string){if(!confirm('确定从相册删除这项媒体吗？'))return;try{await api('/api/media/'+id,{method:'DELETE'});if(selected?.id===id)setSelected(null);changed();notify('已从相册删除')}catch(e){notify(e instanceof Error?e.message:'删除失败')}}
+ async function remove(id:string){if(!confirm('将这项媒体移入回收站？30 天内可恢复。'))return;try{await api('/api/media/'+id,{method:'DELETE'});if(selected?.id===id)setSelected(null);changed();notify('已移入回收站，可在设置中恢复')}catch(e){notify(e instanceof Error?e.message:'删除失败')}}
+ async function toggleFavorite(item:MediaItem){try{const favorite=!item.favorite;await post('/api/media/'+item.id+'/favorite',{favorite});favoriteUpdated(item.id,favorite);notify(favorite?'已收藏':'已取消收藏')}catch(e){notify(e instanceof Error?e.message:'收藏失败')}}
  async function saveMedia(value:{title:string;day:string}){
   if(!selected)return;
   await api('/api/media/'+selected.id,{method:'PATCH',body:JSON.stringify(value)});
@@ -329,10 +331,11 @@ function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{bab
   const next=media[current+step];
   if(next)setSelected(next);
  }
- return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>{progress&&<p className="small">{progress}</p>}</Card>
+ return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用文件日期（可能不是实际拍摄日）</label><label>默认日期 <input type="date" value={uploadDay} max={today()} onChange={e=>setUploadDay(e.target.value)}/></label></div><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>{progress&&<p className="small" role="status">{progress}</p></Card>
  {backfill.remaining>0&&<Card className="thumbnail-backfill"><div className="section-title"><h3>补全旧照片缩略图</h3><span className="muted small">{backfill.remaining} 张待处理</span></div><p className="muted small">需要通过当前设备下载旧照片并生成私有缩略图。建议连接 Wi-Fi，保持页面开启。原图不会被修改；不支持解码或大于 25MB 的照片会跳过。</p><div className="backfill-actions">{backfill.running?<button className="secondary" type="button" onClick={()=>{stopBackfill.current=true}}>停止补全</button>:<button className="primary" type="button" disabled={uploading} onClick={()=>void backfillThumbnails()}>开始补全</button>}<span className="muted small">{backfill.running?'处理中 · ':''}成功 {backfill.completed} · 跳过 {backfill.skipped} · 失败 {backfill.failed}</span></div></Card>}
  {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">网络中断或刷新页面后，重新选择原来的文件，会自动识别并继续上传未完成的分片。文件不会保存在本网站中。</p>{pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><div className="pending-actions">{item.completedParts.length===Math.ceil(item.size/8388608)&&<button className="primary" type="button" disabled={uploading} onClick={()=>void finishPending(item.id)}>完成保存</button>}<button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div></div>)}</Card>}
- <div className="photo-grid">{media.map(item=><Card key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+(item.title||'成长回忆')}><span className="photo-frame">{item.mime.startsWith('image/')?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt="" />:<span className="video-placeholder" aria-hidden="true"><Camera size={32}/><span>视频 · 点击播放</span></span>}</span><span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button><div className="photo-caption"><div><strong>{item.title||'未命名'}</strong><p>{item.day}</p></div><button type="button" className="icon-btn" onClick={()=>void remove(item.id)} aria-label={'删除 '+(item.title||'媒体')}><Trash2 size={16}/></button></div></Card>)}</div>{!media.length&&<div className="empty card">还没有照片，试试上传第一张。</div>}<Pager page={page} setPage={setPage} hasMore={hasMore}/>{selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia}/> }</>;
+ <div className="album-toolbar"><label className="field">搜索名称<input type="search" value={query} maxLength={80} placeholder="查找照片或视频" onChange={e=>onQuery(e.target.value)}/></label><label className="album-favorite-filter"><input type="checkbox" checked={favoriteOnly} onChange={e=>onFavoriteOnly(e.target.checked)}/> <Heart size={15}/> 仅看收藏</label></div>
+ {Array.from(new Set(media.map(item=>item.day.slice(0,7)))).map(month=><section className="photo-month" key={month}><h3>{month.replace('-', ' 年 ')} 月</h3><div className="photo-grid">{media.filter(item=>item.day.startsWith(month)).map(item=><Card key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+(item.title||'成长回忆')}><span className="photo-frame">{item.mime.startsWith('image/')||item.thumbnail_ready?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt="" />:<span className="video-placeholder" aria-hidden="true"><Camera size={32}/><span>视频 · 点击播放</span></span>}</span><span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button><div className="photo-caption"><div><strong>{item.title||'未命名'}</strong><p>{item.day}</p></div><div className="photo-actions"><button type="button" className={'icon-btn '+(item.favorite?'is-favorite':'')} onClick={()=>void toggleFavorite(item)} aria-label={item.favorite?'取消收藏':'收藏'}><Heart size={16} fill={item.favorite?'currentColor':'none'}/></button><button type="button" className="icon-btn" onClick={()=>void remove(item.id)} aria-label={'删除 '+(item.title||'媒体')}><Trash2 size={16}/></button></div></div></Card>)}</div></section>)}{!media.length&&<div className="empty card">还没有照片，试试上传第一张。</div>}<Pager page={page} setPage={setPage} hasMore={hasMore}/>{selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia}/> }</>;
 }
 function Assistant({configured,babyId,setActive}:{configured:boolean;babyId:string;setActive:(v:Tab)=>void}){
  const [input,setInput]=useState(''),[messages,setMessages]=useState<{role:'me'|'bot';text:string}[]>([]),[waiting,setWaiting]=useState(false);
