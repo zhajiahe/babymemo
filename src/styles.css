@@ -118,3 +118,13 @@
 .backfill-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .backfill-actions button{min-height:44px}
 @media(max-width:480px){.backfill-actions button{width:100%}}
+
+/* Create a second baby without reinitializing the family. */
+.baby-create-section{margin-top:24px;padding-top:20px;border-top:1px solid var(--bm-border)}
+.baby-create-section>.section-title{margin-bottom:12px}
+.baby-create-section .section-title h3{margin:0 0 5px}
+.baby-create-section .section-title p{margin:0;line-height:1.6}
+.baby-create-form{padding-top:12px}
+.baby-create-form .section-title{align-items:center}
+.baby-create-form .section-title strong{font-size:14px}
+.baby-create-form input,.baby-create-form select,.baby-create-form textarea{min-width:0}

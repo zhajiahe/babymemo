@@ -140,6 +140,26 @@ async function e2e() {
     assert.match(sessionCookie,/^babymemo_session=/);
     assert.equal((await json('/api/state')).status,200);
   });
+  await step('authenticated additional baby can be created without losing the first',async()=>{
+    const unauthorized=await json('/api/babies',{method:'POST',body:{name:'Public',birthday:'2025-05-05',gender:'other'},anonymous:true});
+    assert.equal(unauthorized.status,401);
+    const invalid=await json('/api/babies',{method:'POST',body:{name:'',birthday:'2025-05-05',gender:'other'}});
+    assert.equal(invalid.status,400);
+    const created=await json('/api/babies',{method:'POST',body:{
+      name:'Second Baby',birthday:'2025-05-05',gender:'boy',timeZone:'Asia/Shanghai',allergies:''
+    }});
+    assert.equal(created.status,201,JSON.stringify(created.data));
+    const babies=(await json('/api/state')).data.babies;
+    assert.equal(babies.length,2);
+    assert.equal(babies[0].id,babyId,'Original baby ID must remain unchanged');
+    assert.equal(babies[1].id,created.data.id);
+    const firstGrowth=await json('/api/records/growth?babyId='+babyId);
+    const secondGrowth=await json('/api/records/growth?babyId='+created.data.id);
+    assert.equal(firstGrowth.status,200);
+    assert.equal(secondGrowth.status,200);
+    assert.deepEqual(firstGrowth.data.items,[]);
+    assert.deepEqual(secondGrowth.data.items,[]);
+  });
   await step('growth measurement create, list, and delete',async()=>{
     const created=await json('/api/records/growth',{method:'POST',body:{
       babyId,day:'2026-01-15',weight:10.2,height:75,headCircumference:46,notes:'local test'
@@ -350,6 +370,26 @@ async function browserE2e(){
       }
       await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': add baby through Settings and switch back',async()=>{
+      await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
+      await page.getByRole('heading',{name:'空间设置'}).waitFor();
+      await page.getByRole('button',{name:'新增宝宝'}).click();
+      const create=page.locator('.baby-create-form');
+      await create.getByLabel('宝宝名字').fill('Browser New Baby');
+      await create.getByLabel('出生日期').fill('2025-06-06');
+      await create.getByLabel('性别').selectOption('girl');
+      await create.getByRole('button',{name:/创建并切换到新宝宝/}).click();
+      await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor();
+      await page.locator('select[aria-label="选择宝宝"]').waitFor();
+      await page.waitForFunction(()=>document.querySelector('select[aria-label="选择宝宝"]')?.selectedOptions[0]?.textContent==='Browser New Baby');
+      const options=await page.locator('select[aria-label="选择宝宝"] option').allTextContents();
+      assert.ok(options.includes('Test Baby'));
+      assert.ok(options.includes('Second Baby'));
+      assert.ok(options.includes('Browser New Baby'));
+      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
+      await page.waitForFunction(()=>document.querySelector('select[aria-label="选择宝宝"]')?.selectedOptions[0]?.textContent==='Test Baby');
+      await page.getByText('Test Baby', {exact:false}).first().waitFor({state:'visible'});
     });
     await step((useWebKit?'WebKit':'Chromium')+': bulk backfill of an existing private photo',async()=>{
       // Generate a browser-native PNG so WebKit and Chromium decode the same valid fixture.
