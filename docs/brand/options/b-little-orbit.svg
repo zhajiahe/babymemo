@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="BabyMemo 时光轨道"><title>BabyMemo 时光轨道</title><defs><clipPath id="tile"><rect width="512" height="512" rx="116"/></clipPath></defs><g clip-path="url(#tile)"><rect width="512" height="512" rx="116" fill="#FFF0E7"/>
+<circle cx="409" cy="74" r="147" fill="#F4D4C8" opacity=".65"/><circle cx="74" cy="428" r="136" fill="#FFFFFF" opacity=".42"/>
+<path d="M170 122 V347" stroke="#A94B39" stroke-width="43" stroke-linecap="round"/>
+<path d="M174 220 C199 182 244 165 290 176 C342 190 370 240 362 290 C356 345 312 382 262 382 C218 382 184 362 166 332" stroke="#A94B39" stroke-width="42" stroke-linecap="round" fill="none"/>
+<circle cx="276" cy="278" r="44" fill="#E0A083"/>
+<path d="M281 247 C281 236 295 233 302 243 C311 234 325 237 325 249 C325 263 312 275 302 284 C291 275 281 262 281 247Z" fill="#FFF9F1"/>
+<path d="M358 95 L366 120 L391 129 L366 138 L358 163 L349 138 L324 129 L349 120Z" fill="#D7AA64"/></g></svg>
