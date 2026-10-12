@@ -468,6 +468,12 @@ async function browserE2e(){
         await page.reload({waitUntil:'domcontentloaded'});
       }
       await page.getByRole('heading',{name:'Test Baby'}).waitFor({timeout:20000});
+      const imageAssets=await page.evaluate(async()=>{
+        return Promise.all(['/icon-512.png','/icon-192.png','/apple-touch-icon.png','/favicon-32.png'].map(async path=>{
+          const image=new Image();image.src=path;await image.decode();return [image.naturalWidth,image.naturalHeight];
+        }));
+      });
+      assert.deepEqual(imageAssets,[[512,512],[192,192],[180,180],[32,32]],'PWA icons must decode in a real browser');
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
     });
     await step((useWebKit?'WebKit':'Chromium')+': page reload and new tab reuse the same login',async()=>{
