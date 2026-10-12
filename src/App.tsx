@@ -39,7 +39,7 @@ function Gate({onReady}:{onReady:()=>void}){
  {mode==='setup'&&<div className="setup-guide"><strong>部署检查 · 2 个必需 Secret</strong><p>仅需 <code>SESSION_SECRET</code> 和 <code>DATA_KEY</code>。每个密钥分别用 <code>openssl rand -hex 32</code> 生成，再通过 GitHub Actions 同步或在 Cloudflare Worker 设置中配置。</p><p>配置完成后刷新页面，两项检查通过即可设置家庭管理员和密码；已存在的账号不会被重置。</p><a href="https://github.com/zhajiahe/babymemo/blob/main/docs/DEPLOY.md" target="_blank" rel="noreferrer">查看部署指南 ↗</a></div>}</div></div></div>;
 }
 function Nav({active,setActive,logout}:{active:Tab;setActive:(t:Tab)=>void;logout:()=>void}){
- const sections:[Tab,string,ReactNode][]=[['overview','概览',<Baby size={19}/>],['growth','成长曲线',<TrendingUp size={19}/>],['moments','成长瞬间',<BookHeart size={19}/>],['album','家庭相册',<Camera size={19}/>],['assistant','AI 助手',<Sparkles size={19}/>],['settings','设置',<Settings2 size={19}/>]];
+ const sections:[Tab,string,ReactNode][]=[['overview','概览',<Baby size={19}/>],['growth','成长曲线',<TrendingUp size={19}/>],['moments','成长瞬间',<BookHeart size={19}/>],['album','家庭相册',<Camera size={19}/>],['settings','设置',<Settings2 size={19}/>]];
  return <><aside className="sidebar"><Logo/><div className="side-label">MY SPACE</div><nav>{sections.map(([tab,label,icon])=><button className={'nav-link '+(tab===active?'active':'')} key={tab} type="button" aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)}>{icon}{label}{tab===active&&<span className="active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16}/> 私密家庭空间</div><button className="nav-link" onClick={logout}><LogOut size={18}/> 安全退出</button></div></aside><nav className="mobile-nav">{sections.map(([tab,label,icon])=><button key={tab} type="button" aria-label={label} aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)} className={tab===active?'active':''}>{icon}<span>{label.replace('成长','')}</span></button>)}</nav></>;
 }
 export default function App(){
@@ -90,7 +90,7 @@ export default function App(){
  if(mode==='gate')return <Gate onReady={()=>void refresh()}/>;
  if(mode==='unavailable')return <div className="loading-screen"><Logo/><p>暂时无法连接家庭空间，已保留你的会话。</p><button className="secondary" onClick={()=>void refresh()}><RefreshCw size={16}/>重新连接</button></div>;
  if(!state||!baby)return <div className="loading-screen">家庭空间中暂无宝宝档案</div>;
- const titles:Record<Tab,string>={overview:'每一刻，都很珍贵',growth:'成长记录',moments:'小小里程碑',album:'家庭相册',assistant:'AI 成长助手',settings:'空间设置'};
+ const titles:Record<Tab,string>={overview:'每一刻，都很珍贵',growth:'成长记录',moments:'小小里程碑',album:'家庭相册',settings:'空间设置'};
  const currentCounts=state.countsByBaby?.[baby.id]??{growth:0,milestones:0,media:0};
  return <div className="app"><Nav active={active} setActive={setActive} logout={logout}/><main className="workspace"><div className="topbar"><div className="crumb">{state.familyName||'家庭空间'} <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
  <div className="page"><header className="page-heading"><div><div className="eyebrow">BABYMEMO / {active.toUpperCase()}</div><h1>{titles[active]}</h1><p className="muted">{active==='overview'?'把日常小事，变成以后回望的宝藏。':baby.name+' · '+years(baby.birthday)+' · 记录属于你们的故事'}</p></div><div className="baby-pill"><Heart size={15} fill="currentColor"/><select aria-label="选择宝宝" value={baby.id} onChange={e=>{setBabyId(e.target.value);setGrowthPage(0);setMomentPage(0);setAlbumPage(0)}}>{state.babies.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></div></header>
@@ -101,16 +101,7 @@ export default function App(){
  {active==='growth'&&<RecordView baby={baby} kind="growth" items={records} history={growthHistory} historyLimited={historyLimited} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage}/>}
  {active==='moments'&&<RecordView baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage}/>}
  {active==='album'&&<Album baby={baby} media={media} query={albumQuery} onQuery={v=>{setAlbumQuery(v);setAlbumPage(0)}} favoriteOnly={favoriteOnly} onFavoriteOnly={v=>{setFavoriteOnly(v);setAlbumPage(0)}} favoriteUpdated={(id,favorite)=>setMedia(items=>items.map(item=>item.id===id?{...item,favorite:favorite?1:0}:item))} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
- {active==='assistant'&&<Assistant configured={state.openrouter.configured} babyId={baby.id} setActive={setActive}/>}
  {active==='settings'&&<Settings state={state} baby={baby} changed={changed} notify={setToast} onBabyCreated={id=>{setBabyId(id);setActive('overview');setGrowthPage(0);setMomentPage(0);setAlbumPage(0)}}/>}
  <footer className="footer">BabyMemo · 用爱记录，用心珍藏 <Heart size={13}/></footer>
  </div></main>{toast&&<Notice text={toast} onClose={()=>setToast('')}/>}</div>;
-}
-function Assistant({configured,babyId,setActive}:{configured:boolean;babyId:string;setActive:(v:Tab)=>void}){
- const [input,setInput]=useState(''),[messages,setMessages]=useState<{role:'me'|'bot';text:string}[]>([]),[waiting,setWaiting]=useState(false);
- async function send(e:FormEvent){e.preventDefault();if(!input.trim()||waiting)return;const content=input;setInput('');setMessages(v=>[...v,{role:'me',text:content}]);setWaiting(true);
- try{const res=await post<{answer:string}>('/api/chat',{message:content,babyId});setMessages(v=>[...v,{role:'bot',text:res.answer}])}catch(e){setMessages(v=>[...v,{role:'bot',text:e instanceof Error?e.message:'请求失败'}])}finally{setWaiting(false)}}
- return <Card className="chat"><div className="chat-header"><span className="stat-icon peach"><Sparkles size={21}/></span><div><h3>BabyMemo AI</h3><p className="muted small">由你的 OpenRouter 配置提供支持 · 只读问答</p></div></div>{!configured?<div className="empty"><p>还没有配置 OpenRouter</p><button className="primary" onClick={()=>setActive('settings')}>前往设置 <ChevronRight size={16}/></button></div>:<>
- <div className="chat-messages">{!messages.length&&<div className="chat-placeholder"><Sparkles size={32}/><p>有什么想聊的？</p><span>可以聊聊宝宝成长、育儿灵感，或帮你梳理记录。</span></div>}{messages.map((m,i)=><div className={'bubble '+m.role} key={i}>{m.text}</div>)}{waiting&&<div className="bubble bot">正在思考…</div>}</div>
- <form onSubmit={send} className="chat-input"><input placeholder="问问 BabyMemo…" value={input} onChange={e=>setInput(e.target.value)}/><button disabled={waiting||!input.trim()} aria-label="发送"><ChevronRight size={20}/></button></form></>}</Card>;
 }

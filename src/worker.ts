@@ -3,7 +3,7 @@ import type { Env, Baby } from './types';
 import { applySession, authenticated, clearSession, login, owner, sameOrigin, setup } from './auth';
 import { constantEqual, passwordHash, randomHex } from './crypto';
 import { decryptSecret, encryptSecret, setSetting, setting } from './crypto';
-import { generateQr, qrStatus, askOpenRouter, workerBot } from './wechat';
+import { generateQr, qrStatus, testOpenRouterConnection, workerBot } from './wechat';
 import { mediaDownloadHeader } from './media-filename.mjs';
 import { finalizeUpload, FinalizeMismatchError } from './upload-finalize.mjs';
 import { cleanupExpiredUploads } from './upload-cleanup.mjs';
@@ -408,18 +408,8 @@ app.post('/api/settings/openrouter',async c=>{
   }catch{return fail(c,400,'DATA_KEY_OR_SETTINGS_ERROR');}
 });
 app.post('/api/settings/openrouter/test',async c=>{
-  try{const answer=await askOpenRouter(c.env,'请只回复两个字：成功',undefined,true);return c.json({ok:true,answer});}
+  try{const ok=await testOpenRouterConnection(c.env);return c.json({ok});}
   catch(e){return fail(c,502,e instanceof Error?e.message:'OPENROUTER_FAILED');}
-});
-app.post('/api/chat',async c=>{
-  try {
-    const v=await json(c.req.raw);if(typeof v.message!=='string'||!v.message.trim()||v.message.length>2000)return fail(c,400,'INVALID_MESSAGE');
-    const baby=v.babyId===undefined?await currentBaby(c.env):
-      (typeof v.babyId==='string'?await c.env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes FROM babies WHERE id=?').bind(v.babyId).first<Baby>():null);
-    if(!baby)return fail(c,400,'INVALID_BABY');
-    const answer=await askOpenRouter(c.env,v.message,baby);
-    return c.json({answer});
-  }catch(e){return fail(c,502,e instanceof Error?e.message:'CHAT_FAILED');}
 });
 app.post('/api/settings/wechat/qr',async c=>{
   try{
