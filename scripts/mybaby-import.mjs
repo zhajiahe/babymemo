@@ -56,12 +56,16 @@ async function main() {
   async function request(path, init = {}, missing = false) {
     for (let attempt = 0; attempt < 6; attempt++) {
       let response;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), init.method === 'PUT' ? 180000 : 60000);
       try {
-        response = await fetch(base + path, {...init, headers: {Authorization: 'Bearer ' + token, ...init.headers}, signal: AbortSignal.timeout(60000)});
+        response = await fetch(base + path, {...init, headers: {Authorization: 'Bearer ' + token, ...init.headers}, signal: controller.signal});
       } catch {
         if (attempt < 5 && init.method !== 'PUT') {await sleep(Math.min(16000, 1000 * 2 ** attempt)); continue;}
         throw Error('cloudflare_network_unavailable');
-      }
+      } finally {clearTimeout(timer);}
+      // Once headers arrive, streamDigest's idle watchdog governs downloads;
+      // a healthy slow stream must not be aborted by a total duration limit.
       if (missing && response.status === 404) {await response.body?.cancel(); return null;}
       if (response.ok) return response;
       await response.body?.cancel();

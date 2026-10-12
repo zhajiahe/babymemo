@@ -94,3 +94,14 @@ test('stream hashes cover every byte and verify lengths', async () => {
   assert.equal(actual.sha256.length, 64);
   assert.deepEqual(actual, await streamDigest(Readable.from([bytes])));
 });
+test('full-file hashing drains multi-megabyte Web streams without truncation', async () => {
+  const chunk = Buffer.alloc(16384, 5);
+  let remaining = 1000;
+  const stream = new ReadableStream({pull(controller) {
+    if (remaining-- > 0) controller.enqueue(chunk);
+    else controller.close();
+  }});
+  const actual = await streamDigest(stream);
+  assert.equal(actual.size, 16384000);
+  assert.equal(actual.sha256, 'ae69c31c01672dc2bccbce0f7f13e109430acd3604e22c7adaab303438bf3187');
+});
