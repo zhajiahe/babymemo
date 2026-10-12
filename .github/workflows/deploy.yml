@@ -15,9 +15,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci
+      - run: npm install --no-audit --no-fund
       - run: npm run build
       - name: Deploy Worker (auto-provision resources)
         run: npx wrangler deploy
