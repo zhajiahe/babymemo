@@ -111,6 +111,11 @@ app.get('/api/records/:kind',async c=>{
   const r=await c.env.DB.prepare('SELECT * FROM '+table+' WHERE baby_id=? AND deleted_at IS NULL ORDER BY day DESC,created_at DESC LIMIT 40 OFFSET ?').bind(babyId,page*40).all();
   return c.json({items:r.results,page,hasMore:r.results.length===40});
 });
+app.get('/api/growth/history',async c=>{
+  const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
+  const records=await c.env.DB.prepare('SELECT id,day,weight,height,head_circumference FROM growth_records WHERE baby_id=? AND deleted_at IS NULL ORDER BY day ASC,created_at ASC LIMIT 2000').bind(babyId).all();
+  return c.json({items:records.results,limited:records.results.length===2000});
+});
 app.post('/api/records/:kind',async c=>{
   const kind=c.req.param('kind');if(kind!=='growth'&&kind!=='milestones')return fail(c,404,'NOT_FOUND');
   try {
@@ -136,7 +141,13 @@ app.delete('/api/records/:kind/:id',async c=>{
 app.get('/api/media',async c=>{
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const page=Math.min(1000,Math.max(0,Number.parseInt(c.req.query('page')||'0',10)||0));
-  const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,thumbnail_ready,created_at,favorite FROM media WHERE baby_id=? AND deleted_at IS NULL ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?').bind(babyId,page*36).all();
+  const query=(c.req.query('q')||'').trim();
+  if(query.length>80)return fail(c,400,'SEARCH_TOO_LONG');
+  const favoriteOnly=c.req.query('favorite')==='1';
+  const sql='SELECT id,baby_id,day,title,mime,size,thumbnail_ready,created_at,favorite FROM media WHERE baby_id=? AND deleted_at IS NULL'+
+    (query?' AND title LIKE ?':'')+(favoriteOnly?' AND favorite=1':'')+' ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?';
+  const bindings=query?[babyId,'%'+query+'%',page*36]:[babyId,page*36];
+  const rows=await c.env.DB.prepare(sql).bind(...bindings).all();
   return c.json({items:rows.results,hasMore:rows.results.length===36});
 });
 // Enumerate missing private derivatives in bounded batches across the *entire*
@@ -243,20 +254,21 @@ app.post('/api/upload/:id/finish',async c=>{
 app.get('/api/media/:id/thumbnail',async c=>{
   const id=c.req.param('id');
   const row=await c.env.DB.prepare('SELECT object_key,mime FROM media WHERE id=? AND deleted_at IS NULL').bind(id).first<{object_key:string;mime:string}>();
-  if(!row||!row.mime.startsWith('image/'))return fail(c,404,'NOT_FOUND');
+  if(!row)return fail(c,404,'NOT_FOUND');
   const thumb=await c.env.MEDIA.get(thumbKey(id));
-  const obj=thumb||await c.env.MEDIA.get(row.object_key);
+  const obj=thumb||(row.mime.startsWith('image/')?await c.env.MEDIA.get(row.object_key):null);
   if(!obj)return fail(c,404,'NOT_FOUND');
-  return new Response(obj.body,{headers:{
-    'Content-Type':thumb?'image/jpeg':row.mime,'Content-Length':String(obj.size),
-    'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'
-  }});
+  const etag='"'+(obj.httpEtag||obj.etag)+'"';
+  const headers=new Headers({'Content-Type':thumb?'image/jpeg':row.mime,'Content-Length':String(obj.size),
+    'Cache-Control':'private, no-cache, must-revalidate','X-Content-Type-Options':'nosniff','ETag':etag});
+  if(c.req.header('If-None-Match')===etag)return new Response(null,{status:304,headers});
+  return new Response(obj.body,{headers});
 });
 // Thumbnail is optional: its failure must never invalidate an uploaded original.
 app.put('/api/media/:id/thumbnail',async c=>{
   const id=c.req.param('id');
   const row=await c.env.DB.prepare('SELECT mime FROM media WHERE id=? AND deleted_at IS NULL').bind(id).first<{mime:string}>();
-  if(!row||!row.mime.startsWith('image/'))return fail(c,404,'NOT_FOUND');
+  if(!row||(!row.mime.startsWith('image/')&&!row.mime.startsWith('video/')))return fail(c,404,'NOT_FOUND');
   const max=524288;
   const size=Number(c.req.header('content-length')||0);
   if(size>max)return fail(c,413,'THUMBNAIL_TOO_LARGE');
@@ -283,6 +295,15 @@ app.put('/api/media/:id/thumbnail',async c=>{
   return c.json({ok:true});
 });
 // Metadata edits never alter the private R2 object.
+app.post('/api/media/:id/favorite',async c=>{
+  const id=c.req.param('id');
+  try{
+    const v=await json(c.req.raw);
+    if(typeof v.favorite!=='boolean')return fail(c,400,'INVALID_FAVORITE');
+    const result=await c.env.DB.prepare('UPDATE media SET favorite=? WHERE id=? AND deleted_at IS NULL').bind(v.favorite?1:0,id).run();
+    return result.meta.changes?c.json({ok:true,favorite:v.favorite}):fail(c,404,'NOT_FOUND');
+  }catch{return fail(c,400,'INVALID_FAVORITE')}
+});
 app.patch('/api/media/:id',async c=>{
   let value:unknown;
   try{value=await json(c.req.raw)}catch{return fail(c,400,'INVALID_INPUT')}

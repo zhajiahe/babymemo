@@ -7,6 +7,8 @@ export type MediaItem = {
   title: string;
   mime: string;
   size: number;
+  thumbnail_ready?: number;
+  favorite?: number;
 };
 type MediaEdit = { title: string; day: string };
 
