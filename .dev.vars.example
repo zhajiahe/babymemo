@@ -1,0 +1,4 @@
+# Generate independent random values. Never commit real secrets.
+BOOTSTRAP_SECRET=replace-with-random-64-hex-characters
+CONFIG_ENCRYPTION_KEY=replace-with-random-64-hex-characters
+APP_ORIGIN=http://localhost:8787

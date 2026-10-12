@@ -2,8 +2,7 @@ node_modules/
 dist/
 .wrangler/
 .dev.vars
-.env*
+.env
+.env.*
 !.env.example
 *.tsbuildinfo
-.DS_Store
-coverage/

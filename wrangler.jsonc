@@ -1,45 +1,25 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "babymemo",
-  "main": "src/worker.ts",
-  "compatibility_date": "2026-10-12",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": [
-      "/api/*"
-    ]
+    "run_worker_first": ["/api/*"]
   },
-  "observability": {
-    "enabled": true
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "babymemo"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "MEDIA",
-      "bucket_name": "babymemo-media"
-    }
-  ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "BOT",
-        "class_name": "WechatSession"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": [
-        "WechatSession"
-      ]
-    }
-  ]
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "babymemo",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }],
+  "r2_buckets": [{
+    "binding": "MEDIA",
+    "bucket_name": "babymemo-media"
+  }],
+  "vars": {
+    "APP_ORIGIN": "https://babymemo.example.com"
+  }
 }
