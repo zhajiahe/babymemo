@@ -150,6 +150,17 @@ function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{bab
     .catch(()=>{if(live)setPending([])});
   return()=>{live=false};
  },[baby.id]);
+ async function finishPending(id:string){
+  if(uploading)return;
+  setUploading(true);
+  try{
+   await post('/api/upload/'+id+'/finish',{});
+   await refreshPending();
+   changed();
+   notify('上传已完成，照片或视频已保存。');
+  }catch(e){notify(e instanceof Error?e.message:'保存失败，可稍后重试')}
+  finally{setUploading(false)}
+ }
  async function discard(id:string){
   if(uploading||!confirm('确定取消这项未完成的上传吗？已上传的分片会被删除。'))return;
   try{
@@ -208,7 +219,13 @@ function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{bab
      const rejection=results.find((x):x is PromiseRejectedResult=>x.status==='rejected');
      if(rejection)throw rejection.reason;
      setProgress(file.name+' · 正在保存原文件');
-     await post('/api/upload/'+uploadId+'/finish',{});
+     for(let attempt=0;attempt<3;attempt++){
+      try{await post('/api/upload/'+uploadId+'/finish',{});break;}
+      catch(error){
+       if(attempt===2||error instanceof ApiFailure&&[400,401,403,404,409].includes(error.status))throw error;
+       await new Promise(resolve=>setTimeout(resolve,1000*2**attempt));
+      }
+     }
      uploadId=undefined;
      queue=queue.filter(x=>x.id!==session.id);
      changed();
@@ -252,7 +269,7 @@ function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{bab
   if(next)setSelected(next);
  }
  return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>{progress&&<p className="small">{progress}</p>}</Card>
- {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">网络中断或刷新页面后，重新选择原来的文件，会自动识别并继续上传未完成的分片。文件不会保存在本网站中。</p>{pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div>)}</Card>}
+ {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">网络中断或刷新页面后，重新选择原来的文件，会自动识别并继续上传未完成的分片。文件不会保存在本网站中。</p>{pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><div className="pending-actions">{item.completedParts.length===Math.ceil(item.size/8388608)&&<button className="primary" type="button" disabled={uploading} onClick={()=>void finishPending(item.id)}>完成保存</button>}<button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div></div>)}</Card>}
  <div className="photo-grid">{media.map(item=><Card key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+(item.title||'成长回忆')}><span className="photo-frame">{item.mime.startsWith('image/')?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt="" />:<span className="video-placeholder" aria-hidden="true"><Camera size={32}/><span>视频 · 点击播放</span></span>}</span><span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button><div className="photo-caption"><div><strong>{item.title||'未命名'}</strong><p>{item.day}</p></div><button type="button" className="icon-btn" onClick={()=>void remove(item.id)} aria-label={'删除 '+(item.title||'媒体')}><Trash2 size={16}/></button></div></Card>)}</div>{!media.length&&<div className="empty card">还没有照片，试试上传第一张。</div>}<Pager page={page} setPage={setPage} hasMore={hasMore}/>{selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia}/> }</>;
 }
 function Assistant({configured,babyId,setActive}:{configured:boolean;babyId:string;setActive:(v:Tab)=>void}){
