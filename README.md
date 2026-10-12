@@ -70,7 +70,7 @@ D1 日期索引 + 有界分页，Cloudflare Assets 静态托管；照片懒加�
 ## 设计规范与 Agent 协作
 
 - [AGENTS.md](AGENTS.md)：Codex / Claude Code / Pi 等 Agent 的技术边界、质量验证与安全规则。
-- [BabyMemo 设计系统 · Warm Archive](docs/design-system.md)：暖珊瑚视觉、排版、移动端、组件和文案规范，并标明现状与待改造项。
+- [BabyMemo 设计规范 · Calm Editorial](docs/design-system.md)：以真实照片和成长数据为中心的低装饰视觉、移动端相册、中文文案、无障碍和 PWA 图标规范。
 - [Agent 部署 Runbook](docs/agent-deploy.md)：只读预检与受控 Cloudflare 部署（默认不发布）。
 
 ## 验证
