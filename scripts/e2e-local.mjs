@@ -185,8 +185,15 @@ async function e2e() {
     assert.equal(part.status,200,JSON.stringify(part.data));
     list=await json('/api/upload/pending?babyId='+babyId);
     assert.deepEqual(list.data.items[0].completedParts,[1]);
-    assert.equal((await json('/api/upload/'+mediaId+'/finish',{method:'POST',body:{}})).status,201);
+    const finished=await json('/api/upload/'+mediaId+'/finish',{method:'POST',body:{}});
+    assert.equal(finished.status,201,JSON.stringify(finished.data));
+    assert.equal(finished.data.completed,true);
+    const repeated=await json('/api/upload/'+mediaId+'/finish',{method:'POST',body:{}});
+    assert.equal(repeated.status,200,JSON.stringify(repeated.data));
+    assert.equal(repeated.data.alreadyCompleted,true);
     assert.equal((await json('/api/upload/pending?babyId='+babyId)).data.items.length,0);
+    const once=await json('/api/media?babyId='+babyId);
+    assert.equal(once.data.items.filter(x=>x.id===mediaId).length,1);
   });
   await step('private original media, byte ranges, safe download header',async()=>{
     const missing=await json('/api/media/'+mediaId+'/content',{anonymous:true});
@@ -261,6 +268,9 @@ async function e2e() {
     assert.equal(range.status,206);
     assert.deepEqual(new Uint8Array(await range.arrayBuffer()),file.subarray(chunkSize));
     assert.equal((await json('/api/upload/pending?babyId='+babyId)).data.items.some(x=>x.id===id),false);
+    const repeated=await json('/api/upload/'+id+'/finish',{method:'POST',body:{}});
+    assert.equal(repeated.status,200,JSON.stringify(repeated.data));
+    assert.equal(repeated.data.alreadyCompleted,true);
     assert.equal((await json('/api/media/'+id,{method:'DELETE'})).status,200);
   });
   await step('cancel a recoverable multipart session',async()=>{

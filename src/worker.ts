@@ -4,6 +4,7 @@ import { applySession, authenticated, clearSession, login, owner, sameOrigin, se
 import { decryptSecret, encryptSecret, setSetting, setting } from './crypto';
 import { generateQr, qrStatus, askOpenRouter, workerBot } from './wechat';
 import { mediaDownloadHeader } from './media-filename.mjs';
+import { finalizeUpload, FinalizeMismatchError } from './upload-finalize.mjs';
 export { WechatSession } from './wechat';
 
 const app = new Hono<{Bindings:Env}>();
@@ -173,26 +174,43 @@ app.post('/api/upload/:id/cancel',async c=>{
   const row=await c.env.DB.prepare('SELECT object_key,upload_id FROM media_uploads WHERE id=?').bind(id).first<{object_key:string;upload_id:string}>();
   if(!row)return fail(c,404,'UPLOAD_NOT_FOUND');
   try{
-    await c.env.MEDIA.resumeMultipartUpload(row.object_key,row.upload_id).abort();
+    // A completed R2 object awaiting D1 commit must not be silently discarded.
+    if(await c.env.MEDIA.head(row.object_key))return fail(c,409,'UPLOAD_READY_TO_FINISH');
+    try {
+      await c.env.MEDIA.resumeMultipartUpload(row.object_key,row.upload_id).abort();
+    } catch (error) {
+      if(await c.env.MEDIA.head(row.object_key))return fail(c,409,'UPLOAD_READY_TO_FINISH');
+      throw error;
+    }
     await c.env.DB.prepare('DELETE FROM media_uploads WHERE id=?').bind(id).run();
     return c.json({ok:true});
   }catch{return fail(c,502,'UPLOAD_CANCEL_FAILED');}
 });
 app.post('/api/upload/:id/finish',async c=>{
   const id=c.req.param('id');
-  const row=await c.env.DB.prepare('SELECT * FROM media_uploads WHERE id=?').bind(id).first<{object_key:string;upload_id:string;size:number;baby_id:string;day:string;title:string;mime:string}>();
-  if(!row)return fail(c,404,'UPLOAD_NOT_FOUND');
-  const parts=await c.env.DB.prepare('SELECT part_number AS partNumber,etag FROM media_upload_parts WHERE media_upload_id=? ORDER BY part_number').bind(id).all<{partNumber:number;etag:string}>();
-  const expected=Math.ceil(row.size/8388608);
-  if(parts.results.length!==expected||parts.results.some((p,i)=>p.partNumber!==i+1))return fail(c,400,'UPLOAD_INCOMPLETE');
+  const recorded=async()=>!!await c.env.DB.prepare('SELECT id FROM media WHERE id=?').bind(id).first();
   try {
-    await c.env.MEDIA.resumeMultipartUpload(row.object_key,row.upload_id).complete(parts.results);
-    await c.env.DB.batch([
-      c.env.DB.prepare('INSERT INTO media(id,baby_id,day,title,object_key,mime,size,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,row.baby_id,row.day,row.title,row.object_key,row.mime,row.size,now()),
-      c.env.DB.prepare('DELETE FROM media_uploads WHERE id=?').bind(id)
-    ]);
-    return c.json({id},201);
-  }catch{return fail(c,502,'UPLOAD_FINISH_FAILED');}
+    // A lost 201 response must never start another multipart completion.
+    if(await recorded())return c.json({id,completed:true,alreadyCompleted:true},200);
+    const row=await c.env.DB.prepare('SELECT * FROM media_uploads WHERE id=?').bind(id).first<{object_key:string;upload_id:string;size:number;baby_id:string;day:string;title:string;mime:string}>();
+    if(!row)return fail(c,404,'UPLOAD_NOT_FOUND');
+    const parts=await c.env.DB.prepare('SELECT part_number AS partNumber,etag FROM media_upload_parts WHERE media_upload_id=? ORDER BY part_number').bind(id).all<{partNumber:number;etag:string}>();
+    const expected=Math.ceil(row.size/8388608);
+    if(parts.results.length!==expected||parts.results.some((p,i)=>p.partNumber!==i+1))return fail(c,400,'UPLOAD_INCOMPLETE');
+    const result=await finalizeUpload({
+      bucket:c.env.MEDIA,row,parts:parts.results,isRecorded:recorded,
+      persist:async()=>{
+        await c.env.DB.batch([
+          c.env.DB.prepare('INSERT INTO media(id,baby_id,day,title,object_key,mime,size,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,row.baby_id,row.day,row.title,row.object_key,row.mime,row.size,now()),
+          c.env.DB.prepare('DELETE FROM media_uploads WHERE id=?').bind(id)
+        ]);
+      }
+    });
+    return c.json({id,completed:true,recovered:result.recovered},result.recovered?200:201);
+  }catch(e){
+    if(e instanceof FinalizeMismatchError)return fail(c,409,e.message);
+    return fail(c,502,'UPLOAD_FINISH_FAILED');
+  }
 });
 // Private R2 JPEG derivative: no public bucket and no new image service.
 // Existing media lacking thumbnails automatically fall back to the original.

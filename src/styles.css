@@ -106,3 +106,8 @@
 .pending-upload p{margin:5px 0 0}
 .pending-upload .secondary{min-height:44px;flex-shrink:0}
 @media(max-width:480px){.pending-upload{align-items:flex-start;flex-direction:column}.pending-upload .secondary{width:100%}}
+
+/* Recoverable multipart upload completion */
+.pending-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pending-actions button{min-height:44px}
+@media(max-width:480px){.pending-actions{width:100%}.pending-actions button{flex:1}}
