@@ -14,7 +14,8 @@ export function constantEqual(a: string, b: string): boolean {
 }
 export async function passwordHash(password:string, salt:string):Promise<string> {
   const key = await crypto.subtle.importKey('raw',encoder.encode(password),'PBKDF2',false,['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({name:'PBKDF2',salt:encoder.encode(salt),iterations:120000,hash:'SHA-256'},key,256);
+  // Cloudflare Workers SubtleCrypto allows at most 100,000 PBKDF2 iterations.
+  const bits = await crypto.subtle.deriveBits({name:'PBKDF2',salt:encoder.encode(salt),iterations:100000,hash:'SHA-256'},key,256);
   return bytesHex(new Uint8Array(bits));
 }
 function base64url(data: Uint8Array): string {

@@ -114,3 +114,7 @@ Browser Auth 使用 `window.location.origin` 发起同源请求，而非 FlareMo
 4. 使用 HEIC / MOV（特别是 HEVC 编码），核对能否正常预览、下载及在目标浏览器播放。支持上传不代表所有终端可以解码。
 5. 连接 Wi-Fi 进行旧图片缩略图补全，确认停止按钮、失败重试、流量控制和照片原图下载。
 6. 观察 Cloudflare Worker 日志、D1/R2 指标和浏览器提示；反馈时仅记录**不含用户照片或密码**的错误状态与时间，不粘贴登录 Cookie / Token。
+
+### 初始化提示 PBKDF2 迭代次数超限
+
+如果之前部署的 Worker 在第一次注册时出现 `Pbkdf2 failed: iteration counts above 100000 are not supported (requested 120000)`，这是旧版本密码哈希使用了超过 Workers SubtleCrypto 上限的迭代次数。修复后初始化与登录统一使用 100,000 次 PBKDF2-SHA-256，不需要清空 D1、R2，也不需要轮换 `SESSION_SECRET` 或 `DATA_KEY`。旧版本若在派生密码哈希阶段失败，该次操作尚未写入 owner、宝宝资料；重新打开初始化页面完成注册即可。建议家庭密码选用较长随机短语（即使界面允许最低 6 位），不要使用生日等容易猜测的信息。
