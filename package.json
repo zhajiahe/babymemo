@@ -6,14 +6,16 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "deploy": "npm run build && wrangler deploy && wrangler d1 migrations apply DB --remote",
+    "deploy": "npm run build && wrangler deploy && npm run db:resolve && wrangler d1 migrations apply DB --remote",
+    "db:resolve": "node scripts/ensure-d1-id.mjs",
+    "test:unit": "node --test scripts/*.test.mjs",
     "db:local": "wrangler d1 migrations apply DB --local",
     "db:remote": "wrangler d1 migrations apply DB --remote",
     "check": "tsc --noEmit",
-    "deploy:dry-run": "npm run build && wrangler deploy --dry-run",
+    "deploy:dry-run": "npm run verify && wrangler deploy --dry-run",
     "provision:remote": "node scripts/provision-cloudflare.mjs",
     "smoke:check": "node scripts/smoke-check.mjs",
-    "verify": "npm run check && npm run build"
+    "verify": "npm run check && npm run test:unit && npm run build"
   },
   "cloudflare": {
     "bindings": {

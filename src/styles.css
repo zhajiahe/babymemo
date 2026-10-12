@@ -11,6 +11,14 @@
 @media(max-width:480px){.page-heading{align-items:flex-start}.baby-pill{margin-top:6px}.page-heading h1{font-size:24px}.stats .card{padding:14px 11px}.stat-value{font-size:23px}.card{padding:19px}.photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.photo-item{padding:6px}.photo-caption{padding:8px 3px}.gate-intro .logo{font-size:16px}.two{gap:10px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important;transition:none!important}}
 
+.setup-guide{padding:18px;border:1px solid #e5e8ee;background:#ffffff;border-radius:14px;font-size:12px;line-height:1.8;color:#667186}
+.setup-guide strong{color:#394354;font-size:13px}
+.setup-guide code{padding:2px 5px;background:#f5f5f8;border-radius:5px;color:#9f5b4b;overflow-wrap:anywhere}
+.setup-guide p{margin:8px 0}
+.setup-guide a{font-weight:700;color:#cd795f}
+
+.growth-chart{margin-top:20px}.chart-tabs{display:flex;gap:5px;padding:3px;border:1px solid #edf0f3;border-radius:10px;background:#f9fafb}.chart-tabs button{border:0;background:transparent;padding:7px 12px;border-radius:7px;color:#83909c;font-size:12px}.chart-tabs button.active{background:#fff;color:#b96855;box-shadow:0 1px 5px #1b223010;font-weight:650}.growth-svg{width:100%;height:auto;max-height:260px;overflow:visible}
+
 /* FlareMo-inspired polish: consistent focus, readable surfaces, gentle mobile touch targets. */
 :root{--bm-ink:#263342;--bm-muted:#64748b;--bm-outline:#e3e8ee;--bm-focus:#d76c56}
 :focus-visible{outline:3px solid #e7a695!important;outline-offset:3px}

@@ -80,6 +80,8 @@ async function handleMessage(env:Env,text:string):Promise<string> {
     '你可以查询或记录成长数据。只有用户明确表达测量及单位时才调用记录工具；不确定时间/单位时先追问，不能捏造。'+
     '体重统一 kg，身高/头围 cm，斤换算为0.5kg。工具一次最多一个。没有成功调用工具不能声称已保存。不提供医学诊断，不泄漏私有记录。';
   const tools=[
+    {type:'function',function:{name:'list_growth_records',description:'查询宝宝真实存档的最近成长测量，包括体重、身高和头围',parameters:{type:'object',properties:{limit:{type:'integer',minimum:1,maximum:10}},additionalProperties:false}}},
+    {type:'function',function:{name:'list_milestones',description:'查询宝宝真实存档的最近成长里程碑和第一次事件',parameters:{type:'object',properties:{limit:{type:'integer',minimum:1,maximum:10}},additionalProperties:false}}},
     {type:'function',function:{name:'create_growth_record',description:'将用户明确提供的一次测量写入成长记录',parameters:{type:'object',properties:{
       day:{type:'string',description:'YYYY-MM-DD'},weight:{type:'number',description:'单位 kg'},height:{type:'number',description:'cm'},headCircumference:{type:'number',description:'cm'}
     },required:['day'],additionalProperties:false}}},
@@ -101,6 +103,18 @@ async function handleMessage(env:Env,text:string):Promise<string> {
   const call=msg.tool_calls[0];
   if(call?.type!=='function'||typeof call.function?.arguments!=='string')throw Error('BAD_TOOL_CALL');
   const args=JSON.parse(call.function.arguments) as Json;
+  if(call.function.name==='list_growth_records'){
+    const limit=Number.isInteger(args.limit)?Math.min(10,Math.max(1,args.limit)):5;
+    const found=await env.DB.prepare('SELECT day,weight,height,head_circumference FROM growth_records WHERE baby_id=? ORDER BY day DESC,created_at DESC LIMIT ?').bind(baby.id,limit).all<{day:string;weight:number|null;height:number|null;head_circumference:number|null}>();
+    if(!found.results.length)return '还没有保存成长测量记录。';
+    return baby.name+' 的最近成长测量：\n'+found.results.map(r=>r.day+' · '+[r.weight!=null?'体重 '+r.weight+' kg':null,r.height!=null?'身高 '+r.height+' cm':null,r.head_circumference!=null?'头围 '+r.head_circumference+' cm':null].filter(Boolean).join('，')).join('\n');
+  }
+  if(call.function.name==='list_milestones'){
+    const limit=Number.isInteger(args.limit)?Math.min(10,Math.max(1,args.limit)):5;
+    const found=await env.DB.prepare('SELECT day,title,description FROM milestones WHERE baby_id=? ORDER BY day DESC,created_at DESC LIMIT ?').bind(baby.id,limit).all<{day:string;title:string;description:string}>();
+    if(!found.results.length)return '还没有保存宝宝的成长里程碑。';
+    return baby.name+' 的最近里程碑：\n'+found.results.map(r=>r.day+' · '+r.title+(r.description?' — '+r.description.slice(0,80):'')).join('\n');
+  }
   if(typeof args.day!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(args.day))return '请告诉我记录的准确日期。';
   const id=crypto.randomUUID(),when=new Date().toISOString();
   if(call.function.name==='create_growth_record'){
@@ -133,6 +147,11 @@ export class WechatSession {
     }
     if(path==='/pause'){
       await this.ctx.storage.deleteAlarm();
+      return Response.json({ok:true});
+    }
+    if(path==='/reset'){
+      await this.ctx.storage.deleteAlarm();
+      await Promise.all(['cursor','lastPoll','lastError','lastMessage'].map(key=>this.ctx.storage.delete(key)));
       return Response.json({ok:true});
     }
     return new Response('Not found',{status:404});

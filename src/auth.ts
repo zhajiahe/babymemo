@@ -35,16 +35,17 @@ export async function applySession(c:Ctx,version:number):Promise<void>{
 export function clearSession(c:Ctx):void{
   c.header('Set-Cookie','babymemo_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
 }
-export async function setup(c:Ctx,input:{bootstrapSecret:string;ownerName:string;password:string;babyName:string;birthday:string;gender:string;timeZone:string;allergies:string}):Promise<string>{
+export async function setup(c:Ctx,input:{bootstrapSecret:string;ownerName:string;familyName:string;password:string;babyName:string;birthday:string;gender:string;timeZone:string;allergies:string}):Promise<string>{
   if(await owner(c.env))throw Error('ALREADY_INITIALIZED');
   if(!c.env.BOOTSTRAP_SECRET||c.env.BOOTSTRAP_SECRET.length<32||!constantEqual(input.bootstrapSecret,c.env.BOOTSTRAP_SECRET))throw Error('INVALID_BOOTSTRAP_SECRET');
   if(!c.env.SESSION_SECRET||c.env.SESSION_SECRET.length<32)throw Error('SESSION_SECRET_NOT_CONFIGURED');
   if(!c.env.DATA_KEY||!/^[a-f0-9]{64}$/i.test(c.env.DATA_KEY))throw Error('DATA_KEY_NOT_CONFIGURED');
-  if(input.password.length<10||input.password.length>128||input.ownerName.length<1||input.ownerName.length>80||input.babyName.length<1||input.babyName.length>80||!/^\d{4}-\d{2}-\d{2}$/.test(input.birthday)||!['boy','girl','other'].includes(input.gender))throw Error('INVALID_SETUP_INPUT');
+  if(input.password.length<10||input.password.length>128||!input.familyName.trim()||input.familyName.trim().length>80||!input.ownerName.trim()||input.ownerName.length>80||input.babyName.length<1||input.babyName.length>80||!/^\d{4}-\d{2}-\d{2}$/.test(input.birthday)||!['boy','girl','other'].includes(input.gender))throw Error('INVALID_SETUP_INPUT');
   if(!/^[-\w/]{1,64}$/.test(input.timeZone))throw Error('INVALID_TIME_ZONE');
   const salt=randomHex(16),hash=await passwordHash(input.password,salt),id=crypto.randomUUID(),when=new Date().toISOString();
   await c.env.DB.batch([
-    c.env.DB.prepare('INSERT INTO owner(id,name,password_salt,password_hash,session_version,created_at) VALUES(1,?,?,?,1,?)').bind(input.ownerName,salt,hash,when),
+    c.env.DB.prepare('INSERT INTO owner(id,name,password_salt,password_hash,session_version,created_at) VALUES(1,?,?,?,1,?)').bind(input.ownerName.trim(),salt,hash,when),
+    c.env.DB.prepare("INSERT INTO app_settings(name,value,updated_at) VALUES('family_name',?,?)").bind(input.familyName.trim(),when),
     c.env.DB.prepare('INSERT INTO babies(id,name,birthday,gender,time_zone,allergies,notes,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,input.babyName,input.birthday,input.gender,input.timeZone,input.allergies.slice(0,2000),'',when)
   ]);
   await applySession(c,1);

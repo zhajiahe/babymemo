@@ -59,10 +59,10 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 
 1. 检查 Cloudflare Token、Account ID 是否存在。
 2. `npm run provision:remote`：根据 [`wrangler.jsonc`](../wrangler.jsonc) 查找或创建 D1 `babymemo`、R2 `babymemo-media`，并将解析出的 `database_id` 写入**本次 Actions 工作目录**，不会回写 GitHub。
-3. `npm run verify`：执行 TypeScript 检查与 Vite 构建。
+3. `npm run verify`：执行 TypeScript 检查、单元测试与 Vite 构建。
 4. `npx wrangler d1 migrations apply DB --remote`：运行 `migrations/` 下尚未应用的迁移。
 5. `npx wrangler deploy`：发布 Worker、静态资源以及 `WechatSession` Durable Object 绑定。
-6. 将**已配置**的 `BOOTSTRAP_SECRET`、`SESSION_SECRET`、`DATA_KEY` 同步到 Worker。未配置的 Secrets 会跳过，原有 Worker Secret 不会主动删除；但如果缺失必需配置，后续健康检查将失败。
+6. 将必需的 `BOOTSTRAP_SECRET`、`SESSION_SECRET`、`DATA_KEY` 同步到 Worker。正式发布前工作流校验三个 GitHub Secrets，缺失或格式不符将中止。升级时必须复用既有密钥，特别是 `DATA_KEY`。
 7. `npm run smoke:check`：检查 `/api/health`（包含 D1 可用性）和 `/api/bootstrap/status`（只验证三项 Secret 是否配置，不泄露其值）。
 
 **重要：** 当前仓库的 `npm run deploy` 脚本与上述工作流的顺序不同（先发布，再迁移）。生产环境建议使用此工作流，或严格按 [Agent Runbook](./agent-deploy.md) 给出的迁移优先顺序逐条执行。

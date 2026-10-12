@@ -1,0 +1,6 @@
+# BabyMemo secrets - example names only; NEVER commit actual credentials.
+# Cloudflare Deploy to Cloudflare may use these names to guide secret setup.
+# Run "openssl rand -hex 32" THREE times and store each distinct output safely.
+BOOTSTRAP_SECRET=CHANGE_ME_BOOTSTRAP
+SESSION_SECRET=CHANGE_ME_SESSION
+DATA_KEY=CHANGE_ME_DATA_KEY
