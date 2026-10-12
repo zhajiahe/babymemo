@@ -95,3 +95,14 @@
  .media-viewer-edit input{font-size:16px}
 }
 @media(prefers-reduced-motion:reduce){.photo-preview-hint{transition:none}}
+
+/* Persisted private previews and recoverable mobile uploads. */
+.pending-uploads{margin:16px 0 0;padding:18px}
+.pending-uploads .section-title{margin-bottom:4px}
+.pending-upload{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:11px 0;border-top:1px solid var(--bm-border);min-width:0}
+.pending-upload:first-of-type{margin-top:10px}
+.pending-upload>div{min-width:0;flex:1}
+.pending-upload strong{font-size:13px;overflow-wrap:anywhere;display:block}
+.pending-upload p{margin:5px 0 0}
+.pending-upload .secondary{min-height:44px;flex-shrink:0}
+@media(max-width:480px){.pending-upload{align-items:flex-start;flex-direction:column}.pending-upload .secondary{width:100%}}
