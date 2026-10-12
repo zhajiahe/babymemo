@@ -40,6 +40,11 @@ Cloudflare 原生家庭成长记录系统。参考 MyBaby 的宝宝档案、成�
 
 图片与视频采用至多三个 8 MiB 分片并行上传、失败分片最多重试三次；放弃上传时主动清理 R2 multipart 会话。对已经失败而遗留的旧上传、对 iPhone MOV 的视频转码和跨设备断点续传仍未实现，需要后续专项处理。
 
+## 部署文档
+
+- [GitHub Actions 部署指南](./docs/github-action-deploy.md)：Secrets、Dry Run、资源创建、生产发布与故障排查。
+- [Coding Agent 部署 Runbook](./docs/agent-deploy.md)：Codex / Claude Code / Pi 的只读预检、受控部署、初始化与验收。
+
 ## GitHub Actions 部署
 
 在仓库 Settings → Secrets and variables → Actions 配置：
