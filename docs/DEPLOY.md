@@ -18,6 +18,8 @@
 
 若自动部署脚本在 `wrangler d1 migrations apply DB --remote` 失败，可在部署项目的控制台运行 `npm run db:resolve` 验证是否正确查找到 `babymemo`；不要自行删除数据库。
 
+部署向导可读取 `.dev.vars.example` 显示必填 Secret 的名称与说明；如果部署过程中没有出现密钥表单，请按下节到 Worker 控制台设置。
+
 **重要**：在配置 Secret 并完成数据库迁移之前，网站可能尚不能进入初始化。
 
 ## 3. 三个必需 Secret（必须分别生成并保存）

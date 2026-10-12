@@ -15,7 +15,7 @@ Cloudflare 原生家庭成长记录系统。参考 MyBaby 的宝宝档案、成�
 
 ## 一键部署
 
-点击上方 Deploy to Cloudflare：Cloudflare 会克隆仓库并尝试自动部署 Worker、D1、R2、Durable Objects；deploy 脚本包含数据库迁移。首次上线后**必须人工添加 Secrets**，不能通过公共网页匿名占用新实例。
+点击上方 Deploy to Cloudflare：Cloudflare 会克隆仓库并尝试自动部署 Worker、D1、R2、Durable Objects；deploy 脚本包含数据库迁移。首次上线前必须由所有者设置三个 Secret。Cloudflare 部署向导会参考仓库内 `.dev.vars.example` 提供配置提示；若没有在向导中填写，务必到 Worker 控制台手动添加。不能通过公共网页匿名占用新实例。
 
 在 Cloudflare Workers → BabyMemo → Settings → Variables and Secrets 中添加三个类型为 Secret 的值：
 

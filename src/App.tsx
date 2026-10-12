@@ -47,7 +47,7 @@ function Gate({onReady}:{onReady:()=>void}){
  {error&&<div className="error" role="alert">{error}</div>}
  <Primary disabled={busy||(mode==='setup'&&(!ready.bootstrapConfigured||!ready.sessionConfigured||!ready.encryptionConfigured))}>{busy?'正在处理…':mode==='setup'?'完成初始化':'登录我的空间'}<ChevronRight size={17}/></Primary>
  </form>}
- {mode==='setup'&&<div className="setup-guide"><strong>部署检查 · 3 个必需 Secret</strong><p>在 Cloudflare → Worker → Settings → Variables and Secrets 中创建 <code>BOOTSTRAP_SECRET</code>、<code>SESSION_SECRET</code>、<code>DATA_KEY</code>。每个密钥都分别运行一次 <code>openssl rand -hex 32</code> 生成，且不要提交到 Git。</p><p>或者通过 GitHub Actions 的部署工作流同步 Secrets。配置完成后刷新页面，三项检查全部通过才能创建家庭空间。</p><a href="https://github.com/zhajiahe/babymemo#部署步骤" target="_blank" rel="noreferrer">查看部署指南 ↗</a></div>}</div></div></div>;
+ {mode==='setup'&&<div className="setup-guide"><strong>部署检查 · 3 个必需 Secret</strong><p>在 Cloudflare → Worker → Settings → Variables and Secrets 中创建 <code>BOOTSTRAP_SECRET</code>、<code>SESSION_SECRET</code>、<code>DATA_KEY</code>。每个密钥都分别运行一次 <code>openssl rand -hex 32</code> 生成，且不要提交到 Git。</p><p>或者通过 GitHub Actions 的部署工作流同步 Secrets。配置完成后刷新页面，三项检查全部通过才能创建家庭空间。</p><a href="https://github.com/zhajiahe/babymemo/blob/main/docs/DEPLOY.md" target="_blank" rel="noreferrer">查看部署指南 ↗</a></div>}</div></div></div>;
 }
 function Nav({active,setActive,logout}:{active:Tab;setActive:(t:Tab)=>void;logout:()=>void}){
  const sections:[Tab,string,ReactNode][]=[['overview','概览',<Baby size={19}/>],['growth','成长曲线',<TrendingUp size={19}/>],['moments','成长瞬间',<BookHeart size={19}/>],['album','家庭相册',<Camera size={19}/>],['assistant','AI 助手',<Sparkles size={19}/>],['settings','设置',<Settings2 size={19}/>]];
