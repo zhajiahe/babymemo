@@ -60,6 +60,11 @@ export default function App(){
  const [growthPage,setGrowthPage]=useState(0),[momentPage,setMomentPage]=useState(0),[albumPage,setAlbumPage]=useState(0);
  const [hasMore,setHasMore]=useState({growth:false,moments:false,album:false});
  const [busy,setBusy]=useState(false);
+ useEffect(()=>{
+  if(!toast)return;
+  const timer=setTimeout(()=>setToast(''),5000);
+  return()=>clearTimeout(timer);
+ },[toast]);
  const baby=state?.babies.find(b=>b.id===babyId)||state?.babies[0];
  async function refresh(){
   try{const v=await api<State>('/api/state');setState(v);setBabyId(old=>old&&v.babies.some(x=>x.id===old)?old:(v.babies[0]?.id||''));setMode('app');}
@@ -116,7 +121,9 @@ function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;m
     let uploadId:string|undefined;
     try{
      if(file.size<1||file.size>209715200)throw Error('文件大小需在 1B～200MB 之间');
-     const mime=file.type||(/\.mov$/i.test(file.name)?'video/quicktime':'application/octet-stream');
+     const extension=file.name.toLowerCase().match(/\.(heic|heif|jpg|jpeg|png|webp|gif|mov|mp4|webm)$/)?.[1];
+     const formats:Record<string,string>={heic:'image/heic',heif:'image/heif',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',mov:'video/quicktime',mp4:'video/mp4',webm:'video/webm'};
+     const mime=file.type||(extension?formats[extension]:'application/octet-stream');
      setProgress(file.name+' · 正在准备');
      const start=await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:today(),title:file.name,mime,size:file.size});
      uploadId=start.id;
