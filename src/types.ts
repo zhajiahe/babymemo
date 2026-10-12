@@ -3,7 +3,6 @@ export interface Env {
   MEDIA: R2Bucket;
   BOT: DurableObjectNamespace;
   ASSETS: Fetcher;
-  BOOTSTRAP_SECRET?: string;
   SESSION_SECRET?: string;
   DATA_KEY?: string;
 }

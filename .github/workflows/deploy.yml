@@ -44,19 +44,18 @@ jobs:
         if: ${{ inputs.dry_run != true }}
         shell: bash
         env:
-          BOOTSTRAP_SECRET: ${{ secrets.BOOTSTRAP_SECRET }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           DATA_KEY: ${{ secrets.DATA_KEY }}
         run: |
           set -euo pipefail
-          for name in BOOTSTRAP_SECRET SESSION_SECRET DATA_KEY; do
+          for name in SESSION_SECRET DATA_KEY; do
             if [[ -z "${!name}" ]]; then
               echo "::error title=Missing GitHub Secret::$name is required for production deployment"
               exit 1
             fi
           done
           [[ "$DATA_KEY" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "::error::DATA_KEY must be a 32-byte hexadecimal key"; exit 1; }
-          [[ "${#BOOTSTRAP_SECRET}" -ge 32 && "${#SESSION_SECRET}" -ge 32 ]] || { echo "::error::Authentication secrets must be at least 32 characters"; exit 1; }
+          [[ "${#SESSION_SECRET}" -ge 32 ]] || { echo "::error::SESSION_SECRET must be at least 32 characters"; exit 1; }
       - run: npm install --no-audit --no-fund
       - name: Provision or inspect Cloudflare resources
         shell: bash
@@ -82,12 +81,11 @@ jobs:
         if: ${{ inputs.dry_run != true }}
         shell: bash
         env:
-          BOOTSTRAP_SECRET: ${{ secrets.BOOTSTRAP_SECRET }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           DATA_KEY: ${{ secrets.DATA_KEY }}
         run: |
           set -euo pipefail
-          for name in BOOTSTRAP_SECRET SESSION_SECRET DATA_KEY; do
+          for name in SESSION_SECRET DATA_KEY; do
             if [[ -n "${!name}" ]]; then
               printf '%s' "${!name}" | npx wrangler secret put "$name" > /dev/null
             else

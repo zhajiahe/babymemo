@@ -41,14 +41,13 @@ app.get('/api/health',async c=>{
 });
 app.get('/api/bootstrap/status',async c=>c.json({
   initialized:!!await owner(c.env),
-  bootstrapConfigured:!!c.env.BOOTSTRAP_SECRET&&c.env.BOOTSTRAP_SECRET.length>=32,
   sessionConfigured:!!c.env.SESSION_SECRET&&c.env.SESSION_SECRET.length>=32,
   encryptionConfigured:!!c.env.DATA_KEY&&/^[a-f0-9]{64}$/i.test(c.env.DATA_KEY)
 }));
 app.post('/api/bootstrap',async c=>{
   try {
     const v=await json(c.req.raw);
-    const id=await setup(c,{bootstrapSecret:String(v.bootstrapSecret??''),ownerName:String(v.ownerName??''),familyName:String(v.familyName??''),password:String(v.password??''),babyName:String(v.babyName??''),birthday:String(v.birthday??''),gender:String(v.gender??''),timeZone:String(v.timeZone??'Asia/Shanghai'),allergies:String(v.allergies??'')});
+    const id=await setup(c,{ownerName:String(v.ownerName??''),familyName:String(v.familyName??''),password:String(v.password??''),babyName:String(v.babyName??''),birthday:String(v.birthday??''),gender:String(v.gender??''),timeZone:String(v.timeZone??'Asia/Shanghai'),allergies:String(v.allergies??'')});
     return c.json({ok:true,babyId:id},201);
   }catch(e){return fail(c,400,e instanceof Error?e.message:'SETUP_FAILED');}
 });

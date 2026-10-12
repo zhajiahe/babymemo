@@ -9,7 +9,7 @@
 - 目标技术栈固定：Node.js 22+、React/Vite、Hono/Cloudflare Workers、D1 `DB`、R2 `MEDIA`、Durable Object `BOT`（类 `WechatSession`）。
 - AI 供应商仅使用 OpenRouter，通过 BabyMemo 网页设置 Key/模型；微信可选，使用 iLink，**不需要** VPS / OpenClaw。
 - 先看 [`wrangler.jsonc`](../wrangler.jsonc)、[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)、[`package.json`](../package.json)、[`migrations/`](../migrations) 和本文件，**以当前代码为准**。
-- 不准把密码、`BOOTSTRAP_SECRET`、`SESSION_SECRET`、`DATA_KEY`、OpenRouter Key、微信授权 Token、Cookie 或日志中的敏感原文复制到聊天、PR、Issue、Git 仓库或命令行参数。
+- 不准把密码、`SESSION_SECRET`、`DATA_KEY`、OpenRouter Key、微信授权 Token、Cookie 或日志中的敏感原文复制到聊天、PR、Issue、Git 仓库或命令行参数。
 - 不得生成虚假的“部署成功”“扫码成功”“数据迁移成功”报告；任何一项未实测要写成**未验证**。
 - 不修改 GitHub Actions 为 push 自动发布；不删除或重新创建现有 D1/R2 以绕过失败；不轮换现存的 `DATA_KEY`。
 - 开始部署前核对最新 `main`、工作分支和 PR 状态；若已有其他 PR 合并，先整合代码并审查部署脚本冲突，禁止强推或跳过验证。
@@ -66,18 +66,16 @@ npm run provision:remote
 
 ## 3. 认证和密钥
 
-正式运行必须有三个互不相同的 Worker Secret：
+正式运行必须有两个互不相同的 Worker Secret：
 
 | Secret | 生成要求 | 操作警告 |
 | --- | --- | --- |
-| `BOOTSTRAP_SECRET` | 随机值，至少 32 字符 | 只用于首次初始化 |
 | `SESSION_SECRET` | 随机值，至少 32 字符 | 改动会导致现有 Session 失效 |
 | `DATA_KEY` | **64 位 hex 字符**（32 字节） | 改动会使既有加密 OpenRouter/微信凭据不可解密 |
 
 密钥应由部署者在自己的终端或密码管理器生成、保存。只在被授权的终端以 Wrangler **交互式输入**写入 Worker：
 
 ```bash
-npx wrangler secret put BOOTSTRAP_SECRET
 npx wrangler secret put SESSION_SECRET
 npx wrangler secret put DATA_KEY
 ```
@@ -101,7 +99,7 @@ npm run verify
 npx wrangler d1 migrations apply DB --remote
 npx wrangler deploy
 
-# 4. 首次部署后，由部署者安全地配置三个 Worker Secret（见上节）。
+# 4. 首次部署后，由部署者安全地配置两个 Worker Secret（见上节）。
 # 5. 最后检查服务。
 npm run smoke:check
 ```
@@ -119,7 +117,7 @@ npm run smoke:check
 
 ## 5. 浏览器初始化与验收
 
-首次安装由部署者亲自在 **HTTPS 首页 `/`** 的初始化界面完成；**不是** `/setup`。填写部署初始化密钥、家庭管理员名称、至少 10 位的家庭密码、宝宝姓名、生日、性别、时区和可选过敏信息。
+首次安装由部署者亲自在 **HTTPS 首页 `/`** 的初始化界面完成，无需额外密钥。**公开空实例存在被抢先注册风险**，建议部署后立即完成初始化，或先通过 Cloudflare Access 限制访问；**不是** `/setup`。填写家庭管理员名称、至少 10 位的家庭密码、宝宝姓名、生日、性别、时区和可选过敏信息。
 
 Agent 可以进行不携带秘密的只读 HTTP 检查：
 
@@ -129,7 +127,7 @@ curl -i https://baby.example.com/api/bootstrap/status
 curl -i https://baby.example.com/api/state
 ```
 
-预期：`/api/health` 为 200 且 `ok=true`，`bootstrap/status` 中 `bootstrapConfigured`、`sessionConfigured`、`encryptionConfigured` 为 `true`；未登录时 `/api/state` 返回 `401 LOGIN_REQUIRED`。之后初始化、登录和私有数据 CRUD 必须通过部署者的浏览器人工验收。不要为了自动验收将初始化密钥、家庭密码写入 curl、Shell History 或日志。
+预期：`/api/health` 为 200 且 `ok=true`，`bootstrap/status` 中 `sessionConfigured`、`encryptionConfigured` 为 `true`；未登录时 `/api/state` 返回 `401 LOGIN_REQUIRED`。之后初始化、登录和私有数据 CRUD 必须通过部署者的浏览器人工验收。不要为了自动验收将家庭密码写入 curl、Shell History 或日志。
 
 验收记录建议至少覆盖：家庭初始化、退出与重新登录、已有记录保留、宝宝切换、成长记录/里程碑 CRUD、图片上传/读取/删除、iPhone Safari 大图片与 MOV 上传、多分片网络失败、OpenRouter 模型测试、微信扫码/启停及 Durable Object 轮询状态。报告必须明确区分“脚本构建通过”“公开健康检查通过”和“真人/真实设备端到端验收通过”。
 

@@ -25,9 +25,6 @@
       "MEDIA": {
         "description": "Private R2 media storage"
       },
-      "BOOTSTRAP_SECRET": {
-        "description": "First-time setup secret, generated with openssl rand -hex 32"
-      },
       "SESSION_SECRET": {
         "description": "Stable session signing secret; do not rotate casually"
       },

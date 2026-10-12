@@ -15,17 +15,16 @@ Cloudflare 原生家庭成长记录系统。参考 MyBaby 的宝宝档案、成�
 
 ## 一键部署
 
-点击上方 Deploy to Cloudflare：Cloudflare 会克隆仓库并尝试自动部署 Worker、D1、R2、Durable Objects；deploy 脚本包含数据库迁移。首次上线前必须由所有者设置三个 Secret。Cloudflare 部署向导会参考仓库内 `.dev.vars.example` 提供配置提示；若没有在向导中填写，务必到 Worker 控制台手动添加。不能通过公共网页匿名占用新实例。
+点击上方 Deploy to Cloudflare：Cloudflare 会克隆仓库并尝试自动部署 Worker、D1、R2、Durable Objects；deploy 脚本包含数据库迁移。首次上线前必须由所有者设置两个 Secret。Cloudflare 部署向导会参考仓库内 `.dev.vars.example` 提供配置提示；若没有在向导中填写，务必到 Worker 控制台手动添加。注意：新实例在首次设置前可以被任何访客抢先创建管理员，请及时初始化或预先限制访问。
 
-在 Cloudflare Workers → BabyMemo → Settings → Variables and Secrets 中添加三个类型为 Secret 的值：
+在 Cloudflare Workers → BabyMemo → Settings → Variables and Secrets 中添加两个类型为 Secret 的值：
 
-- BOOTSTRAP_SECRET：终端运行 openssl rand -hex 32
-- SESSION_SECRET：单独再次运行 openssl rand -hex 32
-- DATA_KEY：再单独运行 openssl rand -hex 32（必须保留，轮换将导致原有加密凭据无法解密）
+- SESSION_SECRET：终端运行 openssl rand -hex 32
+- DATA_KEY：单独再次运行 openssl rand -hex 32（必须保留，轮换将导致原有加密凭据无法解密）
 
-完成后访问 Worker 域名，根据 `/api/bootstrap/status` 状态进入初始化界面，完成家庭名称、管理员及第一位宝宝的必填资料。绑定自定义域名后不用修改认证 Origin 环境变量，仍要测试完整登录。
+完成后访问 Worker 域名，根据 `/api/bootstrap/status` 状态进入初始化界面，完成家庭名称、管理员及第一位宝宝的必填资料。首次设置无需额外密钥；部署后务必立即完成注册，或先启用 Cloudflare Access 限制访问，以免他人抢先创建管理员。绑定自定义域名后不用修改认证 Origin 环境变量，仍要测试完整登录。
 
-**完整步骤及故障排查：见 [部署与初始化指南](docs/DEPLOY.md)。** 这是一键创建基础云资源的部署模式，三个私密 Secret 仍需要由所有者配置，不代表扫码后零步骤就能使用。
+**完整步骤及故障排查：见 [部署与初始化指南](docs/DEPLOY.md)。** 这是一键创建基础云资源的部署模式，两个私密 Secret 仍需要由所有者配置，不代表扫码后零步骤就能使用。
 
 ## GitHub Actions 部署
 
@@ -37,7 +36,6 @@ Cloudflare 原生家庭成长记录系统。参考 MyBaby 的宝宝档案、成�
 | --- | --- |
 | CLOUDFLARE_API_TOKEN | Cloudflare API Token（部署、D1、R2、DO 所需权限） |
 | CLOUDFLARE_ACCOUNT_ID | Cloudflare Account ID |
-| BOOTSTRAP_SECRET | 随机十六进制 32 字节 |
 | SESSION_SECRET | 独立随机 32 字节 |
 | DATA_KEY | 独立随机 32 字节 |
 

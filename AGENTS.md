@@ -77,7 +77,9 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 
 ## 6. 密钥、隐私与安全
 
-生产 `BOOTSTRAP_SECRET`、`SESSION_SECRET`、`DATA_KEY` 分别独立生成；`DATA_KEY` 是已保存 OpenRouter 和微信凭据的加密密钥，错误轮换会导致密文无法解密。**不读取、索取、回显、记录或轮换已有生产密钥**；不得将其复制到 PR、Issue、聊天、日志或代码。
+- 初始化密钥已取消，公开空实例存在管理员被抢先注册风险。部署后应立即初始化，或使用 Cloudflare Access 限制访问。不得覆盖已有管理员账号。
+
+生产只需要 `SESSION_SECRET`、`DATA_KEY` 分别独立生成；`DATA_KEY` 是已保存 OpenRouter 和微信凭据的加密密钥，错误轮换会导致密文无法解密。**不读取、索取、回显、记录或轮换已有生产密钥**；不得将其复制到 PR、Issue、聊天、日志或代码。
 
 不要将真实宝宝姓名、生日、照片、病史、家庭会话、微信凭据和 OpenRouter Key 放入测试样本或日志。测试采用合成资料；调试报告只保留脱敏错误码与必要复现步骤。
 

@@ -30,8 +30,8 @@ for(let attempt=1;attempt<=8;attempt++){
   const setup=await fetch(base+'/api/bootstrap/status',{signal:AbortSignal.timeout(10000),redirect:'error'});
   if(!setup.ok)throw Error('bootstrap HTTP '+setup.status);
   const ready=await setup.json();
-  if(!ready.bootstrapConfigured||!ready.sessionConfigured||!ready.encryptionConfigured)
-   throw Error('missing Worker secrets: BOOTSTRAP_SECRET / SESSION_SECRET / DATA_KEY');
+  if(!ready.sessionConfigured||!ready.encryptionConfigured)
+   throw Error('missing Worker secrets: SESSION_SECRET / DATA_KEY');
   console.log('Smoke check passed: '+base+' (Worker, D1, secrets)');
   process.exit(0);
  }catch(e){
