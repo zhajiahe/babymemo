@@ -38,7 +38,7 @@ app.get('/api/bootstrap/status',async c=>c.json({
 app.post('/api/bootstrap',async c=>{
   try {
     const v=await json(c.req.raw);
-    const id=await setup(c,{bootstrapSecret:String(v.bootstrapSecret??''),ownerName:String(v.ownerName??''),password:String(v.password??''),babyName:String(v.babyName??''),birthday:String(v.birthday??''),gender:String(v.gender??''),timeZone:String(v.timeZone??'Asia/Shanghai'),allergies:String(v.allergies??'')});
+    const id=await setup(c,{bootstrapSecret:String(v.bootstrapSecret??''),ownerName:String(v.ownerName??''),familyName:String(v.familyName??''),password:String(v.password??''),babyName:String(v.babyName??''),birthday:String(v.birthday??''),gender:String(v.gender??''),timeZone:String(v.timeZone??'Asia/Shanghai'),allergies:String(v.allergies??'')});
     return c.json({ok:true,babyId:id},201);
   }catch(e){return fail(c,400,e instanceof Error?e.message:'SETUP_FAILED');}
 });
@@ -59,10 +59,10 @@ app.get('/api/state',async c=>{
     c.env.DB.prepare('SELECT count(*) AS count FROM milestones').first<{count:number}>(),
     c.env.DB.prepare('SELECT count(*) AS count FROM media').first<{count:number}>()
   ]);
-  const [encryptedApiKey,encryptedBot,model,botOn] = await Promise.all([
-    setting(c.env,'openrouter_key'),setting(c.env,'wechat_token'),setting(c.env,'openrouter_model'),setting(c.env,'wechat_enabled')
+  const [encryptedApiKey,encryptedBot,model,botOn,familyName] = await Promise.all([
+    setting(c.env,'openrouter_key'),setting(c.env,'wechat_token'),setting(c.env,'openrouter_model'),setting(c.env,'wechat_enabled'),setting(c.env,'family_name')
   ]);
-  return c.json({ownerName:user!.name,babies:babies.results,counts:{growth:growth?.count??0,milestones:milestones?.count??0,media:media?.count??0},
+  return c.json({ownerName:user!.name,familyName:familyName||'家庭空间',babies:babies.results,counts:{growth:growth?.count??0,milestones:milestones?.count??0,media:media?.count??0},
     openrouter:{configured:!!encryptedApiKey,model:model||'openai/gpt-4.1-mini'},
     wechat:{connected:!!encryptedBot,enabled:botOn==='true'}});
 });
@@ -233,6 +233,9 @@ app.post('/api/settings/wechat/qr/status',async c=>{
       await setSetting(c.env,'wechat_user_id',result.userId);
       await setSetting(c.env,'wechat_base',result.base||'https://ilinkai.weixin.qq.com');
       await setSetting(c.env,'wechat_enabled','false');
+      // A newly linked account must never reuse the previous bot's getupdates cursor.
+      const reset=await workerBot(c.env).fetch('https://bot.internal/reset',{method:'POST'});
+      if(!reset.ok)throw Error('WECHAT_RESET_FAILED');
       await setSetting(c.env,'pairing_qr','');
       return c.json({status:'confirmed'});
     }

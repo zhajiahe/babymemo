@@ -2,14 +2,15 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
 
 type BabyInfo={id:string;name:string;birthday:string;gender:string;time_zone:string;allergies:string;notes:string};
-type State={ownerName:string;babies:BabyInfo[];counts:{growth:number;milestones:number;media:number};openrouter:{configured:boolean;model:string};wechat:{connected:boolean;enabled:boolean}};
+type State={ownerName:string;familyName:string;babies:BabyInfo[];counts:{growth:number;milestones:number;media:number};openrouter:{configured:boolean;model:string};wechat:{connected:boolean;enabled:boolean}};
 type Tab='overview'|'growth'|'moments'|'album'|'assistant'|'settings';
 type RecordItem={id:string;day:string;weight?:number|null;height?:number|null;head_circumference?:number|null;title?:string;description?:string;notes?:string};
 type MediaItem={id:string;day:string;title:string;mime:string;size:number};
+class ApiFailure extends Error { constructor(readonly status:number,message:string){super(message);this.name='ApiFailure'} }
 async function api<T=any>(url:string, init?:RequestInit):Promise<T>{
  const r=await fetch(url,{credentials:'same-origin',...init,headers:{...(init?.body&&!(init.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...init?.headers}});
  let data:any={};try{data=await r.json();}catch{}
- if(!r.ok)throw Error(typeof data.error==='string'?data.error:'HTTP_'+r.status);
+ if(!r.ok)throw new ApiFailure(r.status,typeof data.error==='string'?data.error:'HTTP_'+r.status);
  return data as T;
 }
 async function post<T=any>(url:string,body:unknown):Promise<T>{return api<T>(url,{method:'POST',body:JSON.stringify(body)})}
@@ -23,30 +24,30 @@ function Notice({text,onClose}:{text:string;onClose:()=>void}){return <div class
 function Field({label,children}:{label:string;children:ReactNode}){return <label className="field"><span>{label}</span>{children}</label>}
 function Primary({children,disabled=false}:{children:ReactNode;disabled?:boolean}){return <button className="primary" type="submit" disabled={disabled}>{children}</button>}
 function Gate({onReady}:{onReady:()=>void}){
- const [mode,setMode]=useState<'loading'|'setup'|'login'>('loading');
+ const [mode,setMode]=useState<'loading'|'setup'|'login'|'unavailable'>('loading');
  const [ready,setReady]=useState({bootstrapConfigured:false,sessionConfigured:false,encryptionConfigured:false});
- const [form,setForm]=useState({bootstrapSecret:'',ownerName:'',password:'',babyName:'',birthday:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
+ const [form,setForm]=useState({bootstrapSecret:'',ownerName:'',password:'',familyName:'',babyName:'',birthday:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
- useEffect(()=>{api<any>('/api/bootstrap/status').then(v=>{setReady(v);setMode(v.initialized?'login':'setup')}).catch(()=>setError('无法连接后端，请检查 Cloudflare 部署和 D1 迁移。'))},[]);
+ useEffect(()=>{api<any>('/api/bootstrap/status').then(v=>{setReady(v);setMode(v.initialized?'login':'setup')}).catch(()=>{setMode('unavailable');setError('无法连接后端，请检查 Cloudflare 部署和 D1 迁移。')})},[]);
  async function submit(e:FormEvent){e.preventDefault();setBusy(true);setError('');
   try{await post(mode==='setup'?'/api/bootstrap':'/api/login',mode==='setup'?form:{name:form.ownerName,password:form.password});onReady();}
   catch(e){setError(e instanceof Error?e.message:'操作失败');}finally{setBusy(false);}
  }
  return <div className="gate"><div className="gate-intro"><Logo/><h1>成长的每一刻，<br/>都值得被珍藏。</h1><p>一个安静、私密、为家人打造的成长空间。<br/>照片、第一次、身高体重，都在这里。</p><div className="gate-mark"><Heart size={36} fill="currentColor"/></div></div>
  <div className="gate-panel"><div className="gate-card"><div className="eyebrow">{mode==='setup'?'FIRST TIME SETUP':'WELCOME BACK'}</div><h2>{mode==='setup'?'创建你的家庭空间':'欢迎回家'}</h2><p className="muted">{mode==='setup'?'完成以下必填信息后，才会开放记录功能。':'使用你初始化时设置的家庭账号登录。'}</p>
- {mode==='loading'?<div className="skeleton">正在检查服务状态…</div>:<form onSubmit={submit} className="stack">
+ {mode==='loading'?<div className="skeleton">正在检查服务状态…</div>:mode==='unavailable'?<div className="stack"><div className="error" role="alert">{error}</div><button className="secondary" onClick={()=>location.reload()}><RefreshCw size={15}/>重新检查</button></div>:<form onSubmit={submit} className="stack">
  {mode==='setup'&&<><div className="setup-check">{[['部署密钥',ready.bootstrapConfigured],['会话密钥',ready.sessionConfigured],['加密密钥',ready.encryptionConfigured]].map(([label,ok])=><span key={String(label)} className={ok?'good':'bad'}>{ok?<Check size={13}/>:<WifiOff size={13}/>} {label}</span>)}</div>
  <Field label="初始化密钥"><input autoComplete="off" type="password" required value={form.bootstrapSecret} onChange={e=>setForm({...form,bootstrapSecret:e.target.value})} placeholder="Cloudflare BOOTSTRAP_SECRET"/></Field></>}
- <Field label="家庭管理员名称"><input required value={form.ownerName} autoComplete="username" onChange={e=>setForm({...form,ownerName:e.target.value})} placeholder="例如：爸爸 / 妈妈"/></Field>
- <Field label="家庭密码"><input type="password" autoComplete={mode==='setup'?'new-password':'current-password'} minLength={mode==='setup'?10:1} required value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder={mode==='setup'?'至少 10 位字符':'输入家庭密码'}/></Field>
+ <>{mode==='setup'&&<Field label="家庭名称（必填）"><input required maxLength={80} value={form.familyName} onChange={e=>setForm({...form,familyName:e.target.value})} placeholder="例如：我们的温暖小家"/></Field>}<Field label={mode==='setup'?'管理员登录名':'管理员登录名'}><input required value={form.ownerName} autoComplete="username" onChange={e=>setForm({...form,ownerName:e.target.value})} placeholder="例如：爸爸 / 妈妈"/></Field>
+ </><Field label="家庭密码"><input type="password" autoComplete={mode==='setup'?'new-password':'current-password'} minLength={mode==='setup'?10:1} required value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder={mode==='setup'?'至少 10 位字符':'输入家庭密码'}/></Field>
  {mode==='setup'&&<><div className="form-divider"><span>宝宝档案</span></div><div className="two"><Field label="宝宝名字"><input required value={form.babyName} onChange={e=>setForm({...form,babyName:e.target.value})} placeholder="宝宝昵称"/></Field><Field label="性别"><select value={form.gender} onChange={e=>setForm({...form,gender:e.target.value})}><option value="girl">女孩</option><option value="boy">男孩</option><option value="other">暂不填写</option></select></Field></div>
  <Field label="出生日期"><input type="date" required max={today()} value={form.birthday} onChange={e=>setForm({...form,birthday:e.target.value})}/></Field>
  <Field label="家庭时区"><select value={form.timeZone} onChange={e=>setForm({...form,timeZone:e.target.value})}><option value="Asia/Shanghai">中国标准时间 · UTC+8</option><option value="Asia/Tokyo">日本标准时间 · UTC+9</option><option value="America/Los_Angeles">美国太平洋时间</option></select></Field>
  <Field label="已知过敏信息（可选）"><input value={form.allergies} onChange={e=>setForm({...form,allergies:e.target.value})} placeholder="可稍后补充"/></Field></>}
  {error&&<div className="error" role="alert">{error}</div>}
- <Primary disabled={busy}>{busy?'正在处理…':mode==='setup'?'完成初始化':'登录我的空间'}<ChevronRight size={17}/></Primary>
+ <Primary disabled={busy||(mode==='setup'&&(!ready.bootstrapConfigured||!ready.sessionConfigured||!ready.encryptionConfigured))}>{busy?'正在处理…':mode==='setup'?'完成初始化':'登录我的空间'}<ChevronRight size={17}/></Primary>
  </form>}
- {mode==='setup'&&<p className="hint">首次部署需先在 Cloudflare Secrets 或 GitHub Actions Secrets 配置 3 个密钥，初始化不可绕过。</p>}</div></div></div>;
+ {mode==='setup'&&<div className="setup-guide"><strong>部署检查 · 3 个必需 Secret</strong><p>在 Cloudflare → Worker → Settings → Variables and Secrets 中创建 <code>BOOTSTRAP_SECRET</code>、<code>SESSION_SECRET</code>、<code>DATA_KEY</code>。每个密钥都分别运行一次 <code>openssl rand -hex 32</code> 生成，且不要提交到 Git。</p><p>或者通过 GitHub Actions 的部署工作流同步 Secrets。配置完成后刷新页面，三项检查全部通过才能创建家庭空间。</p><a href="https://github.com/zhajiahe/babymemo/blob/main/docs/DEPLOY.md" target="_blank" rel="noreferrer">查看部署指南 ↗</a></div>}</div></div></div>;
 }
 function Nav({active,setActive,logout}:{active:Tab;setActive:(t:Tab)=>void;logout:()=>void}){
  const sections:[Tab,string,ReactNode][]=[['overview','概览',<Baby size={19}/>],['growth','成长曲线',<TrendingUp size={19}/>],['moments','成长瞬间',<BookHeart size={19}/>],['album','家庭相册',<Camera size={19}/>],['assistant','AI 助手',<Sparkles size={19}/>],['settings','设置',<Settings2 size={19}/>]];
@@ -54,7 +55,7 @@ function Nav({active,setActive,logout}:{active:Tab;setActive:(t:Tab)=>void;logou
 }
 function Card({children,className=''}:{children:ReactNode;className?:string}){return <div className={'card '+className}>{children}</div>}
 export default function App(){
- const [mode,setMode]=useState<'loading'|'gate'|'app'>('loading');
+ const [mode,setMode]=useState<'loading'|'gate'|'app'|'unavailable'>('loading');
  const [state,setState]=useState<State|null>(null),[active,setActive]=useState<Tab>('overview'),[babyId,setBabyId]=useState(''),[toast,setToast]=useState('');
  const [records,setRecords]=useState<RecordItem[]>([]),[milestones,setMilestones]=useState<RecordItem[]>([]),[media,setMedia]=useState<MediaItem[]>([]);
  const [growthPage,setGrowthPage]=useState(0),[momentPage,setMomentPage]=useState(0),[albumPage,setAlbumPage]=useState(0);
@@ -63,23 +64,39 @@ export default function App(){
  const baby=state?.babies.find(b=>b.id===babyId)||state?.babies[0];
  async function refresh(){
   try{const v=await api<State>('/api/state');setState(v);setBabyId(old=>old&&v.babies.some(x=>x.id===old)?old:(v.babies[0]?.id||''));setMode('app');}
-  catch{setMode('gate');}
+  catch(e){if(e instanceof ApiFailure&&e.status===401){setMode('gate');setState(null);}else{setToast('连接暂时中断，已保留当前页面。请检查网络并重试。');setMode(old=>old==='loading'?'unavailable':old);}}
  }
  useEffect(()=>{refresh()},[]);
- useEffect(()=>{if(!baby?.id)return;
-  Promise.all([
-   api<any>('/api/records/growth?babyId='+encodeURIComponent(baby.id)+'&page='+growthPage),
-   api<any>('/api/records/milestones?babyId='+encodeURIComponent(baby.id)+'&page='+momentPage),
-   api<any>('/api/media?babyId='+encodeURIComponent(baby.id)+'&page='+albumPage)
-  ]).then(([g,m,a])=>{setRecords(g.items);setMilestones(m.items);setMedia(a.items);setHasMore({growth:g.hasMore,moments:m.hasMore,album:a.hasMore})}).catch(e=>setToast(String(e)));
- },[baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media]);
+ // Load only the resource required by the active view; avoid three D1 reads on
+ // every navigation. Ignore late responses when baby or tab changes.
+ useEffect(()=>{
+  if(!baby?.id)return;
+  let cancelled=false;
+  const id=encodeURIComponent(baby.id);
+  const loads:Promise<void>[]=[];
+  if(active==='overview'||active==='growth'){
+   loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/growth?babyId='+id+'&page='+growthPage)
+    .then(r=>{if(!cancelled){setRecords(r.items);setHasMore(p=>({...p,growth:r.hasMore}))}}));
+  }
+  if(active==='overview'||active==='moments'){
+   loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/milestones?babyId='+id+'&page='+momentPage)
+    .then(r=>{if(!cancelled){setMilestones(r.items);setHasMore(p=>({...p,moments:r.hasMore}))}}));
+  }
+  if(active==='album'){
+   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+albumPage)
+    .then(r=>{if(!cancelled){setMedia(r.items);setHasMore(p=>({...p,album:r.hasMore}))}}));
+  }
+  void Promise.all(loads).catch(e=>{if(!cancelled)setToast(e instanceof Error?e.message:'数据读取失败')});
+  return ()=>{cancelled=true};
+ },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media]);
  function changed(){void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
  async function logout(){await post('/api/logout',{});setMode('gate');setState(null)}
  if(mode==='loading')return <div className="loading-screen"><Logo/><div>正在载入家庭空间…</div></div>;
  if(mode==='gate')return <Gate onReady={()=>void refresh()}/>;
+ if(mode==='unavailable')return <div className="loading-screen"><Logo/><p>暂时无法连接家庭空间，已保留你的会话。</p><button className="secondary" onClick={()=>void refresh()}><RefreshCw size={16}/>重新连接</button></div>;
  if(!state||!baby)return <div className="loading-screen">家庭空间中暂无宝宝档案</div>;
  const titles:Record<Tab,string>={overview:'每一刻，都很珍贵',growth:'成长记录',moments:'小小里程碑',album:'家庭相册',assistant:'AI 成长助手',settings:'空间设置'};
- return <div className="app"><Nav active={active} setActive={setActive} logout={logout}/><main className="workspace"><div className="topbar"><div className="crumb">家庭空间 <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
+ return <div className="app"><Nav active={active} setActive={setActive} logout={logout}/><main className="workspace"><div className="topbar"><div className="crumb">{state.familyName||'家庭空间'} <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
  <div className="page"><header className="page-heading"><div><div className="eyebrow">BABYMEMO / {active.toUpperCase()}</div><h1>{titles[active]}</h1><p className="muted">{active==='overview'?'把日常小事，变成以后回望的宝藏。':baby.name+' · '+years(baby.birthday)+' · 记录属于你们的故事'}</p></div><div className="baby-pill"><Heart size={15} fill="currentColor"/><select aria-label="选择宝宝" value={baby.id} onChange={e=>{setBabyId(e.target.value);setGrowthPage(0);setMomentPage(0);setAlbumPage(0)}}>{state.babies.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></div></header>
  {active==='overview'&&<><section className="welcome"><div className="welcome-content"><div className="eyebrow">OUR LITTLE STORY</div><h2>{baby.name}，<br/>今天也在闪闪发光。</h2><p>从 {baby.birthday} 开始，已陪伴我们 {years(baby.birthday)}。<br/>愿每个寻常的日子，都留下一点温暖。</p><button className="light-btn" onClick={()=>setActive('moments')}><Plus size={16}/>记下一个瞬间</button></div><div className="welcome-art"><span>✳</span><Heart fill="currentColor" size={84}/><i>♡</i></div></section>
  <div className="stats"><Card><div className="stat-icon peach"><TrendingUp size={20}/></div><div className="stat-value">{state.counts.growth}</div><div className="muted">成长记录</div></Card><Card><div className="stat-icon lavender"><BookHeart size={20}/></div><div className="stat-value">{state.counts.milestones}</div><div className="muted">珍贵时刻</div></Card><Card><div className="stat-icon mint"><Camera size={20}/></div><div className="stat-value">{state.counts.media}</div><div className="muted">相册回忆</div></Card></div>
@@ -101,10 +118,22 @@ function RecordView({baby,kind,items,busy,setBusy,changed,notify,hasMore,page,se
   await post('/api/records/'+kind,payload);setForm({day:today(),weight:'',height:'',headCircumference:'',notes:'',title:'',description:''});notify('已保存到家庭记录');changed();
  }catch(e){notify(e instanceof Error?e.message:'保存失败')}finally{setBusy(false)}}
  async function remove(id:string){if(!confirm('确定要删除这条记录吗？'))return;await api('/api/records/'+kind+'/'+id,{method:'DELETE'});changed()}
- return <div className="split-main"><Card><div className="section-title"><h3>{kind==='growth'?'新增测量':'记录一个第一次'}</h3><span className="icon-subtle">{kind==='growth'?<TrendingUp size={20}/>:<BookHeart size={20}/>}</span></div><form className="stack" onSubmit={save}><Field label="日期"><input type="date" max={today()} required value={form.day} onChange={e=>setForm({...form,day:e.target.value})}/></Field>
+ return <><div className="split-main"><Card><div className="section-title"><h3>{kind==='growth'?'新增测量':'记录一个第一次'}</h3><span className="icon-subtle">{kind==='growth'?<TrendingUp size={20}/>:<BookHeart size={20}/>}</span></div><form className="stack" onSubmit={save}><Field label="日期"><input type="date" max={today()} required value={form.day} onChange={e=>setForm({...form,day:e.target.value})}/></Field>
  {kind==='growth'?<><div className="two"><Field label="体重 · kg"><input type="number" min="0.1" max="150" step="0.01" placeholder="例如 9.5" value={form.weight} onChange={e=>setForm({...form,weight:e.target.value})}/></Field><Field label="身高 · cm"><input type="number" min="10" max="250" step="0.1" placeholder="例如 78" value={form.height} onChange={e=>setForm({...form,height:e.target.value})}/></Field></div><Field label="头围 · cm"><input type="number" min="10" max="100" step="0.1" placeholder="选填" value={form.headCircumference} onChange={e=>setForm({...form,headCircumference:e.target.value})}/></Field><Field label="备注"><textarea rows={3} placeholder="今天有什么新发现…" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}/></Field></>:<><Field label="事件标题"><input required maxLength={120} placeholder="第一次独立走路、第一次叫妈妈…" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></Field><Field label="故事内容"><textarea rows={4} placeholder="那个值得记住的瞬间…" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></Field></>}
  <Primary disabled={busy}>{busy?'正在保存…':<><Plus size={17}/> 保存记录</>}</Primary></form></Card>
- <Card><div className="section-title"><h3>记录时间线</h3><span className="muted small">最近 {items.length} 条</span></div><div className="timeline">{items.length?items.map(x=><div className="timeline-item" key={x.id}><div className="timeline-dot"/><div className="timeline-body"><div className="row-between"><time>{x.day}</time><button className="icon-btn" aria-label="删除" onClick={()=>void remove(x.id)}><Trash2 size={15}/></button></div><strong>{kind==='growth'?[x.weight!=null?'体重 '+x.weight+'kg':null,x.height!=null?'身高 '+x.height+'cm':null,x.head_circumference!=null?'头围 '+x.head_circumference+'cm':null].filter(Boolean).join(' · '):x.title}</strong><p>{kind==='growth'?x.notes:x.description}</p></div></div>):<div className="empty">还没有记录，左边可以创建第一条。</div>}</div><Pager page={page} setPage={setPage} hasMore={hasMore}/></Card></div>;
+ <Card><div className="section-title"><h3>记录时间线</h3><span className="muted small">最近 {items.length} 条</span></div><div className="timeline">{items.length?items.map(x=><div className="timeline-item" key={x.id}><div className="timeline-dot"/><div className="timeline-body"><div className="row-between"><time>{x.day}</time><button className="icon-btn" aria-label="删除" onClick={()=>void remove(x.id)}><Trash2 size={15}/></button></div><strong>{kind==='growth'?[x.weight!=null?'体重 '+x.weight+'kg':null,x.height!=null?'身高 '+x.height+'cm':null,x.head_circumference!=null?'头围 '+x.head_circumference+'cm':null].filter(Boolean).join(' · '):x.title}</strong><p>{kind==='growth'?x.notes:x.description}</p></div></div>):<div className="empty">还没有记录，左边可以创建第一条。</div>}</div><Pager page={page} setPage={setPage} hasMore={hasMore}/></Card></div>{kind==='growth'&&<GrowthChart items={items}/>}</>;
+}
+function GrowthChart({items}:{items:RecordItem[]}){
+ const [metric,setMetric]=useState<'weight'|'height'>('weight');
+ const points=items.filter(x=>typeof x[metric]==='number').slice().reverse();
+ const values=points.map(p=>Number(p[metric]));
+ const low=values.length?Math.min(...values):0,high=values.length?Math.max(...values):1;
+ const spread=Math.max(0.2,high-low),min=low-spread*0.15,max=high+spread*0.15;
+ const left=48,right=692,top=20,bottom=193;
+ const x=(i:number)=>points.length===1?(left+right)/2:left+(right-left)*i/(points.length-1);
+ const y=(v:number)=>bottom-(v-min)/(max-min)*(bottom-top);
+ const poly=points.map((p,i)=>`${x(i)},${y(Number(p[metric]))}`).join(' ');
+ return <Card className="growth-chart"><div className="section-title"><h3>成长趋势</h3><div className="chart-tabs"><button className={metric==='weight'?'active':''} onClick={()=>setMetric('weight')}>体重 · kg</button><button className={metric==='height'?'active':''} onClick={()=>setMetric('height')}>身高 · cm</button></div></div>{!points.length?<p className="empty">记录测量数据后，这里会显示变化趋势。</p>:<svg role="img" aria-label={`${metric==='weight'?'体重':'身高'}趋势，${points.length} 个测量点`} viewBox="0 0 720 235" className="growth-svg"><line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#e8e8ed"/>{[0,1,2,3].map(step=>{const value=min+(max-min)*step/3;const yy=y(value);return <g key={step}><line x1={left} x2={right} y1={yy} y2={yy} stroke="#edf0f3" strokeDasharray="3 5"/><text x={left-10} y={yy+4} textAnchor="end" fontSize={12} fill="#87919f">{value.toFixed(1)}</text></g>})}{points.length>1&&<polyline points={poly} fill="none" stroke="#dd8068" strokeWidth={3} strokeLinejoin="round" strokeLinecap="round"/>}{points.map((p,i)=><circle key={p.id} cx={x(i)} cy={y(Number(p[metric]))} r={4} fill="#df826c" stroke="#fff" strokeWidth={2}><title>{p.day}：{Number(p[metric])}{metric==='weight'?' kg':' cm'}</title></circle>)}<text x={left} y={226} fill="#8993a0" fontSize={11}>{points[0].day}</text><text x={right} y={226} fill="#8993a0" fontSize={11} textAnchor="end">{points.at(-1)?.day}</text></svg>}<p className="hint">展示当前页中有测量值的记录；支持切换体重与身高。</p></Card>;
 }
 function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
@@ -114,10 +143,32 @@ function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;m
    const mime=file.type||(/\.mov$/i.test(file.name)?'video/quicktime':'application/octet-stream');
    const start=await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:today(),title:file.name,mime,size:file.size});
    const parts=Math.ceil(file.size/start.chunkSize);
-   for(let i=0;i<parts;i++){
-    setProgress(file.name+' · '+Math.round(i/parts*100)+'%');
-    await api('/api/upload/'+start.id+'/part/'+(i+1),{method:'PUT',body:file.slice(i*start.chunkSize,Math.min(file.size,(i+1)*start.chunkSize)),headers:{'Content-Type':'application/octet-stream'}});
-   }
+   // Keep three bounded uploads in flight; retry transient failures per part.
+   // Worker never buffers the whole file, so iPhone MOV uploads remain chunked.
+   let next=0,completed=0;
+   const uploadPart=async(index:number)=>{
+    for(let attempt=0;attempt<3;attempt++){
+     try {
+      await api('/api/upload/'+start.id+'/part/'+(index+1),{
+       method:'PUT',
+       body:file.slice(index*start.chunkSize,Math.min(file.size,(index+1)*start.chunkSize)),
+       headers:{'Content-Type':'application/octet-stream'}
+      });
+      return;
+     }catch(e){
+      if(attempt===2)throw e;
+      await new Promise(resolve=>setTimeout(resolve,600*(2**attempt)));
+     }
+    }
+   };
+   await Promise.all(Array.from({length:Math.min(3,parts)},async()=>{
+    while(next<parts){
+     const index=next++;
+     await uploadPart(index);
+     completed++;
+     setProgress(file.name+' · '+Math.round(completed/parts*100)+'%');
+    }
+   }));
    await post('/api/upload/'+start.id+'/finish',{});
    notify('已保存 '+file.name);changed();
   }catch(e){notify(file.name+'：'+(e instanceof Error?e.message:'上传失败'));}}
