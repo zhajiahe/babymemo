@@ -197,6 +197,23 @@ async function e2e() {
     assert.deepEqual(firstGrowth.data.items,[]);
     assert.deepEqual(secondGrowth.data.items,[]);
   });
+  await step('birth time stays optional and updates reject invalid clock values',async()=>{
+    const before=(await json('/api/state')).data.babies;
+    const baby=before[0];
+    assert.equal(baby.birth_time,'');
+    const saved=await json('/api/babies/'+baby.id,{method:'PATCH',body:{
+      name:baby.name,birthday:baby.birthday,birthTime:'08:45',allergies:baby.allergies,notes:baby.notes
+    }});
+    assert.equal(saved.status,200);
+    const after=(await json('/api/state')).data.babies;
+    assert.equal(after.length,before.length);
+    assert.equal(after.find(item=>item.id===baby.id)?.birth_time,'08:45');
+    const bad=await json('/api/babies/'+baby.id,{method:'PATCH',body:{
+      name:baby.name,birthday:baby.birthday,birthTime:'25:61',allergies:baby.allergies,notes:baby.notes
+    }});
+    assert.equal(bad.status,400);
+    assert.equal((await json('/api/state')).data.babies.find(item=>item.id===baby.id)?.birth_time,'08:45');
+  });
   await step('growth measurement create, list, and delete',async()=>{
     const created=await json('/api/records/growth',{method:'POST',body:{
       babyId,day:'2026-01-15',weight:10.2,height:75,headCircumference:46,notes:'local test'
