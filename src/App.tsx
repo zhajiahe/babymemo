@@ -1,12 +1,12 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
+import { MediaViewer, type MediaItem } from './components/MediaViewer';
 import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
 
 type BabyInfo={id:string;name:string;birthday:string;gender:string;time_zone:string;allergies:string;notes:string};
 type State={ownerName:string;familyName:string;babies:BabyInfo[];counts:{growth:number;milestones:number;media:number};openrouter:{configured:boolean;model:string};wechat:{connected:boolean;enabled:boolean}};
 type Tab='overview'|'growth'|'moments'|'album'|'assistant'|'settings';
 type RecordItem={id:string;day:string;weight?:number|null;height?:number|null;head_circumference?:number|null;title?:string;description?:string;notes?:string};
-type MediaItem={id:string;day:string;title:string;mime:string;size:number};
 class ApiFailure extends Error { constructor(readonly status:number,message:string){super(message);this.name='ApiFailure'} }
 async function api<T=any>(url:string, init?:RequestInit):Promise<T>{
  const r=await fetch(url,{credentials:'same-origin',...init,headers:{...(init?.body&&!(init.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...init?.headers}});
@@ -133,6 +133,8 @@ function GrowthChart({items}:{items:RecordItem[]}){
 }
 function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
+ const [selected,setSelected]=useState<MediaItem|null>(null);
+ useEffect(()=>{setSelected(null)},[baby.id]);
  async function upload(files:FileList|null){
   if(!files?.length||uploading)return;
   setUploading(true);
@@ -189,9 +191,21 @@ function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;m
    setProgress('');
   }
  }
- async function remove(id:string){if(!confirm('确定从相册删除这项媒体吗？'))return;await api('/api/media/'+id,{method:'DELETE'});changed()}
+ async function remove(id:string){if(!confirm('确定从相册删除这项媒体吗？'))return;try{await api('/api/media/'+id,{method:'DELETE'});if(selected?.id===id)setSelected(null);changed();notify('已从相册删除')}catch(e){notify(e instanceof Error?e.message:'删除失败')}}
+ async function saveMedia(value:{title:string;day:string}){
+  if(!selected)return;
+  await api('/api/media/'+selected.id,{method:'PATCH',body:JSON.stringify(value)});
+  setSelected(current=>current?.id===selected.id?{...current,...value}:current);
+  changed();notify('照片信息已更新');
+ }
+ function navigateMedia(step:number){
+  if(!selected)return;
+  const current=media.findIndex(item=>item.id===selected.id);
+  const next=media[current+step];
+  if(next)setSelected(next);
+ }
  return <><Card className="upload-card"><CloudUpload size={34}/><h3>收藏镜头里的成长</h3><p className="muted">支持照片、MP4 与 iPhone MOV，按 8MB 分片上传，大文件也无需一次传完。</p><label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>void upload(e.target.files)}/></label>{progress&&<p className="small">{progress}</p>}</Card>
- <div className="photo-grid">{media.map(item=><Card key={item.id} className="photo-item"><div className="photo-frame">{item.mime.startsWith('image/')?<img src={'/api/media/'+item.id+'/content'} loading="lazy" alt={item.title||'成长照片'}/>:<video controls preload="none" src={'/api/media/'+item.id+'/content'}/>}</div><div className="photo-caption"><div><strong>{item.title||'未命名'}</strong><p>{item.day}</p></div><button className="icon-btn" onClick={()=>void remove(item.id)} aria-label="删除照片"><Trash2 size={16}/></button></div></Card>)}</div>{!media.length&&<div className="empty card">还没有照片，试试上传第一张。</div>}<Pager page={page} setPage={setPage} hasMore={hasMore}/></>;
+ <div className="photo-grid">{media.map(item=><Card key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+(item.title||'成长回忆')}><span className="photo-frame">{item.mime.startsWith('image/')?<img src={'/api/media/'+item.id+'/content'} loading="lazy" alt="" />:<video muted playsInline preload="metadata" src={'/api/media/'+item.id+'/content'} />}</span><span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button><div className="photo-caption"><div><strong>{item.title||'未命名'}</strong><p>{item.day}</p></div><button type="button" className="icon-btn" onClick={()=>void remove(item.id)} aria-label={'删除 '+(item.title||'媒体')}><Trash2 size={16}/></button></div></Card>)}</div>{!media.length&&<div className="empty card">还没有照片，试试上传第一张。</div>}<Pager page={page} setPage={setPage} hasMore={hasMore}/>{selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia}/> }</>;
 }
 function Assistant({configured,babyId,setActive}:{configured:boolean;babyId:string;setActive:(v:Tab)=>void}){
  const [input,setInput]=useState(''),[messages,setMessages]=useState<{role:'me'|'bot';text:string}[]>([]),[waiting,setWaiting]=useState(false);

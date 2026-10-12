@@ -3,6 +3,7 @@ import type { Env, Baby } from './types';
 import { applySession, authenticated, clearSession, login, owner, sameOrigin, setup } from './auth';
 import { decryptSecret, encryptSecret, setSetting, setting } from './crypto';
 import { generateQr, qrStatus, askOpenRouter, workerBot } from './wechat';
+import { mediaDownloadHeader } from './media-filename.mjs';
 export { WechatSession } from './wechat';
 
 const app = new Hono<{Bindings:Env}>();
@@ -178,8 +179,20 @@ app.post('/api/upload/:id/finish',async c=>{
     return c.json({id},201);
   }catch{return fail(c,502,'UPLOAD_FINISH_FAILED');}
 });
+// Metadata edits never alter the private R2 object.
+app.patch('/api/media/:id',async c=>{
+  let value:unknown;
+  try{value=await json(c.req.raw)}catch{return fail(c,400,'INVALID_INPUT')}
+  if(!value||typeof value!=='object')return fail(c,400,'INVALID_MEDIA_METADATA');
+  const v=value as Record<string,unknown>;
+  if(typeof v.title!=='string'||!v.title.trim()||v.title.trim().length>120||!dayOk(v.day))return fail(c,400,'INVALID_MEDIA_METADATA');
+  const record=await c.env.DB.prepare('SELECT id FROM media WHERE id=?').bind(c.req.param('id')).first();
+  if(!record)return fail(c,404,'NOT_FOUND');
+  await c.env.DB.prepare('UPDATE media SET title=?,day=? WHERE id=?').bind(v.title.trim(),v.day,c.req.param('id')).run();
+  return c.json({ok:true});
+});
 app.get('/api/media/:id/content',async c=>{
-  const row=await c.env.DB.prepare('SELECT object_key,mime FROM media WHERE id=?').bind(c.req.param('id')).first<{object_key:string;mime:string}>();
+  const row=await c.env.DB.prepare('SELECT object_key,mime,title FROM media WHERE id=?').bind(c.req.param('id')).first<{object_key:string;mime:string;title:string}>();
   if(!row)return fail(c,404,'NOT_FOUND');
   const range=c.req.header('Range');let options: R2GetOptions|undefined;
   if(range){
@@ -192,6 +205,7 @@ app.get('/api/media/:id/content',async c=>{
   const obj=await c.env.MEDIA.get(row.object_key,options);
   if(!obj)return fail(c,404,'NOT_FOUND');
   const headers=new Headers({'Content-Type':row.mime,'Cache-Control':'private, no-store','Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff'});
+  if(c.req.query('download')==='1')headers.set('Content-Disposition',mediaDownloadHeader(row.title,row.mime));
   if(range&&obj.range){
     const offset=('offset' in obj.range?obj.range.offset:0)||0;
     const length=('length' in obj.range?obj.range.length:obj.size-offset)||0;
