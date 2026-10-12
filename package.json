@@ -1,0 +1,52 @@
+{
+  "name": "babymemo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "deploy": "npm run build && wrangler deploy && wrangler d1 migrations apply DB --remote",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote",
+    "check": "tsc --noEmit"
+  },
+  "cloudflare": {
+    "bindings": {
+      "DB": {
+        "description": "D1 database for family and baby records"
+      },
+      "MEDIA": {
+        "description": "Private R2 media storage"
+      },
+      "BOOTSTRAP_SECRET": {
+        "description": "First-time setup secret, generated with openssl rand -hex 32"
+      },
+      "SESSION_SECRET": {
+        "description": "Stable session signing secret; do not rotate casually"
+      },
+      "DATA_KEY": {
+        "description": "Stable 32-byte hex encryption key for OpenRouter and WeChat credentials"
+      }
+    }
+  },
+  "dependencies": {
+    "hono": "^4.10.0",
+    "json-bigint": "^1.0.0",
+    "lucide-react": "^0.555.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20261010.0",
+    "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.3.0",
+    "wrangler": "^4.100.0"
+  }
+}
