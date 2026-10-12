@@ -22,12 +22,11 @@
 
 **重要**：在配置 Secret 并完成数据库迁移之前，网站可能尚不能进入初始化。
 
-## 3. 三个必需 Secret（必须分别生成并保存）
+## 3. 两个必需 Secret（必须分别生成并保存）
 
-终端连续执行三次，每次得到独立的 64 位十六进制值：
+终端连续执行两次，每次得到独立的 64 位十六进制值：
 
 ```bash
-openssl rand -hex 32
 openssl rand -hex 32
 openssl rand -hex 32
 ```
@@ -36,7 +35,6 @@ openssl rand -hex 32
 
 | 类型 | 名称 | 用途 |
 | --- | --- | --- |
-| Secret | `BOOTSTRAP_SECRET` | 首次初始化授权，一次性验证 |
 | Secret | `SESSION_SECRET` | 登录会话签名，改变将导致已登录设备退出 |
 | Secret | `DATA_KEY` | OpenRouter / 微信凭据的 AES-GCM 加密密钥，**改动后旧密文不可解密** |
 
@@ -46,23 +44,25 @@ openssl rand -hex 32
 
 打开 `https://<你的 workers.dev 域名>/`：
 
-1. 直到三项 Secret 状态均为已配置，才允许提交表单。
-2. 输入 `BOOTSTRAP_SECRET`、家庭名称、管理员登录名和至少 10 位的家庭密码。
+1. 直到两项 Secret 状态均为已配置，才允许提交表单。
+2. 输入家庭名称、管理员登录名和至少 10 位的家庭密码。
 3. 输入第一位宝宝的姓名、出生日期、性别、时区；过敏信息可选。
 4. 提交后自动登录。初始化是一次性操作，不能通过刷新页面重建另一个所有者。
 5. 使用家庭管理员登录名 + 家庭密码再次登录，验证浏览器会话。
+
+**安全提示：** 首次注册不再要求初始化密钥。公开空实例允许第一个访问者创建唯一管理员，存在被抢先注册的风险。请部署后立即完成初始化，或先使用 Cloudflare Access 限制访问。已有管理员不能因重部署被覆盖或重置。
 
 为保护隐私，默认仅允许一个家庭管理员；后续增加家庭多用户需要独立的角色设计。
 
 ## 5. 部署方式 B：GitHub Actions
 
-在仓库 Settings → Secrets and variables → Actions 配置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`BOOTSTRAP_SECRET`、`SESSION_SECRET`、`DATA_KEY`，并确认作用于目标 Cloudflare 账号。详细说明见 [GitHub Actions 部署指南](github-action-deploy.md)。
+在仓库 Settings → Secrets and variables → Actions 配置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`SESSION_SECRET`、`DATA_KEY`，并确认作用于目标 Cloudflare 账号。详细说明见 [GitHub Actions 部署指南](github-action-deploy.md)。
 
 Actions → **Deploy BabyMemo to Cloudflare** → **Run workflow**，默认 `dry_run=true`：
 
 1. 只读核对已有 D1 / R2、执行类型检查、单元测试、构建及 Wrangler Dry Run。
 2. **首次尚无 D1/R2 时，默认 Dry Run 因资源缺失而失败是预期行为**，不要通过删除或重建数据库绕过。
-3. 得到明确的正式发布授权后，选择 `dry_run=false`、`provision=true`。工作流校验三项业务 Secret（包含 `DATA_KEY` 的 64 位 hex 格式）、创建或复用 D1/R2、**先应用 D1 migration、再发布 Worker**，随后同步 Secret 并检查健康状态。
+3. 得到明确的正式发布授权后，选择 `dry_run=false`、`provision=true`。工作流校验两项业务 Secret（包含 `DATA_KEY` 的 64 位 hex 格式）、创建或复用 D1/R2、**先应用 D1 migration、再发布 Worker**，随后同步 Secret 并检查健康状态。
 4. 后续发布同样需要手动触发，Push 和 PR 不会自动更新 Cloudflare。
 
 这一路径与一键 Cloudflare 模板部署路径不同。**当前 `npm run deploy` 仍采用“Worker 发布 → 解析 D1 ID → migration”的顺序**，不能把它的顺序当成此 GitHub Actions 工作流的顺序。Agent 受控部署细节见 [Agent Runbook](agent-deploy.md)。
@@ -86,7 +86,7 @@ Browser Auth 使用 `window.location.origin` 发起同源请求，而非 FlareMo
 | 症状 | 检查 |
 | --- | --- |
 | 首页报 500 / 初始化状态失败 | D1 迁移是否完成，Worker 是否绑定到了正确的数据库 |
-| 初始化按钮不可点 | 三个 Secret 是否存在，`DATA_KEY` 是否为 64 位十六进制 |
+| 初始化按钮不可点 | 两个 Secret 是否存在，`DATA_KEY` 是否为 64 位十六进制 |
 | 自定义域名登录失败 | Origin / Cookie、HTTPS、DNS，Network 中登录 API 返回状态 |
 | 重新部署后所有设备登出 | `SESSION_SECRET` 是否误改 |
 | OpenRouter / 微信无法使用 | `DATA_KEY` 是否被误改，Key 是否过期；查看服务端错误码 |

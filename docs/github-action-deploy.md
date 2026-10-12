@@ -16,10 +16,9 @@ BabyMemo 运行于 Cloudflare Workers + D1 + R2 + Durable Objects，前端 React
 
 ## 2. 设置 Secrets 和可选 Variable
 
-先在**自己的安全终端**分别执行三次（每次产生一个新值），立即保存到密码管理器：
+先在**自己的安全终端**分别执行两次（每次产生一个新值），立即保存到密码管理器：
 
 ```bash
-openssl rand -hex 32
 openssl rand -hex 32
 openssl rand -hex 32
 ```
@@ -30,11 +29,10 @@ openssl rand -hex 32
 | --- | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API 权限 | 限定目标账号 |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号 ID | 必填 |
-| `BOOTSTRAP_SECRET` | 首次安装时验证初始化操作 | 至少 32 字符 |
 | `SESSION_SECRET` | 家庭登录 Cookie 签名 | 至少 32 字符，保持稳定 |
 | `DATA_KEY` | 加密 OpenRouter / 微信凭据 | **恰好 64 位十六进制字符**，保持稳定 |
 
-**不可将密钥写进** workflow 文件、提交记录、Issue、PR、聊天、`workflow_dispatch` 的表单输入或浏览器地址。GitHub Secret 保存后不会回显原值。`SESSION_SECRET` 变化会令既有会话失效；`DATA_KEY` 变化会使已经保存的 OpenRouter 和微信凭据无法解密，**升级时必须复用旧值**。`BOOTSTRAP_SECRET` 也应妥善留存，仅未初始化实例需要用它完成首次设置。
+**不可将密钥写进** workflow 文件、提交记录、Issue、PR、聊天、`workflow_dispatch` 的表单输入或浏览器地址。GitHub Secret 保存后不会回显原值。`SESSION_SECRET` 变化会令既有会话失效；`DATA_KEY` 变化会使已经保存的 OpenRouter 和微信凭据无法解密，**升级时必须复用旧值**。首次初始化已无需独立密钥。已配置在旧 Worker 中的初始化密钥不再使用，也不会自动删除。新实例应立即注册管理员，或先使用 Cloudflare Access 限制访问。
 
 可在 GitHub Actions **Variables**（不是 Secret）中设定：
 
@@ -62,8 +60,8 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 3. `npm run verify`：执行 TypeScript 检查、单元测试与 Vite 构建。
 4. `npx wrangler d1 migrations apply DB --remote`：运行 `migrations/` 下尚未应用的迁移。
 5. `npx wrangler deploy`：发布 Worker、静态资源以及 `WechatSession` Durable Object 绑定。
-6. 将必需的 `BOOTSTRAP_SECRET`、`SESSION_SECRET`、`DATA_KEY` 同步到 Worker。正式发布前工作流校验三个 GitHub Secrets，缺失或格式不符将中止。升级时必须复用既有密钥，特别是 `DATA_KEY`。
-7. `npm run smoke:check`：检查 `/api/health`（包含 D1 可用性）和 `/api/bootstrap/status`（只验证三项 Secret 是否配置，不泄露其值）。
+6. 将必需的 `SESSION_SECRET`、`DATA_KEY` 同步到 Worker。正式发布前工作流校验两个 GitHub Secrets，缺失或格式不符将中止。升级时必须复用既有密钥，特别是 `DATA_KEY`。
+7. `npm run smoke:check`：检查 `/api/health`（包含 D1 可用性）和 `/api/bootstrap/status`（只验证两项 Secret 是否配置，不泄露其值）。
 
 **重要：** 当前仓库的 `npm run deploy` 脚本与上述工作流的顺序不同（先发布，再迁移）。生产环境建议使用此工作流，或严格按 [Agent Runbook](./agent-deploy.md) 给出的迁移优先顺序逐条执行。
 
@@ -71,7 +69,9 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 
 正式工作流通过后，打开部署后的 Worker 首页（`/`）；BabyMemo 会根据 `GET /api/bootstrap/status` 自动显示初始化表单，**没有单独的 `/setup` 路由**。
 
-在浏览器 HTTPS 页面中填写：`BOOTSTRAP_SECRET`、家庭管理员名称、家庭登录密码（至少 10 位）、宝宝名字、出生日期、性别和家庭时区；过敏信息可选。完成后进入家庭空间。
+在浏览器 HTTPS 页面中填写：家庭管理员名称、家庭登录密码（至少 10 位）、宝宝名字、出生日期、性别和家庭时区；过敏信息可选。完成后进入家庭空间。
+
+**注意：** 公开的新实例在初始化前可能被其他访客抢先注册管理员；请立即完成，或提前使用 Cloudflare Access 限制访问。
 
 再按以下顺序手工验证：
 
