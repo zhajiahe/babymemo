@@ -14,7 +14,7 @@
 - `public/brand/wordmark.svg`：包含 BabyMemo 品牌字样及标语的横版 Logo；SVG 文字字体依赖系统回退字体。
 - `public/favicon.svg`：浏览器标签页简化版图标；另含 32px PNG 回退及 ICO。
 - `public/apple-touch-icon.png`：iOS 添加到主屏幕图标（180px）。
-- `public/icon-192.png` 和 `public/icon-512.png`：Web App Manifest 图标。
+- `public/icon-192.png` 和 `public/brand/mark.svg`：Web App Manifest 图标（192px PNG + 任意尺寸 SVG）。
 - `public/site.webmanifest`：可安装网页的名称、主题色、图标入口。
 
 设计源文件保留 SVG 以便继续调整。不要将家庭真实照片或宝宝个人资料放入品牌资源。图标及文字为原创抽象矢量设计。
