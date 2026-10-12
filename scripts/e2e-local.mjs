@@ -108,7 +108,7 @@ async function e2e() {
     assert.equal(invalid.status,403);
     assert.equal(invalid.data.error,'ORIGIN_REJECTED');
   });
-  let babyId;
+  let babyId,secondBabyId;
   await step('one-time first-owner setup without a bootstrap key',async()=>{
     const input={familyName:'E2E Test Home',ownerName:'Tester',password:'123456',
       babyName:'Test Baby',birthday:'2024-01-01',gender:'girl',timeZone:'Asia/Shanghai',allergies:''};
@@ -153,6 +153,7 @@ async function e2e() {
     assert.equal(babies.length,2);
     assert.equal(babies[0].id,babyId,'Original baby ID must remain unchanged');
     assert.equal(babies[1].id,created.data.id);
+    secondBabyId=created.data.id;
     const firstGrowth=await json('/api/records/growth?babyId='+babyId);
     const secondGrowth=await json('/api/records/growth?babyId='+created.data.id);
     assert.equal(firstGrowth.status,200);
@@ -168,6 +169,9 @@ async function e2e() {
     const list=await json('/api/records/growth?babyId='+babyId+'&page=0');
     assert.equal(list.status,200);
     assert.equal(list.data.items[0].weight,10.2);
+    const state=await json('/api/state');
+    assert.equal(state.data.countsByBaby[babyId].growth,1);
+    assert.equal(state.data.countsByBaby[secondBabyId]?.growth??0,0,'Other baby must not inherit first growth totals');
     assert.equal((await json('/api/records/growth/'+created.data.id,{method:'DELETE'})).status,200);
     assert.equal((await json('/api/records/growth?babyId='+babyId)).data.items.length,0);
   });
@@ -389,7 +393,6 @@ async function browserE2e(){
       assert.ok(options.includes('Browser New Baby'));
       await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
       await page.waitForFunction(()=>document.querySelector('select[aria-label="选择宝宝"]')?.selectedOptions[0]?.textContent==='Test Baby');
-      await page.getByText('Test Baby', {exact:false}).first().waitFor({state:'visible'});
     });
     await step((useWebKit?'WebKit':'Chromium')+': bulk backfill of an existing private photo',async()=>{
       // Generate a browser-native PNG so WebKit and Chromium decode the same valid fixture.

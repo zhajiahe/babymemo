@@ -65,17 +65,24 @@ app.post('/api/login',async c=>{
 });
 app.post('/api/logout',c=>{clearSession(c);return c.json({ok:true});});
 app.get('/api/state',async c=>{
-  const [user,babies,growth,milestones,media]=await Promise.all([
+  const [user,babies,growth,milestones,media,byBaby]=await Promise.all([
     owner(c.env),
     c.env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all(),
     c.env.DB.prepare('SELECT count(*) AS count FROM growth_records').first<{count:number}>(),
     c.env.DB.prepare('SELECT count(*) AS count FROM milestones').first<{count:number}>(),
-    c.env.DB.prepare('SELECT count(*) AS count FROM media').first<{count:number}>()
+    c.env.DB.prepare('SELECT count(*) AS count FROM media').first<{count:number}>(),
+    c.env.DB.prepare("SELECT baby_id,kind,COUNT(*) AS total FROM (SELECT baby_id,'growth' AS kind FROM growth_records UNION ALL SELECT baby_id,'milestones' AS kind FROM milestones UNION ALL SELECT baby_id,'media' AS kind FROM media) GROUP BY baby_id,kind")
+      .all<{baby_id:string;kind:'growth'|'milestones'|'media';total:number}>()
   ]);
   const [encryptedApiKey,encryptedBot,model,botOn,familyName] = await Promise.all([
     setting(c.env,'openrouter_key'),setting(c.env,'wechat_token'),setting(c.env,'openrouter_model'),setting(c.env,'wechat_enabled'),setting(c.env,'family_name')
   ]);
-  return c.json({ownerName:user!.name,familyName:familyName||'家庭空间',babies:babies.results,counts:{growth:growth?.count??0,milestones:milestones?.count??0,media:media?.count??0},
+  const countsByBaby:Record<string,{growth:number;milestones:number;media:number}>={};
+  for(const row of byBaby.results){
+    countsByBaby[row.baby_id]??={growth:0,milestones:0,media:0};
+    countsByBaby[row.baby_id][row.kind]=row.total;
+  }
+  return c.json({ownerName:user!.name,familyName:familyName||'家庭空间',babies:babies.results,counts:{growth:growth?.count??0,milestones:milestones?.count??0,media:media?.count??0},countsByBaby,
     openrouter:{configured:!!encryptedApiKey,model:model||'openai/gpt-4.1-mini'},
     wechat:{connected:!!encryptedBot,enabled:botOn==='true'}});
 });
