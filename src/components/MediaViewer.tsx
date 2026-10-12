@@ -10,7 +10,7 @@ export type MediaItem = {
   thumbnail_ready?: number;
   favorite?: number;
 };
-type MediaEdit = { title: string; day: string };
+type MediaEdit = { day: string };
 
 export function MediaViewer({ item, index, count, onNavigate, onClose, onSave }: {
   item: MediaItem;
@@ -21,7 +21,6 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave }:
   onSave: (value: MediaEdit) => Promise<void>;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [title, setTitle] = useState(item.title);
   const [day, setDay] = useState(item.day);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -33,10 +32,9 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave }:
     return () => { if (dialog?.open) dialog.close(); };
   }, []);
   useEffect(() => {
-    setTitle(item.title);
     setDay(item.day);
     setError('');
-  }, [item.id, item.title, item.day]);
+  }, [item.id, item.day]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -44,7 +42,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave }:
     setSaving(true);
     setError('');
     try {
-      await onSave({ title: title.trim(), day });
+      await onSave({ day });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存失败，请重试');
     } finally {
@@ -67,8 +65,8 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave }:
         </header>
         <div className="media-viewer-stage">
           {video
-            ? <video key={item.id} src={src} controls playsInline preload="metadata" aria-label={item.title || '成长视频'} />
-            : <img key={item.id} src={src} alt={item.title || '成长照片'} />}
+            ? <video key={item.id} src={src} controls playsInline preload="metadata" aria-label={'成长视频'} />
+            : <img key={item.id} src={src} alt={'成长照片'} />}
         </div>
         <div className="media-viewer-toolbar">
           <div className="media-viewer-arrows">
@@ -78,9 +76,8 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave }:
           <a className="secondary media-download" href={src + '?download=1'}><Download size={16} />下载原文件</a>
         </div>
         <form className="media-viewer-edit" onSubmit={event => void save(event)}>
-          <label className="field"><span>名称</span><input value={title} onChange={event => setTitle(event.target.value)} maxLength={120} required /></label>
           <label className="field"><span>拍摄日期</span><input type="date" value={day} onChange={event => setDay(event.target.value)} required /></label>
-          <button type="submit" className="primary" disabled={saving || !title.trim()}><Save size={16} />{saving ? '保存中…' : '保存信息'}</button>
+          <button type="submit" className="primary" disabled={saving}><Save size={16} />{saving ? '保存中…' : '保存信息'}</button>
         </form>
         {error && <p className="error" role="alert">{error}</p>}
       </div>

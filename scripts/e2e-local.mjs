@@ -486,7 +486,7 @@ async function browserE2e(){
       await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
       await page.waitForFunction(()=>document.querySelector('select[aria-label="选择宝宝"]')?.selectedOptions[0]?.textContent==='Test Baby');
     });
-    await step((useWebKit?'WebKit':'Chromium')+': bulk backfill of an existing private photo',async()=>{
+    await step((useWebKit?'WebKit':'Chromium')+': gallery is photo-first; maintenance is out of product',async()=>{
       // Generate a browser-native PNG so WebKit and Chromium decode the same valid fixture.
       const pngBase64=await page.evaluate(()=>{
         const canvas=document.createElement('canvas');canvas.width=16;canvas.height=16;
@@ -504,18 +504,18 @@ async function browserE2e(){
       assert.equal(part.status,200,JSON.stringify(part.data));
       assert.equal((await json('/api/upload/'+upload.data.id+'/finish',{method:'POST',body:{}})).status,201);
       await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
-      await page.locator('.thumbnail-backfill').waitFor({state:'visible',timeout:15000});
-      await page.getByRole('button',{name:'开始补全'}).click();
-      // A successful backfill removes the panel once no pending photos remain.
-      await page.locator('.thumbnail-backfill').waitFor({state:'detached',timeout:30000});
+      await page.locator('.photo-preview').first().waitFor({state:'visible',timeout:15000});
+      assert.equal(await page.locator('.thumbnail-backfill').count(),0);
+      assert.equal(await page.locator('.upload-card').count(),0);
       const state=await json('/api/media/thumbnail-backfill?babyId='+(await json('/api/state')).data.babies[0].id);
-      assert.equal(state.data.items.some(item=>item.id===upload.data.id),false);
+      assert.equal(state.data.items.some(item=>item.id===upload.data.id),true);
     });
     await step((useWebKit?'WebKit slow network':'Chromium')+': gallery image upload and private preview',async()=>{
       await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
       await page.getByRole('heading',{name:'家庭相册'}).waitFor();
       // A tiny valid PNG; user photos and R2 production storage are untouched.
       const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ln0AAAAASUVORK5CYII=','base64');
+      await page.getByRole('button',{name:'添加照片或视频'}).click();
       await page.locator('input[type="file"]').setInputFiles({
         name:'browser-e2e.png',mimeType:'image/png',buffer:png
       });
@@ -528,12 +528,11 @@ async function browserE2e(){
       await page.screenshot({path:join(evidence,'desktop-album-viewer.png'),fullPage:false});
     });
     await step((useWebKit?'WebKit':'Chromium')+': gallery metadata edit and delete',async()=>{
-      await page.locator('.media-viewer-edit input').first().fill('Browser E2E photo');
-      await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
+            await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
       await page.getByRole('button',{name:/保存信息/}).click();
       await page.getByText('照片信息已更新').waitFor({timeout:15000});
       await page.getByRole('button',{name:'关闭预览'}).click();
-      const editedCard=page.locator('.photo-item').filter({hasText:'Browser E2E photo'});
+      const editedCard=page.locator('.photo-item').filter({hasText:'2026-02-01'});
       await editedCard.waitFor({state:'visible',timeout:15000});
       page.once('dialog',dialog=>void dialog.accept());
       await editedCard.getByRole('button',{name:/删除/}).click();
@@ -550,6 +549,7 @@ async function browserE2e(){
       await page.screenshot({path:join(evidence,'mobile-growth.png'),fullPage:true});
       await page.locator('.mobile-nav button[aria-label="家庭相册"]').click();
       await page.getByRole('heading',{name:'家庭相册'}).waitFor();
+      assert.equal(await page.locator('.upload-card').count(),0);
       await page.screenshot({path:join(evidence,'mobile-album.png'),fullPage:true});
     });
     assert.deepEqual(errors,[],'Uncaught browser exceptions');

@@ -20,7 +20,7 @@ export function RecordView({baby,kind,items,history,historyLimited,busy,setBusy,
  <Primary disabled={busy}>{busy?'正在保存…':<><Plus size={17}/> 保存记录</>}</Primary></form></Card>
  <Card><div className="section-title"><h3>记录时间线</h3><span className="muted small">最近 {items.length} 条</span></div><div className="timeline">{items.length?items.map(x=><div className="timeline-item" key={x.id}><div className="timeline-dot"/><div className="timeline-body"><div className="row-between"><time>{x.day}</time><button className="icon-btn" aria-label="删除" onClick={()=>void remove(x.id)}><Trash2 size={15}/></button></div><strong>{kind==='growth'?[x.weight!=null?'体重 '+x.weight+'kg':null,x.height!=null?'身高 '+x.height+'cm':null,x.head_circumference!=null?'头围 '+x.head_circumference+'cm':null].filter(Boolean).join(' · '):x.title}</strong><p>{kind==='growth'?x.notes:x.description}</p></div></div>):<div className="empty">还没有记录，左边可以创建第一条。</div>}</div><Pager page={page} setPage={setPage} hasMore={hasMore}/></Card></div>{kind==='growth'&&<GrowthChart items={history||items} limited={historyLimited}/>}</>;
 }
-function GrowthChart({items,limited}:{items:RecordItem[];limited?:boolean}){
+export function GrowthChart({items,limited}:{items:RecordItem[];limited?:boolean}){
  const [metric,setMetric]=useState<'weight'|'height'>('weight');
  const points=items.filter(x=>typeof x[metric]==='number').slice().sort((a,b)=>a.day.localeCompare(b.day));
  const values=points.map(p=>Number(p[metric]));
