@@ -22,6 +22,8 @@ const dayOk = (s:unknown):s is string => {
 const validNum=(v:unknown,min:number,max:number):boolean=>v===null||v===undefined||(typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max);
 const now=()=>new Date().toISOString();
 const allowedMime=(s:string)=>/^(image\/(jpeg|png|webp|heic|heif|gif)|video\/(mp4|quicktime|webm))$/.test(s);
+const thumbKey=(id:string)=>'private/thumbnails/'+id+'.jpg';
+const uploadFingerprintOk=(s:unknown):s is string=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
 async function babyExists(env:Env,id:string):Promise<boolean>{return !!await env.DB.prepare('SELECT id FROM babies WHERE id=?').bind(id).first();}
 async function currentBaby(env:Env):Promise<Baby|null>{return (await env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes FROM babies ORDER BY created_at LIMIT 1').first<Baby>())??null;}
 app.use('/api/*',async(c,next)=>{
@@ -127,13 +129,27 @@ app.get('/api/media',async c=>{
   const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,created_at FROM media WHERE baby_id=? ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?').bind(babyId,page*36).all();
   return c.json({items:rows.results,hasMore:rows.results.length===36});
 });
+// Resume after Safari reload by re-selecting the same local file. No public uploads.
+app.get('/api/upload/pending',async c=>{
+  const babyId=c.req.query('babyId');
+  if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
+  const sessions=await c.env.DB.prepare(
+    'SELECT id,day,title,mime,size,fingerprint,created_at FROM media_uploads WHERE baby_id=? ORDER BY created_at DESC LIMIT 30'
+  ).bind(babyId).all<{id:string;day:string;title:string;mime:string;size:number;fingerprint:string;created_at:string}>();
+  const items=await Promise.all(sessions.results.map(async session=>{
+    const parts=await c.env.DB.prepare('SELECT part_number FROM media_upload_parts WHERE media_upload_id=? ORDER BY part_number')
+      .bind(session.id).all<{part_number:number}>();
+    return {...session,completedParts:parts.results.map(p=>p.part_number)};
+  }));
+  return c.json({items});
+});
 app.post('/api/upload/start',async c=>{
   try{
     const v=await json(c.req.raw);
-    if(typeof v.babyId!=='string'||!await babyExists(c.env,v.babyId)||!dayOk(v.day)||typeof v.mime!=='string'||!allowedMime(v.mime)||!Number.isSafeInteger(v.size)||v.size<1||v.size>209715200)return fail(c,400,'INVALID_MEDIA');
+    if(typeof v.babyId!=='string'||!await babyExists(c.env,v.babyId)||!dayOk(v.day)||typeof v.mime!=='string'||!allowedMime(v.mime)||!Number.isSafeInteger(v.size)||v.size<1||v.size>209715200||v.fingerprint!==undefined&&!uploadFingerprintOk(v.fingerprint))return fail(c,400,'INVALID_MEDIA');
     const id=crypto.randomUUID(),key='private/'+v.babyId+'/'+id;
     const handle=await c.env.MEDIA.createMultipartUpload(key,{httpMetadata:{contentType:v.mime}});
-    await c.env.DB.prepare('INSERT INTO media_uploads(id,baby_id,object_key,upload_id,day,title,mime,size,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,key,handle.uploadId,v.day,String(v.title||'').slice(0,120),v.mime,v.size,now()).run();
+    await c.env.DB.prepare('INSERT INTO media_uploads(id,baby_id,object_key,upload_id,day,title,mime,size,fingerprint,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,key,handle.uploadId,v.day,String(v.title||'').slice(0,120),v.mime,v.size,v.fingerprint||'',now()).run();
     return c.json({id,chunkSize:8388608},201);
   }catch{return fail(c,400,'UPLOAD_START_FAILED');}
 });
@@ -178,6 +194,49 @@ app.post('/api/upload/:id/finish',async c=>{
     return c.json({id},201);
   }catch{return fail(c,502,'UPLOAD_FINISH_FAILED');}
 });
+// Private R2 JPEG derivative: no public bucket and no new image service.
+// Existing media lacking thumbnails automatically fall back to the original.
+app.get('/api/media/:id/thumbnail',async c=>{
+  const id=c.req.param('id');
+  const row=await c.env.DB.prepare('SELECT object_key,mime FROM media WHERE id=?').bind(id).first<{object_key:string;mime:string}>();
+  if(!row||!row.mime.startsWith('image/'))return fail(c,404,'NOT_FOUND');
+  const thumb=await c.env.MEDIA.get(thumbKey(id));
+  const obj=thumb||await c.env.MEDIA.get(row.object_key);
+  if(!obj)return fail(c,404,'NOT_FOUND');
+  return new Response(obj.body,{headers:{
+    'Content-Type':thumb?'image/jpeg':row.mime,'Content-Length':String(obj.size),
+    'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'
+  }});
+});
+// Thumbnail is optional: its failure must never invalidate an uploaded original.
+app.put('/api/media/:id/thumbnail',async c=>{
+  const id=c.req.param('id');
+  const row=await c.env.DB.prepare('SELECT mime FROM media WHERE id=?').bind(id).first<{mime:string}>();
+  if(!row||!row.mime.startsWith('image/'))return fail(c,404,'NOT_FOUND');
+  const max=524288;
+  const size=Number(c.req.header('content-length')||0);
+  if(size>max)return fail(c,413,'THUMBNAIL_TOO_LARGE');
+  if(c.req.header('content-type')?.split(';')[0]?.trim().toLowerCase()!=='image/jpeg')return fail(c,415,'INVALID_THUMBNAIL');
+  const reader=c.req.raw.body?.getReader();
+  if(!reader)return fail(c,400,'EMPTY_THUMBNAIL');
+  const chunks:Uint8Array[]=[];let total=0;
+  try{
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      total+=value.byteLength;
+      if(total>max){await reader.cancel();return fail(c,413,'THUMBNAIL_TOO_LARGE');}
+      chunks.push(value);
+    }
+  }finally{reader.releaseLock();}
+  if(total<4)return fail(c,400,'INVALID_THUMBNAIL');
+  const data=new Uint8Array(total);let offset=0;
+  for(const chunk of chunks){data.set(chunk,offset);offset+=chunk.byteLength;}
+  if(data[0]!==255||data[1]!==216||data[2]!==255||data[total-2]!==255||data[total-1]!==217)
+    return fail(c,400,'INVALID_THUMBNAIL');
+  await c.env.MEDIA.put(thumbKey(id),data,{httpMetadata:{contentType:'image/jpeg'}});
+  return c.json({ok:true});
+});
 // Metadata edits never alter the private R2 object.
 app.patch('/api/media/:id',async c=>{
   let value:unknown;
@@ -216,9 +275,10 @@ app.get('/api/media/:id/content',async c=>{
   return new Response(obj.body,{headers});
 });
 app.delete('/api/media/:id',async c=>{
-  const row=await c.env.DB.prepare('SELECT object_key FROM media WHERE id=?').bind(c.req.param('id')).first<{object_key:string}>();
+  const id=c.req.param('id');
+  const row=await c.env.DB.prepare('SELECT object_key FROM media WHERE id=?').bind(id).first<{object_key:string}>();
   if(!row)return fail(c,404,'NOT_FOUND');
-  await c.env.MEDIA.delete(row.object_key);
+  await c.env.MEDIA.delete([row.object_key,thumbKey(id)]);
   await c.env.DB.prepare('DELETE FROM media WHERE id=?').bind(c.req.param('id')).run();
   return c.json({ok:true});
 });
