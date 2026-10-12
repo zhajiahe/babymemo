@@ -183,3 +183,10 @@
  .photo-caption time{font-size:12px}
  .media-viewer-edit{grid-template-columns:minmax(0,1fr)}
 }
+
+@media(max-width:800px){
+ .page-heading-album{margin-bottom:12px;align-items:center}
+ .page-heading-album .eyebrow,.page-heading-album .muted{display:none}
+ .page-heading-album h1{margin:0}
+ .page-heading-album .baby-pill{margin-top:0}
+}
