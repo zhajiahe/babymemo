@@ -172,7 +172,7 @@ function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;m
      const mime=file.type||(extension?formats[extension]:'application/octet-stream');
      setProgress(file.name+' · 正在检查分片');
      const fingerprint=await fingerprintFile(file);
-     const existing=pickMatchingUpload(queue,{title:file.name,size:file.size,mime,fingerprint}) as PendingUpload|undefined;
+     const existing=pickMatchingUpload(queue,{title:file.name.slice(0,120),size:file.size,mime,fingerprint}) as PendingUpload|undefined;
      const session=existing||await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:today(),title:file.name,mime,size:file.size,fingerprint});
      uploadId=session.id;
      const chunkSize=8388608;
@@ -225,7 +225,7 @@ function Album({baby,media,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;m
      }
     }catch(error){
      // Never abort a recoverable session automatically; Safari can lose connectivity.
-     notify(file.name+'：'+(error instanceof Error?error.message:'上传中断')+'。重新选择同一文件即可续传。');
+     notify(file.name+'：'+(error instanceof Error?error.message:'上传中断')+(uploadId?'。重新选择同一文件即可续传。':''));
     }
     try{queue=await refreshPending()}catch{}
    }
