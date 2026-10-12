@@ -5,7 +5,7 @@ import {createAlbumThumbnail,createStoredThumbnail,createVideoThumbnail,fingerpr
 import {pickMatchingUpload,remainingPartNumbers} from '../../upload-plan.mjs';
 import {bestEffortFileDay} from '../../media-date.mjs';
 import {CloudUpload,Camera,Heart,Trash2} from 'lucide-react';
-import {api,post,today,mediaDay,ApiFailure,type BabyInfo} from '../../lib/client';
+import {api,post,today,ApiFailure,type BabyInfo} from '../../lib/client';
 
 export function Album({baby,media,query,onQuery,favoriteOnly,onFavoriteOnly,favoriteUpdated,mediaEdited,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];query:string;onQuery:(v:string)=>void;favoriteOnly:boolean;onFavoriteOnly:(v:boolean)=>void;favoriteUpdated:(id:string,favorite:boolean)=>void;mediaEdited:(id:string,value:{title:string;day:string})=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
