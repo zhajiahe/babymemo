@@ -56,7 +56,7 @@ export async function encryptSecret(env:Env,value:string):Promise<string> {
 export async function decryptSecret(env:Env,value:string):Promise<string> {
   const parts=value.split(':');
   if(parts.length!==3||parts[0]!=='v1')throw Error('INVALID_ENCRYPTED_SECRET');
-  const data=await crypto.subtle.decrypt({name:'AES-GCM',iv:unbase64url(parts[1])},await dataKey(env),unbase64url(parts[2]));
+  const data=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(unbase64url(parts[1]))},await dataKey(env),unbase64url(parts[2]));
   return new TextDecoder().decode(data);
 }
 export async function setting(env:Env,name:string):Promise<string|null> {

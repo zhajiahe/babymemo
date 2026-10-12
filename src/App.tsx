@@ -12,7 +12,7 @@ async function api<T=any>(url:string, init?:RequestInit):Promise<T>{
  if(!r.ok)throw Error(typeof data.error==='string'?data.error:'HTTP_'+r.status);
  return data as T;
 }
-const post=(url:string,body:unknown)=>api(url,{method:'POST',body:JSON.stringify(body)});
+async function post<T=any>(url:string,body:unknown):Promise<T>{return api<T>(url,{method:'POST',body:JSON.stringify(body)})}
 const today=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
 const years=(date:string)=>{
  const days=Math.max(0,Math.floor((Date.now()-new Date(date+'T00:00:00+08:00').getTime())/86400000));
@@ -44,7 +44,7 @@ function Gate({onReady}:{onReady:()=>void}){
  <Field label="家庭时区"><select value={form.timeZone} onChange={e=>setForm({...form,timeZone:e.target.value})}><option value="Asia/Shanghai">中国标准时间 · UTC+8</option><option value="Asia/Tokyo">日本标准时间 · UTC+9</option><option value="America/Los_Angeles">美国太平洋时间</option></select></Field>
  <Field label="已知过敏信息（可选）"><input value={form.allergies} onChange={e=>setForm({...form,allergies:e.target.value})} placeholder="可稍后补充"/></Field></>}
  {error&&<div className="error" role="alert">{error}</div>}
- <Primary disabled={busy||mode==='loading'}>{busy?'正在处理…':mode==='setup'?'完成初始化':'登录我的空间'}<ChevronRight size={17}/></Primary>
+ <Primary disabled={busy}>{busy?'正在处理…':mode==='setup'?'完成初始化':'登录我的空间'}<ChevronRight size={17}/></Primary>
  </form>}
  {mode==='setup'&&<p className="hint">首次部署需先在 Cloudflare Secrets 或 GitHub Actions Secrets 配置 3 个密钥，初始化不可绕过。</p>}</div></div></div>;
 }
