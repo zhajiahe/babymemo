@@ -170,13 +170,13 @@ export class WechatSession {
         if(!raw||raw.message_type!==1||(raw.message_state!==undefined&&raw.message_state!==0&&raw.message_state!==2)||raw.group_id||raw.from_user_id!==userId||raw.to_user_id&&raw.to_user_id!==botId||!raw.context_token)continue;
         if(!Array.isArray(raw.item_list))continue;
         const text=raw.item_list.filter((i:any)=>i?.type===1&&typeof i?.text_item?.text==='string').map((i:any)=>i.text_item.text).join('\n').trim();
-        const msgid=String(raw.message_id||'');
+        const msgid=String(raw.message_id||raw.msg_id||'');
         const hasPhotos=photoItems(raw).length>0;
         if((!text&&!hasPhotos)||!msgid||text.length>3000)continue;
         const unique=botId+':'+msgid;
         await this.env.DB.prepare("INSERT OR IGNORE INTO wechat_messages(message_id,state,created_at) VALUES(?,'processing',?)").bind(unique,new Date().toISOString()).run();
-        const row=await this.env.DB.prepare('SELECT state,reply_text,client_id FROM wechat_messages WHERE message_id=?').bind(unique)
-          .first<{state:string;reply_text:string|null;client_id:string|null}>();
+        const row=await this.env.DB.prepare('SELECT state,reply_text,client_id,photo_attempts FROM wechat_messages WHERE message_id=?').bind(unique)
+          .first<{state:string;reply_text:string|null;client_id:string|null;photo_attempts:number}>();
         if(row?.state==='done')continue;
         let reply=row?.reply_text?await decryptSecret(this.env,row.reply_text):'';
         if(!reply){
@@ -185,8 +185,12 @@ export class WechatSession {
           }catch(e){
             // Protocol-invalid or expired photos can be acknowledged with a helpful
             // error. Network/R2/D1 failures are retried with the original cursor.
-            if(hasPhotos&&!(e instanceof WechatPhotoError))throw e;
-            reply=e instanceof WechatPhotoError?e.message:'暂时无法处理，请稍后再发送一次。';
+            if(hasPhotos&&!(e instanceof WechatPhotoError)){
+              const attempts=(row?.photo_attempts||0)+1;
+              await this.env.DB.prepare('UPDATE wechat_messages SET photo_attempts=? WHERE message_id=?').bind(attempts,unique).run();
+              if(attempts<3)throw e; // keep upstream cursor for bounded retry
+              reply='照片下载或入库多次失败，请检查家庭相册内是否已有部分照片，然后重新发送未保存的照片。未确认保存成功前不会报告成功。';
+            }else reply=e instanceof WechatPhotoError?e.message:'暂时无法处理，请稍后再发送一次。';
           }
         }
         // Save a deterministic response and client ID before sending. Replayed batches

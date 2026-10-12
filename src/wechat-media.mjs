@@ -92,12 +92,12 @@ export async function downloadWeChatImage(item,{fetchImpl=fetch,maxBytes=MAX_WEC
  try{
   response=await fetchImpl(download,{method:'GET',redirect:'manual',signal:AbortSignal.timeout(25000)});
  }catch{throw Error('WECHAT_CDN_NETWORK_ERROR')}
+ // Never follow redirects: host verification must cover the final destination.
+ if(response.status>=300&&response.status<400)bad('微信照片 CDN 发生重定向');
  if(!response.ok){
   if([400,401,403,404,410].includes(response.status))bad('微信照片链接已失效，请重新发送');
   throw Error('WECHAT_CDN_HTTP_'+response.status);
  }
- // Never follow redirects: host verification must cover the final destination.
- if(response.status>=300&&response.status<400)bad('微信照片 CDN 发生重定向');
  const cipher=await limitedBody(response,maxBytes+16);
  if(!cipher.length||cipher.length%16!==0)bad('微信照片的加密内容无效');
  let data;
