@@ -151,6 +151,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
   for(const kind of ['growth','milestones','media']){
    if(action==='update_'+(kind==='milestones'?'milestone':kind)){
     if(!/修改|更正|更改|更新|改成|改为|改一下|设为|标记|收藏|取消收藏/.test(originalText))return '请明确说明修改操作';
+    if(args.id===undefined&&args.day===undefined)return '请指定记录日期或编号，避免改错记录';
     if(!groundedTarget(args,originalText,baby))return '请在消息中明确指出要修改的日期或记录编号，避免改错记录';
     const row=await findTarget(env,baby.id,kind,args);
     const changes={};
