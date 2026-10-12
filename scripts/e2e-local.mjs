@@ -238,9 +238,79 @@ async function e2e() {
   });
   console.log('All isolated Worker E2E assertions passed.');
 }
+// Browser E2E runs in Chromium (including mobile viewport emulation), not
+// Safari. A separate CI job injects the pinned playwright-core test dependency.
+async function browserE2e(){
+  const {chromium}=await import('playwright-core');
+  const {mkdirSync}=await import('node:fs');
+  const evidence=join(root,'e2e-artifacts');
+  mkdirSync(evidence,{recursive:true});
+  const browser=await chromium.launch({channel:'chrome',headless:true,args:['--no-sandbox']});
+  const errors=[];
+  try{
+    const context=await browser.newContext({viewport:{width:1280,height:860}});
+    const page=await context.newPage();
+    page.on('pageerror',error=>errors.push(error.message));
+    await step('Chromium: sign in through rendered React login form',async()=>{
+      await page.goto(base+'/',{waitUntil:'domcontentloaded'});
+      await page.locator('input[autocomplete="username"]').fill('Tester');
+      await page.locator('input[autocomplete="current-password"]').fill('local-safe-e2e-password');
+      await page.getByRole('button',{name:/登录我的空间/}).click();
+      await page.getByRole('heading',{name:'每一刻，都很珍贵'}).waitFor({timeout:20000});
+      await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
+    });
+    await step('Chromium: gallery image upload and private preview',async()=>{
+      await page.locator('.sidebar .nav-link').filter({hasText:'家庭相册'}).click();
+      await page.getByRole('heading',{name:'家庭相册'}).waitFor();
+      // A tiny valid PNG; user photos and R2 production storage are untouched.
+      const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ln0AAAAASUVORK5CYII=','base64');
+      await page.locator('input[type="file"]').setInputFiles({
+        name:'browser-e2e.png',mimeType:'image/png',buffer:png
+      });
+      await page.locator('.photo-preview').first().waitFor({state:'visible',timeout:30000});
+      await page.locator('.photo-preview').first().click();
+      await page.getByRole('dialog',{name:'相册预览'}).waitFor();
+      const img=page.locator('.media-viewer-stage img');
+      await img.waitFor();
+      await page.waitForFunction(()=>document.querySelector('.media-viewer-stage img')?.naturalWidth > 0);
+      await page.screenshot({path:join(evidence,'desktop-album-viewer.png'),fullPage:false});
+    });
+    await step('Chromium: gallery metadata edit and delete',async()=>{
+      await page.locator('.media-viewer-edit input').first().fill('Browser E2E photo');
+      await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
+      await page.getByRole('button',{name:/保存信息/}).click();
+      await page.getByText('照片信息已更新').waitFor({timeout:15000});
+      await page.getByRole('button',{name:'关闭预览'}).click();
+      await page.waitForFunction(()=>document.querySelector('.photo-caption strong')?.textContent==='Browser E2E photo');
+      page.once('dialog',dialog=>void dialog.accept());
+      await page.locator('.photo-caption .icon-btn').first().click();
+      await page.locator('.photo-preview').first().waitFor({state:'detached',timeout:15000});
+    });
+    await step('Chromium: 390px mobile navigation and horizontal overflow',async()=>{
+      await page.setViewportSize({width:390,height:844});
+      await page.locator('.mobile-nav button[aria-label="成长曲线"]').click();
+      await page.getByRole('heading',{name:'成长记录'}).waitFor();
+      const overflow=await page.evaluate(()=>({
+        screen:window.innerWidth,scroll:document.documentElement.scrollWidth
+      }));
+      assert.ok(overflow.scroll<=overflow.screen+1,'mobile horizontal overflow '+JSON.stringify(overflow));
+      await page.screenshot({path:join(evidence,'mobile-growth.png'),fullPage:true});
+      await page.locator('.mobile-nav button[aria-label="家庭相册"]').click();
+      await page.getByRole('heading',{name:'家庭相册'}).waitFor();
+      await page.screenshot({path:join(evidence,'mobile-album.png'),fullPage:true});
+    });
+    assert.deepEqual(errors,[],'Uncaught browser exceptions');
+    console.log('All Chromium desktop and mobile-viewport browser tests passed.');
+    await context.close();
+  }finally{
+    await browser.close();
+  }
+}
+
 try {
   await boot();
   await e2e();
+  if(process.env.BROWSER_E2E==='1')await browserE2e();
 } catch (error) {
   console.error('E2E FAILED: '+(error instanceof Error?error.stack:error));
   if (!started) console.error('Wrangler output:\n'+serverLog);
