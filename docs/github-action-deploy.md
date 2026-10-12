@@ -1,6 +1,6 @@
 # 通过 GitHub Actions 部署 BabyMemo
 
-本文适用于自己的 `zhajiahe/babymemo` 仓库。工作流位于 [` .github/workflows/deploy.yml `](../.github/workflows/deploy.yml)（实际路径没有空格），显示名称为 **Deploy BabyMemo to Cloudflare**。仅在手动点击 **Run workflow** 时执行；`push` 和 PR 只运行代码检查，**不会自动发布生产版本**。
+本文适用于自己的 `zhajiahe/babymemo` 仓库。工作流位于 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)，显示名称为 **Deploy BabyMemo to Cloudflare**。仅在手动点击 **Run workflow** 时执行；`push` 和 PR 只运行代码检查，**不会自动发布生产版本**。
 
 BabyMemo 运行于 Cloudflare Workers + D1 + R2 + Durable Objects，前端 React/Vite、服务端 Hono；无需 VPS。首次初始化使用家庭管理员名称和密码。AI 仅使用网页内配置的 OpenRouter；微信 Bot 为可选的 iLink 集成。
 
