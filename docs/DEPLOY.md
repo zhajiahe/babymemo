@@ -56,21 +56,16 @@ openssl rand -hex 32
 
 ## 5. 部署方式 B：GitHub Actions
 
-在 Fork 的 Settings → Secrets and variables → Actions → Repository secrets 添加：
+在仓库 Settings → Secrets and variables → Actions 配置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`BOOTSTRAP_SECRET`、`SESSION_SECRET`、`DATA_KEY`，并确认作用于目标 Cloudflare 账号。详细说明见 [GitHub Actions 部署指南](github-action-deploy.md)。
 
-`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`BOOTSTRAP_SECRET`、`SESSION_SECRET`、`DATA_KEY`。
+Actions → **Deploy BabyMemo to Cloudflare** → **Run workflow**，默认 `dry_run=true`：
 
-API Token 应仅允许目标 Cloudflare 账号中 Workers、D1、R2 及部署所需权限。永远不要把 Cloudflare Global API Key 上传到仓库。
+1. 只读核对已有 D1 / R2、执行类型检查、单元测试、构建及 Wrangler Dry Run。
+2. **首次尚无 D1/R2 时，默认 Dry Run 因资源缺失而失败是预期行为**，不要通过删除或重建数据库绕过。
+3. 得到明确的正式发布授权后，选择 `dry_run=false`、`provision=true`。工作流校验三项业务 Secret（包含 `DATA_KEY` 的 64 位 hex 格式）、创建或复用 D1/R2、**先应用 D1 migration、再发布 Worker**，随后同步 Secret 并检查健康状态。
+4. 后续发布同样需要手动触发，Push 和 PR 不会自动更新 Cloudflare。
 
-打开 Actions → **Deploy BabyMemo to Cloudflare** → **Run workflow**。该工作流：
-
-1. 安装依赖并构建前端。
-2. 在部署前验证 5 个 Secret 均已提供且密钥格式正确。
-3. 发布 Worker / 自动创建缺失资源。
-4. 运行 `npm run db:resolve`，解决自动资源创建后 D1 ID 未持久化的问题。
-5. 执行远端迁移，再同步三个 Worker Secret。
-
-此工作流只可手动触发；日常 Push 和 PR 只执行代码检查，不会改动 Cloudflare 生产数据。
+这一路径与一键 Cloudflare 模板部署路径不同。**当前 `npm run deploy` 仍采用“Worker 发布 → 解析 D1 ID → migration”的顺序**，不能把它的顺序当成此 GitHub Actions 工作流的顺序。Agent 受控部署细节见 [Agent Runbook](agent-deploy.md)。
 
 ## 6. 自定义域名
 

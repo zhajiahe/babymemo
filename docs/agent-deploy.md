@@ -12,7 +12,7 @@
 - 不准把密码、`BOOTSTRAP_SECRET`、`SESSION_SECRET`、`DATA_KEY`、OpenRouter Key、微信授权 Token、Cookie 或日志中的敏感原文复制到聊天、PR、Issue、Git 仓库或命令行参数。
 - 不得生成虚假的“部署成功”“扫码成功”“数据迁移成功”报告；任何一项未实测要写成**未验证**。
 - 不修改 GitHub Actions 为 push 自动发布；不删除或重新创建现有 D1/R2 以绕过失败；不轮换现存的 `DATA_KEY`。
-- 与并行的 PR #2 有重叠改动，整合前先审查冲突；不强制 push 或直接合并 PR。
+- 开始部署前核对最新 `main`、工作分支和 PR 状态；若已有其他 PR 合并，先整合代码并审查部署脚本冲突，禁止强推或跳过验证。
 - 若部署者仅要求代码优化与文档，不调用任何可能操作生产 Cloudflare 资源的命令。
 
 ## 1. 本地仓库与质量检查（无远端写入）
@@ -27,7 +27,7 @@ node --check scripts/smoke-check.mjs
 npm run verify
 ```
 
-`npm run verify` 目前运行 `tsc --noEmit` 与 `vite build`，不等于端到端功能验收。保持 `node_modules/`、`dist/`、`.wrangler/` 和包含明文密钥的 `.dev.vars` 不进入 Git。
+`npm run verify` 目前依次执行 `npm run check`、`npm run test:unit` 与 `npm run build`，不等于端到端功能验收。保持 `node_modules/`、`dist/`、`.wrangler/` 和包含明文密钥的 `.dev.vars` 不进入 Git。
 
 如果部署者允许读取 Cloudflare 资源，先检查当前账号：
 
