@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
@@ -20,7 +20,7 @@ const dir = mkdtempSync(join(tmpdir(), 'babymemo-e2e-'));
 const wrangler = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler');
 const envFile = join(root, '.dev.vars');
 let worker, serverLog = '', started = false;
-let port, base, sessionCookie = '';
+let port, base, sessionCookie = '', createdVars = false;
 
 async function freePort() {
   const server = createServer();
@@ -46,10 +46,12 @@ function runCli(args) {
   }
 }
 async function boot() {
+  if(existsSync(envFile))throw Error('Refusing to overwrite existing .dev.vars; use a clean isolated checkout');
   writeFileSync(envFile,
     'SESSION_SECRET='+randomBytes(32).toString('hex')+'\n'+
     'DATA_KEY='+randomBytes(32).toString('hex')+'\n',
     {mode:0o600});
+  createdVars = true;
   port = await freePort();
   base = 'http://127.0.0.1:' + port;
   runCli(['d1','migrations','apply','DB','--local','--persist-to',dir]);
@@ -318,6 +320,6 @@ try {
 } finally {
   if(worker && worker.exitCode===null)worker.kill('SIGTERM');
   await delay(200);
-  rmSync(envFile,{force:true});
+  if(createdVars)rmSync(envFile,{force:true});
   rmSync(dir,{recursive:true,force:true,maxRetries:3,retryDelay:100});
 }
