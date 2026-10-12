@@ -31,11 +31,11 @@ export async function cleanupExpiredUploads({env,olderThan,limit=30,finalizeUplo
         if(parts.results.length!==expected){result.errors++;continue;}
         await finalizeUpload({bucket:env.MEDIA,row,parts:parts.results,
           isRecorded:recorded,
-          persist:()=>env.DB.batch([
+          persist:async()=>{await env.DB.batch([
             env.DB.prepare('INSERT INTO media(id,baby_id,day,title,object_key,mime,size,created_at) VALUES(?,?,?,?,?,?,?,?)')
               .bind(row.id,row.baby_id,row.day,row.title,row.object_key,row.mime,row.size,row.created_at),
             env.DB.prepare('DELETE FROM media_uploads WHERE id=?').bind(row.id)
-          ])
+          ]);}
         });
         result.recovered++;
         continue;
