@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
 import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
 
 type BabyInfo={id:string;name:string;birthday:string;gender:string;time_zone:string;allergies:string;notes:string};
@@ -19,10 +20,6 @@ const years=(date:string)=>{
  const days=Math.max(0,Math.floor((Date.now()-new Date(date+'T00:00:00+08:00').getTime())/86400000));
  return days<31?days+' 天':Math.floor(days/30.44)+' 个月';
 };
-function Logo(){return <div className="logo"><span className="logo-icon"><Heart size={17} fill="currentColor"/></span><span>BabyMemo</span></div>}
-function Notice({text,onClose}:{text:string;onClose:()=>void}){return <div className="notice" role="status"><span>{text}</span><button onClick={onClose} aria-label="关闭">×</button></div>}
-function Field({label,children}:{label:string;children:ReactNode}){return <label className="field"><span>{label}</span>{children}</label>}
-function Primary({children,disabled=false}:{children:ReactNode;disabled?:boolean}){return <button className="primary" type="submit" disabled={disabled}>{children}</button>}
 function Gate({onReady}:{onReady:()=>void}){
  const [mode,setMode]=useState<'loading'|'setup'|'login'|'unavailable'>('loading');
  const [ready,setReady]=useState({bootstrapConfigured:false,sessionConfigured:false,encryptionConfigured:false});
@@ -51,9 +48,8 @@ function Gate({onReady}:{onReady:()=>void}){
 }
 function Nav({active,setActive,logout}:{active:Tab;setActive:(t:Tab)=>void;logout:()=>void}){
  const sections:[Tab,string,ReactNode][]=[['overview','概览',<Baby size={19}/>],['growth','成长曲线',<TrendingUp size={19}/>],['moments','成长瞬间',<BookHeart size={19}/>],['album','家庭相册',<Camera size={19}/>],['assistant','AI 助手',<Sparkles size={19}/>],['settings','设置',<Settings2 size={19}/>]];
- return <><aside className="sidebar"><Logo/><div className="side-label">MY SPACE</div><nav>{sections.map(([tab,label,icon])=><button className={'nav-link '+(tab===active?'active':'')} key={tab} onClick={()=>setActive(tab)}>{icon}{label}{tab===active&&<span className="active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16}/> 私密家庭空间</div><button className="nav-link" onClick={logout}><LogOut size={18}/> 安全退出</button></div></aside><nav className="mobile-nav">{sections.map(([tab,label,icon])=><button key={tab} aria-label={label} onClick={()=>setActive(tab)} className={tab===active?'active':''}>{icon}<span>{label.replace('成长','')}</span></button>)}</nav></>;
+ return <><aside className="sidebar"><Logo/><div className="side-label">MY SPACE</div><nav>{sections.map(([tab,label,icon])=><button className={'nav-link '+(tab===active?'active':'')} key={tab} type="button" aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)}>{icon}{label}{tab===active&&<span className="active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16}/> 私密家庭空间</div><button className="nav-link" onClick={logout}><LogOut size={18}/> 安全退出</button></div></aside><nav className="mobile-nav">{sections.map(([tab,label,icon])=><button key={tab} type="button" aria-label={label} aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)} className={tab===active?'active':''}>{icon}<span>{label.replace('成长','')}</span></button>)}</nav></>;
 }
-function Card({children,className=''}:{children:ReactNode;className?:string}){return <div className={'card '+className}>{children}</div>}
 export default function App(){
  const [mode,setMode]=useState<'loading'|'gate'|'app'|'unavailable'>('loading');
  const [state,setState]=useState<State|null>(null),[active,setActive]=useState<Tab>('overview'),[babyId,setBabyId]=useState(''),[toast,setToast]=useState('');
@@ -111,7 +107,6 @@ export default function App(){
  <footer className="footer">BabyMemo · 用爱记录，用心珍藏 <Heart size={13}/></footer>
  </div></main>{toast&&<Notice text={toast} onClose={()=>setToast('')}/>}</div>;
 }
-function Pager({page,setPage,hasMore}:{page:number;setPage:(v:number)=>void;hasMore:boolean}){return <div className="pager"><button disabled={!page} onClick={()=>setPage(page-1)}>上一页</button><span>第 {page+1} 页</span><button disabled={!hasMore} onClick={()=>setPage(page+1)}>下一页</button></div>}
 function RecordView({baby,kind,items,busy,setBusy,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;kind:'growth'|'milestones';items:RecordItem[];busy:boolean;setBusy:(v:boolean)=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
  const [form,setForm]=useState({day:today(),weight:'',height:'',headCircumference:'',notes:'',title:'',description:''});
  async function save(e:FormEvent){e.preventDefault();setBusy(true);try{

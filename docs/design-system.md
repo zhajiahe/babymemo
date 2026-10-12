@@ -14,6 +14,18 @@
 - [ ] 真实 iPhone Safari、桌面浏览器视觉/功能回归：**尚未验收**。
 - [ ] 全面替换其他历史硬编码色值、提取共享 UI 组件与截图回归：后续阶段。
 
+## 落地进度（2026-10-12，阶段二）
+
+本阶段以**不改变业务接口**为边界，减少 App 代码耦合与 CSS 覆盖：
+
+- [x] 从 `src/App.tsx` 抽取无业务依赖的 `Logo / Notice / Field / Primary / Card / Pager` 到 `src/components/ui.tsx`；应用的 API、状态管理和上传逻辑不变。
+- [x] 分页组件显式使用 `nav`、`aria-label`、`type="button"`；桌面和手机导航为当前页面提供 `aria-current="page"`。
+- [x] 新增 `--bm-surface-alt / surface-soft / input-bg / border-soft` token，将卡片、导航、表单、微信状态与聊天背景的常用硬编码颜色迁移到源定义。
+- [x] 清理 8 处样式表尾部重复覆盖，后续新增主题规范应优先修改组件的原始声明。
+- [x] 静态回归测试约束基础组件抽取、主要 token 使用与分页语义。
+- [ ] iPhone Safari / 桌面真实视觉与交互回归，未实际执行。
+- [ ] 剩余长业务组件、其他装饰性色值和可视化快照属于后续阶段，**本轮未修改**。
+
 ## 0. 实施状态与真实来源
 
 **当前已实现**：React + 原生 CSS；`src/styles.css` 中的卡片、导航、表单、暖珊瑚色、`--bm-*` 变量、全局 `:focus-visible`、`prefers-reduced-motion` 和移动端布局。
@@ -98,7 +110,7 @@
 | AI 聊天 | `Assistant` / `.chat` | 根据当前 `babyId`，不能串档案 |
 | 首次设置 | `Gate` / `.setup-guide` | 缺 Secrets 或 API 故障给出真实修复路径 |
 
-当前组件多数仍在 `src/App.tsx` 内，而非独立 UI 目录。新增较大组件可逐步抽取，前提是仍复用同一套视觉和状态规则。
+阶段二已将 `Logo / Notice / Field / Primary / Card / Pager` 抽到 `src/components/ui.tsx`；业务级组件（`Gate / Nav / RecordView / GrowthChart / Album / Assistant / Settings`）仍在 `src/App.tsx`。新组件优先组合基础组件，不要新增平行样式体系。
 
 **交互红线**：破坏性动作二次确认；保存/上传期间避免重复提交；失败时保留输入；网络断连要提供重试入口；不可用的功能不要做成可点击按钮。录入宝宝生日、体格数据时明确日期和单位。
 
