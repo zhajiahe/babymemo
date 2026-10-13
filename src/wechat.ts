@@ -140,7 +140,8 @@ export class WechatSession {
     const path=new URL(request.url).pathname;
     if(path==='/status'){
       return Response.json({enabled:await setting(this.env,'wechat_enabled')==='true',connected:!!await setting(this.env,'wechat_token'),lastPoll:await this.ctx.storage.get('lastPoll')||null,
-        lastError:await this.ctx.storage.get('lastError')||null,lastMessage:await this.ctx.storage.get('lastMessage')||null});
+        lastError:await this.ctx.storage.get('lastError')||null,lastMessage:await this.ctx.storage.get('lastMessage')||null,
+        lastProcessing:await this.ctx.storage.get('lastProcessing')||null});
     }
     if(request.method!=='POST')return new Response('Not found',{status:404});
     if(path==='/start'){
@@ -224,6 +225,7 @@ export class WechatSession {
         await ilink(base,'ilink/bot/sendmessage',{msg:{from_user_id:'',to_user_id:userId,client_id:clientId,message_type:2,message_state:2,context_token:raw.context_token,item_list:[{type:1,text_item:{text:reply.slice(0,1800)}}]},base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token);
         await this.env.DB.prepare("UPDATE wechat_messages SET state='done' WHERE message_id=?").bind(unique).run();
         await this.ctx.storage.put('lastMessage',new Date().toISOString());
+        await this.ctx.storage.put('lastProcessing',{kind:hasMedia?'media':'text',durationMs:Date.now()-processingStarted,at:new Date().toISOString()});
       }
       // Acknowledgement advances only after all supported messages are durable.
       if(typeof response.get_updates_buf==='string')await this.ctx.storage.put('cursor',response.get_updates_buf);
