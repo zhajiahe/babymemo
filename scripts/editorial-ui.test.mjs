@@ -19,10 +19,10 @@ test('home is a real-media journal, without marketing dashboard ornaments',()=>{
 test('album is a compact photo grid with actions in the native details dialog',()=>{
  assert.match(album,/className="photo-grid"/);
  assert.doesNotMatch(album,/className="photo-caption"/);
- assert.match(album,/onFavorite=/);
+ assert.doesNotMatch(album,/onFavorite=|favoriteOnly|仅看收藏/);
  assert.match(album,/onDelete=/);
  assert.match(viewer,/aria-label="移入回收站"/);
- assert.match(viewer,/aria-label=\{item.favorite\?'取消收藏':'收藏'\}/);
+ assert.doesNotMatch(viewer,/onFavorite|收藏/);
  assert.match(css,/grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
 });
 
@@ -39,4 +39,19 @@ test('favicon and all PWA assets decode with expected PNG headers and dimensions
  assert.ok(ico.readUInt16LE(4)>=2);
  assert.match(text('public/brand/mark.svg'),/#845A46/i);
  assert.match(text('public/favicon.svg'),/#845A46/i);
+});
+
+test('family name and Settings-only baby switch remain available on mobile',()=>{
+ const settings=text('src/features/settings/Settings.tsx');
+ const worker=text('src/worker.ts');
+ const harness=text('src/wechat-harness.mjs');
+ assert.match(app,/className="space-name"/);
+ assert.match(app,/className="side-label side-space-name"/);
+ assert.match(css,/\.topbar \{ display:flex;/);
+ assert.doesNotMatch(css,/\.topbar \{ display:none;/);
+ assert.doesNotMatch(app,/aria-label="选择宝宝"/);
+ assert.match(settings,/className="settings-baby-switch"/);
+ assert.match(settings,/aria-label="选择宝宝"/);
+ assert.doesNotMatch(worker,/app\.post\('\/api\/media\/:id\/favorite'/);
+ assert.doesNotMatch(harness,/changes\.favorite|favorite:\{type:'boolean'\}/);
 });
