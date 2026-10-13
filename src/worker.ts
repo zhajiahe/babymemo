@@ -517,6 +517,8 @@ export default {
   async scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext){
     ctx.waitUntil(env.DB.prepare("DELETE FROM wechat_messages WHERE state='done' AND created_at<?").bind(new Date(Date.now()-90*86400000).toISOString()).run()
       .catch(()=>console.error(JSON.stringify({level:'error',event:'BOT_DEDUP_RETENTION_FAILED'}))));
+    ctx.waitUntil(env.DB.prepare('DELETE FROM wechat_agent_rounds WHERE created_at<?').bind(new Date(Date.now()-90*86400000).toISOString()).run()
+      .catch(()=>console.error(JSON.stringify({level:'error',event:'AGENT_ROUND_RETENTION_FAILED'}))));
     ctx.waitUntil(env.DB.prepare('DELETE FROM wechat_pairings WHERE expires_at<?').bind(Date.now()).run()
       .catch(()=>console.error(JSON.stringify({level:'error',event:'PAIRING_RETENTION_FAILED'}))));
     ctx.waitUntil(purgeDeleted(env).catch(()=>console.error(JSON.stringify({level:'error',event:'TRASH_PURGE_FAILED'}))));
