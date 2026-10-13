@@ -1,6 +1,6 @@
 # BabyMemo 微信 Harness：真实场景审查与演进提案
 
-> 状态：**设计提案 / 待实施**。静态审查基线：main 提交 [61c0ecd](https://github.com/zhajiahe/babymemo/commit/61c0ecd5fc795ee0dde7780493b198d58982ef03)，2026-10-13。未连接真实微信、真实 OpenRouter、生产 D1/R2，也未执行真机验收。对应自动化方案见 [微信 Harness 场景测试计划](./wechat-harness-test-plan.md)。
+> 状态：**历史风险审查（固定基线 61c0ecd）**。该文包含早期单工具时代的事实判断，**不是当前 main/PR 的功能清单**；最新已实现/待验收状态请看 [ReAct 架构与实施边界](wechat-harness-implementation.md)、[ReAct R-001～R-014 验收](wechat-harness-test-plan.md)。\n\n> 原始记录：**设计提案 / 待实施**。静态审查基线：main 提交 [61c0ecd](https://github.com/zhajiahe/babymemo/commit/61c0ecd5fc795ee0dde7780493b198d58982ef03)，2026-10-13。未连接真实微信、真实 OpenRouter、生产 D1/R2，也未执行真机验收。对应自动化方案见 [微信 Harness 场景测试计划](./wechat-harness-test-plan.md)。
 
 ## 1. 目的和原则
 
