@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {guardAction,measurementGrounded,newDayGrounded} from '../src/wechat-policy.mjs';
+import {guardAction,validDay} from '../src/wechat-policy.mjs';
 import {appendTurn,buildCommandContext,getActiveThread} from '../src/wechat-memory.mjs';
 import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
 import {isCommittedMutationReply,runWechatPlan} from '../src/wechat-orchestrator.mjs';
@@ -10,32 +10,16 @@ const baby={id:'baby-a',name:'测试宝宝',time_zone:'Asia/Shanghai'};
 const call=(name,args={})=>({type:'function',function:{name,arguments:JSON.stringify(args)}});
 const response=(...tools)=>({choices:[{message:{content:null,tool_calls:tools}}]});
 
-test('recent-media updates use server-pinned batch, not nonexistent old selectors',()=>{
- const input='把刚才发的照片日期改成昨天';
- assert.equal(guardAction('update_recent_media',{newDay:'2026-10-12'},input,baby,at),null);
- assert.ok(guardAction('update_recent_media',{newDay:'2026-10-11'},input,baby,at));
- assert.ok(guardAction('update_recent_media',{newDay:'2026-10-12'},'不要修改刚才的照片',baby,at));
+test('minimal policy rejects a clear user refusal but delegates date interpretation',()=>{
+ assert.equal(guardAction('update_recent_media',{newDay:'2026-10-12'},'把刚才照片改为昨天'),null);
+ assert.match(guardAction('update_recent_media',{newDay:'2026-10-12'},'不要修改刚才的照片'),/未修改/);
+ assert.equal(guardAction('update_milestone',{day:'2026-10-01',newDay:'2026-10-02'},'改成那天'),null);
 });
-
-test('old/new date roles must be distinct and the new date independently grounded',()=>{
- const change='把10月1日照片改到10月2日';
- assert.equal(guardAction('update_media',{day:'2026-10-01',newDay:'2026-10-02'},change,baby,at),null);
- assert.ok(guardAction('update_media',{day:'2026-10-01',newDay:'2026-11-02'},change,baby,at));
- assert.equal(guardAction('update_milestone',{day:'2026-10-01',newDay:'2026-10-02'},'把10月1日里程碑改到10月2日',baby,at),null);
- assert.ok(guardAction('update_milestone',{day:'2026-10-01',newDay:'2026-11-02'},'把10月1日里程碑改到10月2日',baby,at));
- assert.equal(newDayGrounded('2026-10-12','把刚才照片日期改成昨天',at,'Asia/Shanghai'),true);
+test('tool arguments are checked structurally, not re-parsed as spoken numbers',()=>{
+ assert.equal(validDay('2026-10-12'),true);
+ assert.equal(validDay('2026-02-30'),false);
+ assert.equal(guardAction('create_growth',{weight:10,height:80,headCircumference:46},'昨天称了二十斤，身高八十厘米'),null);
 });
-
-test('the same cm measurement cannot justify two different body metrics',()=>{
- assert.equal(measurementGrounded({height:80,headCircumference:80},'测试宝宝今天身高80cm'),false);
- assert.equal(measurementGrounded({headCircumference:80},'测试宝宝今天身高80cm'),false);
- assert.equal(measurementGrounded({height:80},'测试宝宝今天头围80cm'),false);
- assert.equal(measurementGrounded({height:80},'测试宝宝今天身高80cm'),true);
- assert.equal(measurementGrounded({height:80,headCircumference:46},'身高80cm，头围46cm'),true);
- assert.equal(measurementGrounded({height:80},'测试宝宝今天80cm'),false);
- assert.equal(measurementGrounded({weight:10},'体重20斤'),true);
-});
-
 test('switching babies excludes all prior baby turns from the model transcript',()=>{
  let thread=getActiveThread(null,'bot','user',at);
  thread=appendTurn(thread,'宝宝A体重10kg','已保存宝宝A体重','baby-a',at);
@@ -98,7 +82,7 @@ test('cached query replay restores server-owned result ID for later modification
  assert.match(reply,/aaaaaaaa/);
  assert.equal(thread.lastQuery.sourceMessageId,'query');
  assert.deepEqual(thread.lastQuery.ids,['aaaaaaaa']);
- assert.match(buildCommandContext('把第一条改为10.2kg',thread,at+1,baby.id).groundedText,/记录编号 aaaaaaaa/);
+ assert.equal(buildCommandContext('把第一条改为10.2kg',thread,at+1,baby.id).groundedText,'把第一条改为10.2kg');
  assert.equal(db.writes,0);
 });
 
