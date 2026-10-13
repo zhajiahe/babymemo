@@ -11,6 +11,7 @@ import {runWechatPlan,quickCommand} from './wechat-orchestrator.mjs';
 import {isWechatHelpCommand,retryReadOnlyTool} from './wechat-tool-routing.mjs';
 import {runWechatAgentLoop} from './wechat-agent-loop.mjs';
 import {getWechatConnection} from './wechat-connections';
+import {DurableMediaQueue,mediaTaskId} from './wechat-media-queue.mjs';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
 const wireJSON=JSONBig({storeAsString:true,strict:true,protoAction:'error',constructorAction:'error'});
@@ -68,7 +69,7 @@ export async function testOpenRouterConnection(env:Env):Promise<boolean>{
   const result=await openRouterCompletion({key,model,messages:[{role:'user',content:'Reply exactly: OK'}],max_tokens:16});
   return Array.isArray(result.choices)&&result.choices.length>0;
 }
-export async function handleWechatCommand(env:Env,text:string,messageId:string,thread:any=null,at=Date.now()):Promise<string>{
+export async function handleWechatCommand(env:Env,text:string,messageId:string,thread:any=null,at=Date.now(),targetBabyId?:string):Promise<string>{
  const command=text.trim();
  if(!command)return wechatHelp;
  if(isWechatHelpCommand(command))return wechatHelp;
@@ -77,13 +78,15 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
  if(/^(宝宝列表|列出宝宝|有哪些宝宝|查看所有宝宝)[？?]?$/i.test(command))
   return runWechatTool(env,null,'list_babies',{},messageId,command);
  const matches=babies.results.filter(b=>b.name&&command.includes(b.name));
- if(matches.length>1||(babies.results.length>1&&matches.length!==1&&!babies.results.some(b=>b.id===thread?.babyId)))
+ if(targetBabyId&&(!babies.results.some(b=>b.id===targetBabyId)||matches.some(b=>b.id!==targetBabyId)))return '宝宝资料已变化，附文操作未执行，请重新明确宝宝。';
+ if(!targetBabyId&&(matches.length>1||(babies.results.length>1&&matches.length!==1&&!babies.results.some(b=>b.id===thread?.babyId))))
   return '请明确写出一位宝宝的名字。可选：'+babies.results.map(b=>b.name).join('、')+'\n示例：'+babies.results[0].name+' 今天体重 10.5kg';
- const baby=matches[0]||babies.results.find(b=>b.id===thread?.babyId)||babies.results[0];
+ const baby=(targetBabyId?babies.results.find(b=>b.id===targetBabyId):matches[0])||babies.results.find(b=>b.id===thread?.babyId)||babies.results[0];
  if(thread){
-  if(thread.babyId&&thread.babyId!==baby.id){thread.pending=null;thread.lastQuery=null;thread.lastMedia=null;thread.lastOperation=null}
+  if(thread.babyId&&thread.babyId!==baby.id){thread.pending=null;thread.lastQuery=null;thread.lastMedia=null;thread.lastOperation=null;thread.pendingMedia=null}
   thread.selectedBabyId=baby.id;
  }
+ if(thread?.pendingMedia?.babyId===baby.id&&/刚才|刚发|这些|这张|这段|最近/.test(command)&&/照片|视频|图片/.test(command))return '刚发送的照片或视频仍在保存，请收到保存结果后再操作。其他成长记录可以继续发送。';
  const fast=await quickCommand(env,baby,command,thread,at);
  if(fast!==null)return fast;
  const context=thread?buildCommandContext(command,thread,at,baby.id):{modelMessages:[{role:'user',content:command}],groundedText:command};
@@ -141,9 +144,10 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
 }
 // The photo itself has no baby name. Use the caption when present, otherwise
 // an explicitly configured default baby; never silently choose first of many.
-export async function handleWechatPhotoMessage(env:Env,raw:Json,messageId:string,thread:any=null):Promise<string>{
+async function resolveWechatMediaBaby(env:Env,raw:Json,thread:any=null,targetBabyId?:string):Promise<Baby|string>{
   const babies=await env.DB.prepare('SELECT id,name,birthday,time_zone FROM babies ORDER BY created_at').all<Baby>();
   if(!babies.results.length)return '请先在 BabyMemo 网页创建宝宝档案，再发送照片。';
+  if(targetBabyId)return babies.results.find(b=>b.id===targetBabyId)||'目标宝宝已不存在，照片或视频未保存。';
   const caption=(Array.isArray(raw.item_list)?raw.item_list:[])
    .filter((item:any)=>item?.type===1&&typeof item?.text_item?.text==='string')
    .map((item:any)=>item.text_item.text).join(' ').trim();
@@ -160,26 +164,120 @@ export async function handleWechatPhotoMessage(env:Env,raw:Json,messageId:string
       if(!baby)return '收到照片，但当前家庭有多位宝宝。请先在网页「设置 → 微信操作」选择默认收图宝宝，或发送带宝宝昵称的图片消息。照片尚未保存。';
     }
   }
+  return baby;
+}
+async function savedWechatMediaIds(env:Env,raw:Json,babyId:string,messageId:string):Promise<string[]>{
+ const sources=mediaItems(raw).slice(0,4).map((item:any,n)=>messageId+(item.type===5?':video:':':image:')+n);
+ if(!sources.length)return [];
+ const rows=await env.DB.prepare('SELECT id FROM media WHERE baby_id=? AND source_message_id IN ('+sources.map(()=>'?').join(',')+') AND deleted_at IS NULL ORDER BY source_message_id LIMIT 4')
+   .bind(babyId,...sources).all<{id:string}>();
+ return rows.results.map(x=>x.id);
+}
+export async function handleWechatPhotoMessage(env:Env,raw:Json,messageId:string,thread:any=null,targetBabyId?:string):Promise<string>{
+  const baby=await resolveWechatMediaBaby(env,raw,thread,targetBabyId);
+  if(typeof baby==='string')return baby;
   if(thread)thread.selectedBabyId=baby.id;
   const reply=(await persistWeChatMedia(env,raw,baby,messageId))||'没有检测到可保存的图片或视频。';
   if(thread&&reply.startsWith('已保存')){
-   const rows=await env.DB.prepare('SELECT id FROM media WHERE baby_id=? AND source_message_id LIKE ? AND deleted_at IS NULL ORDER BY source_message_id LIMIT 4')
-     .bind(baby.id,messageId+':%').all<{id:string}>();
-   if(rows.results.length)thread.lastMedia={babyId:baby.id,ids:rows.results.map(x=>x.id),expiresAt:Date.now()+1200000};
+   const ids=await savedWechatMediaIds(env,raw,baby.id,messageId);
+   if(ids.length)thread.lastMedia={babyId:baby.id,ids,expiresAt:Date.now()+1200000};
   }
   return reply;
 }
+export function workerMediaBot(env:Env,connectionId:string):DurableObjectStub {
+ return env.BOT.get(env.BOT.idFromName('wechat-media:'+connectionId));
+}
+type MediaTask={connectionId:string;sourceId:string;botId:string;userId:string;credentialHash:string;raw:Json;babyId:string;thread:any;epoch:string;version:number;receivedAt:number};
+type MediaResult={reply:string;ok:boolean;sourceId:string;babyId:string;epoch:string;version:number;thread:any;expiresAt:number};
+async function sendWechatReply(env:Env,connectionId:string,raw:Json,reply:string,clientId:string,task:MediaTask):Promise<void>{
+ const c=await getWechatConnection(env,connectionId);if(!c||c.enabled!==1)throw Error('WECHAT_PAUSED');
+ if(c.bot_id!==task.botId||c.user_id!==task.userId||await mediaTaskId(c.token_cipher)!==task.credentialHash)throw Error('WECHAT_BINDING_CHANGED');
+ const token=await decryptSecret(env,c.token_cipher);
+ try{await ilink(c.base_url||API_BASE,'ilink/bot/sendmessage',{msg:{from_user_id:'',to_user_id:c.user_id,client_id:clientId,message_type:2,message_state:2,context_token:raw.context_token,item_list:[{type:1,text_item:{text:reply.slice(0,1800)}}]},base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token)}
+ catch(error){if(error instanceof Error&&error.message==='WECHAT_AUTH_EXPIRED')await env.DB.prepare('UPDATE wechat_connections SET enabled=0,updated_at=? WHERE id=? AND token_cipher=?').bind(new Date().toISOString(),connectionId,c.token_cipher).run();throw error}
+}
 export class WechatSession {
-  constructor(private readonly ctx: DurableObjectState,private readonly env: Env){}
+  private readonly mediaQueue:DurableMediaQueue;
+  constructor(private readonly ctx: DurableObjectState,private readonly env: Env){
+   const decode=async(payload:string)=>JSON.parse(await decryptSecret(env,payload)) as MediaTask;
+   this.mediaQueue=new DurableMediaQueue(ctx.storage,{
+    permission:async payload=>{
+     const task=await decode(payload),c=await getWechatConnection(env,task.connectionId);
+     if(!c||c.bot_id!==task.botId||c.user_id!==task.userId||await mediaTaskId(c.token_cipher)!==task.credentialHash)return 'stale';
+     return c.enabled===1?'active':'paused';
+    },
+    execute:async payload=>{
+     const generation=await ctx.storage.get('media-generation');
+     const task=await decode(payload),thread=structuredClone(task.thread);
+     let reply=await handleWechatPhotoMessage(env,task.raw,task.sourceId,thread,task.babyId);
+     const ok=reply.startsWith('已保存')||reply.startsWith('这些照片或视频已经保存过');
+     if(ok){
+      const ids=await savedWechatMediaIds(env,task.raw,task.babyId,task.sourceId);
+      thread.pendingMedia=null;
+      thread.lastMedia={babyId:task.babyId,ids,expiresAt:task.receivedAt+1200000};
+      const text=task.raw.item_list.filter((i:any)=>i?.type===1&&typeof i.text_item?.text==='string').map((i:any)=>i.text_item.text).join('\n').trim();
+      const c=await getWechatConnection(env,task.connectionId);
+      if(/记(?:录|下)|里程碑|成长瞬间/.test(text)&&c?.enabled===1&&await mediaTaskId(c.token_cipher)===task.credentialHash&&generation===await ctx.storage.get('media-generation')){
+       const checked=await workerBot(env,task.connectionId).fetch('https://bot.internal/media/context',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch:task.epoch,version:task.version,babyId:task.babyId})});
+       if(!checked.ok)throw Error('WECHAT_MEDIA_CONTEXT_FAILED');
+       const context=await checked.json() as {valid:boolean};
+       reply+='\n'+(context.valid?await handleWechatCommand(env,text,task.sourceId+':caption',thread,messageTime(task.raw),task.babyId):'保存期间会话已有变化，附文操作未执行。请重新发送要记录或修改的文字。');
+      }
+     }
+     const result:MediaResult={reply,ok,sourceId:task.sourceId,babyId:task.babyId,epoch:task.epoch,version:task.version,thread,expiresAt:task.receivedAt+1200000};
+     return {payload:await encryptSecret(env,JSON.stringify(result)),ok};
+    },
+    failure:async(payload,error,attempt)=>{
+     const task=await decode(payload);
+     await env.DB.prepare('UPDATE wechat_messages SET photo_attempts=? WHERE message_id=?').bind(attempt,task.sourceId).run();
+     if(!(error instanceof WechatPhotoError)&&attempt<3)return null;
+     const reply=error instanceof WechatPhotoError?error.message:'图片或视频下载/入库多次失败，请检查相册内是否已有部分媒体，然后重新发送尚未保存的内容。';
+     const result:MediaResult={reply,ok:false,sourceId:task.sourceId,babyId:task.babyId,epoch:task.epoch,version:task.version,thread:task.thread,expiresAt:task.receivedAt+1200000};
+     return {payload:await encryptSecret(env,JSON.stringify(result)),ok:false};
+    },
+    deliver:async(payload,result,clientId)=>{
+     const task=await decode(payload);
+     await sendWechatReply(env,task.connectionId,task.raw,(JSON.parse(await decryptSecret(env,result)) as MediaResult).reply,clientId,task);
+     const published=await workerBot(env,task.connectionId).fetch('https://bot.internal/media/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({result})});
+     if(!published.ok)throw Error('WECHAT_MEDIA_CONTEXT_FAILED');
+    },errorCode:error=>error instanceof Error&&/^(WECHAT_AUTH_EXPIRED|WECHAT_PAUSED|WECHAT_HTTP_[1-5][0-9]{2})$/.test(error.message)?error.message:wechatMediaErrorCode(error)
+   });
+  }
   async fetch(request:Request):Promise<Response>{
     const path=new URL(request.url).pathname;
+    if(path==='/media/status')return Response.json(await this.mediaQueue.status());
+    if(request.method==='POST'&&['/media/enqueue','/media/start','/media/pause','/media/reset'].includes(path)){
+     await this.ctx.storage.put('role','media');
+     if(path==='/media/start')await this.mediaQueue.start();
+     else if(path==='/media/pause')await this.mediaQueue.pause();
+     else if(path==='/media/reset')await this.mediaQueue.reset();
+     else{
+      const data=await request.json() as {sourceId:string;payload:string};
+      if(typeof data.sourceId!=='string'||typeof data.payload!=='string'||data.payload.length>120000)return Response.json({error:'WECHAT_MEDIA_TASK_INVALID'},{status:400});
+      return Response.json(await this.mediaQueue.enqueue(data.sourceId,data.payload));
+     }
+     return Response.json({ok:true});
+    }
+    if(path==='/media/result'&&request.method==='POST'){
+     const {result}=await request.json() as {result:string};
+     const decoded=JSON.parse(await decryptSecret(this.env,result)) as MediaResult;
+     if(decoded.epoch===(await this.ctx.storage.get('conversationEpoch')||''))await this.ctx.storage.put('mediaResult',result);
+     await this.ctx.storage.put('lastMessage',new Date().toISOString());
+     return Response.json({ok:true});
+    }
+    if(path==='/media/context'&&request.method==='POST'){
+     const data=await request.json() as {epoch:string;version:number;babyId:string};
+     const saved=await this.ctx.storage.get<any>('conversation');
+     return Response.json({valid:data.epoch===(await this.ctx.storage.get('conversationEpoch')||'')&&data.version===(await this.ctx.storage.get<number>('conversationVersion')||0)&&saved?.babyId===data.babyId&&saved.expiresAt>Date.now()});
+    }
     if(path==='/status'){
       const id=new URL(request.url).searchParams.get('connectionId')||await this.ctx.storage.get<string>('connectionId')||'legacy';
       const connection=await getWechatConnection(this.env,id);
       return Response.json({connectionId:id,enabled:connection?.enabled===1,connected:!!connection,lastPoll:await this.ctx.storage.get('lastPoll')||null,
         lastError:await this.ctx.storage.get('lastError')||null,lastMessage:await this.ctx.storage.get('lastMessage')||null,
         lastProcessing:await this.ctx.storage.get('lastProcessing')||null,
-        lastMediaError:await this.ctx.storage.get('lastMediaError')||null});
+        startedAt:await this.ctx.storage.get('startedAt')||null,
+        media:await (await workerMediaBot(this.env,id).fetch('https://bot.internal/media/status')).json()});
     }
     if(request.method!=='POST')return new Response('Not found',{status:404});
     if(path==='/start'){
@@ -188,21 +286,30 @@ export class WechatSession {
       if(!/^(legacy|[0-9a-f-]{36})$/.test(id)||!await getWechatConnection(this.env,id))return Response.json({error:'WECHAT_CONNECTION_NOT_FOUND'},{status:404});
       await this.ctx.storage.put('connectionId',id);
       await this.ctx.storage.put('lastError',null);
+      await this.ctx.storage.put('startedAt',new Date().toISOString());
+      await workerMediaBot(this.env,id).fetch('https://bot.internal/media/start',{method:'POST'});
       await this.ctx.storage.setAlarm(Date.now()+1000);
       return Response.json({ok:true});
     }
     if(path==='/pause'){
       await this.ctx.storage.deleteAlarm();
+      const id=await this.ctx.storage.get<string>('connectionId')||'legacy';
+      await workerMediaBot(this.env,id).fetch('https://bot.internal/media/pause',{method:'POST'});
       return Response.json({ok:true});
     }
     if(path==='/reset'){
       await this.ctx.storage.deleteAlarm();
-      await Promise.all(['cursor','lastPoll','lastError','lastMessage','lastProcessing','lastMediaError','conversation'].map(key=>this.ctx.storage.delete(key)));
+      const id=new URL(request.url).searchParams.get('connectionId')||await this.ctx.storage.get<string>('connectionId')||'legacy';
+      await this.ctx.storage.put('connectionId',id);
+      await workerMediaBot(this.env,id).fetch('https://bot.internal/media/reset',{method:'POST'});
+      await this.ctx.storage.put('conversationEpoch',crypto.randomUUID());
+      await Promise.all(['cursor','lastPoll','lastError','lastMessage','lastProcessing','lastMediaError','conversation','mediaResult','startedAt','conversationVersion'].map(key=>this.ctx.storage.delete(key)));
       return Response.json({ok:true});
     }
     return new Response('Not found',{status:404});
   }
   async alarm():Promise<void>{
+    if(await this.ctx.storage.get('role')==='media'){await this.mediaQueue.alarm();return}
     // Each account is polled by its own Durable Object with its own cursor,
     // conversation state and alarm. The migrated account retains the old DO id.
     const connectionId=await this.ctx.storage.get<string>('connectionId')||'legacy';
@@ -235,31 +342,53 @@ export class WechatSession {
           .first<{state:string;reply_text:string|null;client_id:string|null;photo_attempts:number}>();
         if(row?.state==='done')continue;
         const thread=getActiveThread(await this.ctx.storage.get('conversation'),botId,userId);
+        const published=await this.ctx.storage.get<string>('mediaResult');
+        if(published){
+         const result=JSON.parse(await decryptSecret(this.env,published)) as MediaResult;
+         if(result.epoch===(await this.ctx.storage.get('conversationEpoch')||'')&&thread.pendingMedia?.sourceId===result.sourceId&&thread.babyId===result.babyId){
+          thread.pendingMedia=null;
+          if(result.ok&&result.expiresAt>Date.now()){
+           thread.lastMedia=result.thread.lastMedia;
+           if(result.version===(await this.ctx.storage.get<number>('conversationVersion')||0)){
+            thread.lastOperation=result.thread.lastOperation;thread.pending=result.thread.pending;thread.lastQuery=result.thread.lastQuery;
+           }
+          }
+         }
+        }
+        const version=(await this.ctx.storage.get<number>('conversationVersion')||0)+1;
         const clear=!hasMedia&&isClearContext(text);
         let reply=row?.reply_text?await decryptSecret(this.env,row.reply_text):'';
         if(!reply){
           try{
             if(clear)reply='已清除本次微信会话的短期上下文和宝宝选择。';
             else if(hasMedia){
-              reply=await handleWechatPhotoMessage(this.env,raw,unique,thread);
-              if(reply.startsWith('已保存')||reply.startsWith('这些照片或视频已经保存过'))await this.ctx.storage.delete('lastMediaError');
-              if(reply.startsWith('已保存')&&/记(?:录|下)|里程碑|成长瞬间/.test(text)){
-               const follow=await handleWechatCommand(this.env,text,unique+':caption',thread,messageTime(raw));
-               reply+='\n'+follow;
+              const baby=await resolveWechatMediaBaby(this.env,raw,thread);
+              if(typeof baby==='string')reply=baby;
+              else if(mediaItems(raw).length>4)reply='单条消息最多保存 4 项媒体，请分批发送。照片或视频尚未保存。';
+              else{
+               const receivedAt=Date.now(),epoch=await this.ctx.storage.get<string>('conversationEpoch')||crypto.randomUUID();
+               await this.ctx.storage.put('conversationEpoch',epoch);
+               const task:MediaTask={connectionId,sourceId:unique,botId,userId,credentialHash:await mediaTaskId(tokenEncrypted),raw,babyId:baby.id,thread:{...thread,babyId:baby.id,pendingMedia:null,lastMedia:null},epoch,version,receivedAt};
+               const payload=await encryptSecret(this.env,JSON.stringify(task));
+               if(payload.length>120000)reply='照片或视频消息过大，未接收保存任务，请分开发送。';
+               else{
+                const queued=await workerMediaBot(this.env,connectionId).fetch('https://bot.internal/media/enqueue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceId:unique,payload})});
+                if(!queued.ok)throw Error('WECHAT_MEDIA_QUEUE_UNAVAILABLE');
+                const result=await queued.json() as {accepted:boolean};
+                if(!result.accepted)reply='当前待保存的照片或视频较多，本条尚未接收。请稍后重新发送；文字记录仍可继续。';
+                else{
+                 thread.selectedBabyId=baby.id;thread.lastMedia=null;
+                 thread.pendingMedia={sourceId:unique,babyId:baby.id,expiresAt:receivedAt+1200000};
+                 reply='已收到 '+mediaItems(raw).length+' 项照片或视频，正在保存。保存结果会另行通知，其他文字记录可以继续发送。';
+                }
+               }
               }
             }else reply=await handleWechatCommand(this.env,text,unique,thread,messageTime(raw));
           }catch(e){
-            if(hasMedia)await this.ctx.storage.put('lastMediaError',{
-              code:wechatMediaErrorCode(e),attempt:(row?.photo_attempts||0)+1,at:new Date().toISOString()
-            });
-            // Protocol-invalid or expired photos can be acknowledged with a helpful
-            // error. Network/R2/D1 failures are retried with the original cursor.
-            if(hasMedia&&!(e instanceof WechatPhotoError)){
-              const attempts=(row?.photo_attempts||0)+1;
-              await this.env.DB.prepare('UPDATE wechat_messages SET photo_attempts=? WHERE message_id=?').bind(attempts,unique).run();
-              if(attempts<3)throw e; // keep upstream cursor for bounded retry
-              reply='图片或视频下载/入库多次失败，请检查相册内是否已有部分媒体，然后重新发送尚未保存的内容。';
-            }else reply=e instanceof WechatPhotoError?e.message:(friendlyOpenRouterError(e)||'暂时无法处理，请稍后再发送一次。');
+            // Never acknowledge a media message before its task is durable.
+            // Download/index retries belong to the independent consumer.
+            if(hasMedia)throw e;
+            reply=friendlyOpenRouterError(e)||'暂时无法处理，请稍后再发送一次。';
           }
         }
         // Save a deterministic response and client ID before sending. Replayed batches
@@ -267,6 +396,8 @@ export class WechatSession {
         const clientId=row?.client_id||crypto.randomUUID();
         await this.env.DB.prepare("UPDATE wechat_messages SET state='processed',reply_text=?,client_id=? WHERE message_id=?")
           .bind(await encryptSecret(this.env,reply.slice(0,1800)),clientId,unique).run();
+        await this.ctx.storage.put('conversationVersion',version);
+        if(clear){await this.ctx.storage.put('conversationEpoch',crypto.randomUUID());await this.ctx.storage.delete('mediaResult')}
         // Persist operational context before transport acknowledgement; replay reuses it.
         if(clear)await this.ctx.storage.delete('conversation');
         else if(thread.selectedBabyId||thread.babyId){

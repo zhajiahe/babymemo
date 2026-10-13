@@ -519,7 +519,7 @@ app.post('/api/settings/wechat/qr/status',async c=>{
         await c.env.DB.prepare('INSERT INTO wechat_connections(id,label,bot_id,user_id,token_cipher,base_url,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,0,?,?)')
           .bind(id,pairing.label,result.botId,result.userId,await encryptSecret(c.env,result.botToken),result.base||pairing.base_url,now(),now()).run();
       }
-      const reset=await workerBot(c.env,id).fetch('https://bot.internal/reset',{method:'POST'});
+      const reset=await workerBot(c.env,id).fetch('https://bot.internal/reset?connectionId='+encodeURIComponent(id),{method:'POST'});
       if(!reset.ok)throw Error('WECHAT_RESET_FAILED');
       await c.env.DB.prepare('DELETE FROM wechat_pairings WHERE id=?').bind(pairing.id).run();
       return c.json({status:'confirmed',connectionId:id});
@@ -563,7 +563,7 @@ app.delete('/api/settings/wechat/connections/:id',async c=>{
   const id=c.req.param('id');
   if(!await getWechatConnection(c.env,id))return fail(c,404,'WECHAT_CONNECTION_NOT_FOUND');
   await c.env.DB.prepare('UPDATE wechat_connections SET enabled=0,updated_at=? WHERE id=?').bind(now(),id).run();
-  const response=await workerBot(c.env,id).fetch('https://bot.internal/reset',{method:'POST'});
+  const response=await workerBot(c.env,id).fetch('https://bot.internal/reset?connectionId='+encodeURIComponent(id),{method:'POST'});
   if(!response.ok)return fail(c,502,'WECHAT_BOT_UPDATE_FAILED');
   await c.env.DB.prepare('DELETE FROM wechat_connections WHERE id=?').bind(id).run();
   return c.json({ok:true});

@@ -1,8 +1,9 @@
 import {useEffect,useState,type FormEvent} from 'react';
 import {Card,Field,Primary} from '../../components/ui';
 import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi} from 'lucide-react';
-import {api,post,today,type BabyInfo,type State} from '../../lib/client';
+import {api,post,today,type BabyInfo,type State,type WechatRunStatus} from '../../lib/client';
 import {DEFAULT_OPENROUTER_MODEL} from '../../openrouter-model.mjs';
+import {wechatStatusView,wechatStatusTime} from '../../wechat-status.mjs';
 
 export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected}:{state:State;baby:BabyInfo;changed:()=>void;notify:(s:string)=>void;onBabyCreated:(id:string)=>void;onBabySelected:(id:string)=>void}){
  const [model,setModel]=useState(state.openrouter.model),[apiKey,setApiKey]=useState(''),[saving,setSaving]=useState(false);
@@ -11,7 +12,21 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  const [name,setName]=useState(baby.name),[birthday,setBirthday]=useState(baby.birthday),[birthTime,setBirthTime]=useState(baby.birth_time||''),[allergies,setAllergies]=useState(baby.allergies);
  const [showNewBaby,setShowNewBaby]=useState(false),[creatingBaby,setCreatingBaby]=useState(false),[createError,setCreateError]=useState('');
  const [newBaby,setNewBaby]=useState({name:'',birthday:'',birthTime:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
- const [qr,setQr]=useState(''),[pairingId,setPairingId]=useState(''),[qrImage,setQrImage]=useState(''),[status,setStatus]=useState(''),[verifyCode,setVerifyCode]=useState(''),[botStatus,setBotStatus]=useState<any>(null);
+ const [qr,setQr]=useState(''),[pairingId,setPairingId]=useState(''),[qrImage,setQrImage]=useState(''),[status,setStatus]=useState(''),[verifyCode,setVerifyCode]=useState('');
+ const [runStatuses,setRunStatuses]=useState<Record<string,WechatRunStatus>>({}),[inspectedMember,setInspectedMember]=useState('');
+ const membersKey=state.wechat.connections.map(x=>x.id+':'+x.enabled+':'+x.updatedAt).join('|');
+ useEffect(()=>{
+  let cancelled=false;let timer:ReturnType<typeof setTimeout>;const controller=new AbortController();
+  async function refresh(){
+   if(document.visibilityState==='hidden'){timer=setTimeout(refresh,10000);return}
+   const entries=await Promise.all(state.wechat.connections.map(async member=>{
+    try{return [member.id,await api<WechatRunStatus>('/api/settings/wechat/connections/'+encodeURIComponent(member.id)+'/status',{signal:controller.signal})] as const}
+    catch{return [member.id,{connectionId:member.id,connected:true,enabled:member.enabled,unavailable:true,lastPoll:null,lastMessage:null,lastError:null}] as const}
+   }));
+   if(cancelled)return;setRunStatuses(Object.fromEntries(entries));timer=setTimeout(refresh,10000);
+  }
+  void refresh();return()=>{cancelled=true;controller.abort();clearTimeout(timer)};
+ },[membersKey]);
  const [memberName,setMemberName]=useState(''),[memberBusy,setMemberBusy]=useState('');
  const [password,setPassword]=useState({currentPassword:'',newPassword:'',confirmPassword:''}),[passwordBusy,setPasswordBusy]=useState(false);
  const [trash,setTrash]=useState<{growth:{id:string;baby_id:string;day:string;deleted_at:string}[];milestones:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[];media:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[]}|null>(null);
@@ -66,9 +81,9 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   catch(e){notify(String(e))}finally{setMemberBusy('')}
  }
  async function removeMember(id:string,label:string){
-  if(memberBusy||!window.confirm('移除“'+label+'”的微信连接？该微信将无法再操作家庭数据，已保存的成长记录和照片不会删除。'))return;
+  if(memberBusy||!window.confirm('移除“'+label+'”的微信连接？尚未完成的微信保存任务会取消，已保存的成长记录和照片不会删除。'))return;
   setMemberBusy(id);
-  try{await api('/api/settings/wechat/connections/'+encodeURIComponent(id),{method:'DELETE'});changed();setBotStatus(null);notify('已移除微信成员：'+label)}
+  try{await api('/api/settings/wechat/connections/'+encodeURIComponent(id),{method:'DELETE'});changed();setInspectedMember('');notify('已移除微信成员：'+label)}
   catch(e){notify(String(e))}finally{setMemberBusy('')}
  }
  async function renameMember(id:string,label:string){
@@ -79,7 +94,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   catch(e){notify(String(e))}finally{setMemberBusy('')}
  }
  async function test(){try{await post('/api/settings/openrouter/test',{});notify('模型连接测试成功')}catch(e){notify(String(e))}}
- async function inspect(id:string){try{setBotStatus({id,...await api('/api/settings/wechat/connections/'+encodeURIComponent(id)+'/status')})}catch(e){notify(String(e))}}
+ async function inspect(id:string){setInspectedMember(id);try{const status=await api<WechatRunStatus>('/api/settings/wechat/connections/'+encodeURIComponent(id)+'/status');setRunStatuses(current=>({...current,[id]:status}))}catch{notify('暂时无法读取微信状态，请稍后重试')}}
  return <div className="settings-grid"><Card><div className="section-title"><h3>宝宝资料</h3><Baby size={20}/></div><div className="settings-baby-switch"><Field label="当前查看的宝宝"><select aria-label="选择宝宝" value={baby.id} onChange={e=>onBabySelected(e.target.value)}>{state.babies.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><p className="muted small">仅在设置中切换宝宝，其他页面自动展示所选宝宝的记录。</p></div><form className="stack" onSubmit={saveBaby}><Field label="宝宝昵称"><input value={name} required onChange={e=>setName(e.target.value)}/></Field><div className="two"><Field label="出生日期"><input type="date" value={birthday} required onChange={e=>setBirthday(e.target.value)}/></Field><Field label="出生时间（可后补）"><input type="time" value={birthTime} onChange={e=>setBirthTime(e.target.value)}/></Field></div><Field label="过敏与注意事项"><textarea rows={3} value={allergies} onChange={e=>setAllergies(e.target.value)}/></Field><Primary>保存资料 <Check size={16}/></Primary></form>
  <div className="baby-create-section"><div className="section-title"><div><h3>家庭成员 · 宝宝</h3><p className="muted small">空间：{state.familyName||'家庭空间'} · 当前家庭有 {state.babies.length} 位宝宝，可切换查看各自的照片与成长记录。</p></div></div>
  {!showNewBaby?<button type="button" className="secondary full" onClick={()=>setShowNewBaby(true)} aria-expanded={false}><Plus size={16}/>新增宝宝</button>:<form className="stack baby-create-form" onSubmit={addBaby}>
@@ -100,16 +115,16 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  <div className="wechat-photo-setting"><div><strong>微信照片/视频 → 自动存入相册</strong><p className="muted small">直接给绑定的微信 Bot 发送照片或视频，不经过 AI 分析。原图或原视频从微信 CDN 解密后分片保存到私有 R2，网页相册自动可见。多宝宝家庭可指定默认归档宝宝，或在图片消息文字中写宝宝名字；每条最多 4 项图片或视频，单文件不超过 50 MiB。</p></div><div className="wechat-photo-controls"><label className="field">默认收图宝宝<select aria-label="微信照片默认宝宝" value={photoBaby} onChange={e=>setPhotoBaby(e.target.value)}><option value="">未选择（多宝宝时需附带名字）</option>{state.babies.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label><button className="secondary" type="button" disabled={photoBabyBusy} onClick={()=>void savePhotoBaby()}>{photoBabyBusy?'保存中…':'保存默认宝宝'}</button></div></div>
  <div className="wechat-row"><div className="wechat-status"><span className={'status-dot '+(state.wechat.enabled?'online':'')}/><strong>已绑定 {state.wechat.connections.length} 位微信成员 · 已启用 {state.wechat.connections.filter(x=>x.enabled).length} 位</strong></div></div>
  <div className="wechat-member-list">
- {state.wechat.connections.map(member=><div key={member.id} className="wechat-member-row">
-  <div className="wechat-member-info"><strong>{member.label}</strong><p className="muted small">{member.enabled?'已启用，可通过微信记录':'已绑定，当前暂停'} · {member.createdAt.slice(0,10)} 绑定</p></div>
+ {state.wechat.connections.map(member=>{const status=runStatuses[member.id];const view=wechatStatusView(status);return <div key={member.id} className="wechat-member-row">
+  <div className="wechat-member-info"><strong>{member.label}</strong><span className={'wechat-run-state '+view.tone} role="status">{view.label}</span><p className="muted small">{view.detail}</p><p className="muted small">最近连接：{wechatStatusTime(status?.lastPoll)} · 最近回复：{wechatStatusTime(status?.lastMessage)}</p></div>
   <div className="wechat-actions"><button type="button" className="secondary" onClick={()=>void inspect(member.id)} disabled={memberBusy===member.id}><RefreshCw size={15}/>状态</button>
    <button type="button" className="secondary" onClick={()=>void renameMember(member.id,member.label)} disabled={!!memberBusy}>改名</button>
    <button type="button" className={member.enabled?'secondary':'primary'} onClick={()=>void toggleBot(member.id,member.enabled?'pause':'start')} disabled={!!memberBusy}>{member.enabled?<><WifiOff size={15}/>暂停</>:<><Wifi size={15}/>启用</>}</button>
    <button type="button" className="text-btn" onClick={()=>void removeMember(member.id,member.label)} disabled={!!memberBusy}>移除</button>
-  </div></div>)}
+  </div></div>})}
  {!state.wechat.connections.length&&<p className="muted small">尚未连接微信。家庭成员分别扫描自己的二维码即可加入同一个家庭空间。</p>}
  </div>
- {botStatus&&<div className="wechat-member-status"><strong>连接运行状态 · {state.wechat.connections.find(x=>x.id===botStatus.id)?.label||''}</strong><pre className="status-json">{JSON.stringify(botStatus,null,2)}</pre></div>}
+ {inspectedMember&&runStatuses[inspectedMember]&&<div className="wechat-member-status"><strong>运行详情 · {state.wechat.connections.find(x=>x.id===inspectedMember)?.label||''}</strong><p>{wechatStatusView(runStatuses[inspectedMember]).detail}</p><dl className="wechat-status-details"><div><dt>待保存消息</dt><dd>{runStatuses[inspectedMember].media?.pending||0} 条</dd></div><div><dt>最近保存完成</dt><dd>{wechatStatusTime(runStatuses[inspectedMember].media?.lastCompleted)}</dd></div></dl></div>}
  <div className="wechat-add"><Field label="新增微信成员 · 称呼"><input maxLength={40} value={memberName} onChange={e=>setMemberName(e.target.value)} placeholder="例如：爸爸、妈妈、外婆"/></Field>
   <button type="button" className="secondary" onClick={()=>void pair()} disabled={!memberName.trim()}><MessageCircle size={16}/>扫码添加成员</button></div>
  {qrImage&&<div className="qr-panel"><img src={qrImage} alt="微信扫码绑定二维码"/><strong>请让“{memberName}”本人用微信扫描二维码</strong><span>扫码后在手机确认绑定；二维码属于敏感凭据，请勿分享。有效期约 10 分钟。</span><p className="small">状态：{status}</p>{status==='need_verifycode'&&<Field label="微信显示的验证码"><input value={verifyCode} onChange={e=>setVerifyCode(e.target.value)}/></Field>}</div>}
