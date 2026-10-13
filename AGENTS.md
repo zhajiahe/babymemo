@@ -22,7 +22,7 @@ BabyMemo 是小型、隐私优先的家庭成长记录服务。核心体验是�
 | 初始化 / 登录 | `src/auth.ts`、`src/worker.ts`、`docs/DEPLOY.md` |
 | D1 / 成长记录 | `migrations/`、`src/worker.ts`、`src/types.ts` |
 | 相册上传 / 视频 | `src/features/album/Album.tsx`、`src/media-upload.ts`、`src/worker.ts` 的 `/api/upload/*`、`/api/media/*` 与 R2 binding |
-| 微信操作 Harness | `src/wechat-harness.mjs` 工具白名单与 D1 执行、`src/wechat.ts` 绑定/路由/轮询、`src/worker.ts` 配置 API |
+| 微信操作 Harness | `src/wechat-harness.mjs` 工具白名单与 D1 执行、`src/wechat.ts` 绑定/路由/轮询、`src/worker.ts` 配置 API；未来改造先看 `docs/wechat-harness-review.md` 和 `docs/wechat-harness-test-plan.md` |
 | 部署 / Cloudflare | `docs/agent-deploy.md`、`docs/github-action-deploy.md`、`.github/workflows/deploy.yml`、`wrangler.jsonc` |
 | 新旧系统迁移 | `docs/MIGRATION.md`；只做规划和核验，除非另获明确执行授权 |
 
