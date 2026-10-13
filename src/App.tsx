@@ -35,16 +35,15 @@ function Gate({onReady}:{onReady:()=>void}){
  </form>}
  {mode==='setup'&&<div className="setup-guide"><strong>部署检查 · 2 个必需 Secret</strong><p>仅需 <code>SESSION_SECRET</code> 和 <code>DATA_KEY</code>。每个密钥分别用 <code>openssl rand -hex 32</code> 生成，再通过 GitHub Actions 同步或在 Cloudflare Worker 设置中配置。</p><p>配置完成后刷新页面，两项检查通过即可设置家庭管理员和密码；已存在的账号不会被重置。</p><a href="https://github.com/zhajiahe/babymemo/blob/main/docs/DEPLOY.md" target="_blank" rel="noreferrer">查看部署指南 ↗</a></div>}</div></div></div>;
 }
-function Nav({active,setActive,logout}:{active:Tab;setActive:(t:Tab)=>void;logout:()=>void}){
+function Nav({active,setActive,logout,familyName}:{active:Tab;setActive:(t:Tab)=>void;logout:()=>void;familyName:string}){
  const sections:[Tab,string,ReactNode][]=[['overview','首页',<Baby size={19}/>],['album','相册',<Camera size={19}/>],['growth','成长',<TrendingUp size={19}/>],['moments','瞬间',<BookHeart size={19}/>],['settings','设置',<Settings2 size={19}/>]];
- return <><aside className="sidebar"><Logo/><div className="side-label">家庭记录</div><nav>{sections.map(([tab,label,icon])=><button className={'nav-link '+(tab===active?'active':'')} key={tab} type="button" aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)}>{icon}{label}{tab===active&&<span className="active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16}/> 私密家庭空间</div><button className="nav-link" onClick={logout}><LogOut size={18}/> 安全退出</button></div></aside><nav className="mobile-nav">{sections.filter(([tab])=>tab!=='moments').map(([tab,label,icon])=><button key={tab} type="button" aria-label={label} aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)} className={tab===active?'active':''}>{icon}<span>{label}</span></button>)}</nav></>;
+ return <><aside className="sidebar"><Logo/><div className="side-label side-space-name" title={familyName}>{familyName}</div><nav>{sections.map(([tab,label,icon])=><button className={'nav-link '+(tab===active?'active':'')} key={tab} type="button" aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)}>{icon}{label}{tab===active&&<span className="active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16}/> 私密家庭空间</div><button className="nav-link" onClick={logout}><LogOut size={18}/> 安全退出</button></div></aside><nav className="mobile-nav">{sections.filter(([tab])=>tab!=='moments').map(([tab,label,icon])=><button key={tab} type="button" aria-label={label} aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)} className={tab===active?'active':''}>{icon}<span>{label}</span></button>)}</nav></>;
 }
 export default function App(){
  const [mode,setMode]=useState<'loading'|'gate'|'app'|'unavailable'>('loading');
  const [state,setState]=useState<State|null>(null),[active,setActive]=useState<Tab>('overview'),[babyId,setBabyId]=useState(''),[toast,setToast]=useState('');
  const [records,setRecords]=useState<RecordItem[]>([]),[milestones,setMilestones]=useState<RecordItem[]>([]),[media,setMedia]=useState<MediaItem[]>([]);
  const [growthHistory,setGrowthHistory]=useState<RecordItem[]>([]),[historyLimited,setHistoryLimited]=useState(false);
- const [favoriteOnly,setFavoriteOnly]=useState(false);
  const [growthPage,setGrowthPage]=useState(0),[momentPage,setMomentPage]=useState(0),[albumPage,setAlbumPage]=useState(0);
  const [hasMore,setHasMore]=useState({growth:false,moments:false,album:false});
  const [busy,setBusy]=useState(false);
@@ -75,13 +74,20 @@ export default function App(){
     .then(r=>{if(!cancelled){setGrowthHistory(r.items);setHistoryLimited(r.limited)}}));
   }
   if(active==='overview'||active==='album'){
-   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+(active==='overview'?0:albumPage)+(active==='album'&&favoriteOnly?'&favorite=1':''))
+   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+(active==='overview'?0:albumPage))
     .then(r=>{if(!cancelled){setMedia(r.items);setHasMore(p=>({...p,album:r.hasMore}))}}));
   }
   void Promise.all(loads).catch(e=>{if(!cancelled)setToast(e instanceof Error?e.message:'数据读取失败')});
   return ()=>{cancelled=true};
- },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media,favoriteOnly]);
+ },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media]);
  function changed(){void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
+ function selectBaby(id:string){
+  if(!state?.babies.some(item=>item.id===id)||id===babyId)return;
+  setBabyId(id);
+  setMedia([]);setRecords([]);setMilestones([]);setGrowthHistory([]);setHistoryLimited(false);
+  setHasMore({growth:false,moments:false,album:false});
+  setGrowthPage(0);setMomentPage(0);setAlbumPage(0);
+ }
  async function logout(){
     try{
       await post('/api/logout',{});
@@ -93,12 +99,12 @@ export default function App(){
  if(mode==='unavailable')return <div className="loading-screen"><Logo/><p>暂时无法连接家庭空间，已保留你的会话。</p><button className="secondary" onClick={()=>void refresh()}><RefreshCw size={16}/>重新连接</button></div>;
  if(!state||!baby)return <div className="loading-screen">家庭空间中暂无宝宝档案</div>;
  const titles:Record<Tab,string>={overview:'成长日记',growth:'成长记录',moments:'成长瞬间',album:'相册',settings:'设置'};
- return <div className="app"><Nav active={active} setActive={setActive} logout={logout}/><main className="workspace"><div className="topbar"><div className="crumb">{state.familyName||'家庭空间'} <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
+ return <div className="app"><Nav active={active} setActive={setActive} logout={logout} familyName={state.familyName||"家庭空间"}/><main className="workspace"><div className="topbar"><div className="crumb"><span className="space-name" aria-label="家庭空间名称" title={state.familyName||'家庭空间'}>{state.familyName||'家庭空间'}</span> <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
  <div className="page"><header className={"page-heading"+(active==="album"?" page-heading-album":"")}><div><h1>{active==='overview'?baby.name:titles[active]}</h1>
  <p className="muted">{active==='overview'
  ? ageLabel(baby.birthday,baby.birth_time,baby.time_zone)+' · 成长日记'
  : active==='album'?'照片与视频':baby.name+' · '+ageLabel(baby.birthday,baby.birth_time,baby.time_zone)}</p>
- </div><div className="baby-pill"><select aria-label="选择宝宝" value={baby.id} onChange={e=>{setBabyId(e.target.value);setMedia([]);setRecords([]);setMilestones([]);setGrowthHistory([]);setGrowthPage(0);setMomentPage(0);setAlbumPage(0)}}>{state.babies.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></div></header>
+ </div></header>
  {active==='overview'&&<div className="home-feed">
   <section className="home-memories" aria-label="最近照片">
    <div className="section-title home-section-title"><h2>最近的照片</h2><button type="button" className="text-btn" onClick={()=>setActive('album')}>查看相册 <ChevronRight size={16}/></button></div>
@@ -118,8 +124,8 @@ export default function App(){
  </div>}
  {active==='growth'&&<RecordView key={'growth-'+baby.id} baby={baby} kind="growth" items={records} history={growthHistory} historyLimited={historyLimited} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage}/>}
  {active==='moments'&&<RecordView key={'milestones-'+baby.id} baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage}/>}
- {active==='album'&&<Album key={baby.id} baby={baby} media={media} favoriteOnly={favoriteOnly} onFavoriteOnly={v=>{setFavoriteOnly(v);setAlbumPage(0)}} favoriteUpdated={(id,favorite)=>setMedia(items=>items.map(item=>item.id===id?{...item,favorite:favorite?1:0}:item))} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
- {active==='settings'&&<Settings key={baby.id} state={state} baby={baby} changed={changed} notify={setToast} onBabyCreated={id=>{setBabyId(id);setActive('overview');setGrowthPage(0);setMomentPage(0);setAlbumPage(0)}}/>}
+ {active==='album'&&<Album key={baby.id} baby={baby} media={media} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
+ {active==='settings'&&<Settings key={baby.id} state={state} baby={baby} changed={changed} notify={setToast} onBabySelected={selectBaby} onBabyCreated={id=>{selectBaby(id);setActive('overview')}}/>}
  
  </div></main>{toast&&<Notice text={toast} onClose={()=>setToast('')}/>}</div>;
 }
