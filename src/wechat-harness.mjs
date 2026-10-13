@@ -254,14 +254,19 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
     const opId=crypto.randomUUID();opIds.push(opId);
     statements.push(env.DB.prepare('UPDATE media SET day=? WHERE id=? AND baby_id=? AND deleted_at IS NULL AND day=?')
       .bind(args.newDay,id,baby.id,previous.day));
-    statements.push(env.DB.prepare('INSERT OR IGNORE INTO wechat_operation_log(id,source_message_id,baby_id,kind,record_id,action,before_json,after_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+    statements.push(env.DB.prepare('INSERT OR IGNORE INTO wechat_operation_log(id,source_message_id,baby_id,kind,record_id,action,before_json,after_json,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE changes()>0')
       .bind(opId,messageId+':media:'+i,baby.id,'media',id,'update_recent_media',
        JSON.stringify(operationSnapshot('media',previous)),JSON.stringify(snapshotChanges('media',previous,{day:args.newDay})),new Date().toISOString()));
    }
    const results=await env.DB.batch(statements);
-   if(results.some((r,i)=>i%2===0&&r.meta?.changes!==1))throw Error('部分照片已变化，请重新查询');
-   if(options.thread)options.thread.lastOperation={babyId:baby.id,opIds,expiresAt:at+1200000};
-   return '已更新最近 '+opIds.length+' 项照片或视频的日期。';
+   const changed=results.reduce((n,r,i)=>n+(i%2===0?(r.meta?.changes||0):0),0),committed=[];
+   for(let i=0;i<Math.min(4,batch.ids.length);i++){
+    const log=await env.DB.prepare('SELECT id FROM wechat_operation_log WHERE source_message_id=? AND baby_id=? LIMIT 1')
+      .bind(messageId+':media:'+i,baby.id).first();
+    if(log)committed.push(log.id);
+   }
+   if(options.thread&&committed.length)options.thread.lastOperation={babyId:baby.id,opIds:committed,expiresAt:at+1200000};
+   return '已更新最近 '+changed+'/'+opIds.length+' 项照片或视频日期。'+(changed<opIds.length?'部分记录同时发生变更，请重新查询核对。':'');
   }
   if(action==='restore_trash'){
    if(!/恢复|还原|找回/.test(originalText))return '请明确说“恢复”并指定记录编号';
