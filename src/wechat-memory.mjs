@@ -24,8 +24,8 @@ export function appendTurn(thread,user,reply,babyId,now=Date.now()){
    lastMedia:thread.lastMedia||null,lastOperation:thread.lastOperation||null};
 }
 export function isClearContext(text){return /^(清除(?:会话|上下文|记忆)|忘记(?:刚才|上下文)|重置(?:对话|会话)|新话题)[。!！]?$/i.test(text.trim())}
-export function recordQuery(thread,babyId,kind,ids,now=Date.now()){
- thread.lastQuery={babyId,kind,ids:ids.filter(x=>typeof x==='string'&&/^[0-9a-f-]{8,36}$/i.test(x)).slice(0,10),expiresAt:now+CONTEXT_TTL_MS};
+export function recordQuery(thread,babyId,kind,ids,now=Date.now(),sourceMessageId=''){
+ thread.lastQuery={babyId,kind,sourceMessageId,ids:ids.filter(x=>typeof x==='string'&&/^[0-9a-f-]{8,36}$/i.test(x)).slice(0,10),expiresAt:now+CONTEXT_TTL_MS};
 }
 export function setPending(thread,babyId,action,text,args={},now=Date.now()){
  thread.pending={babyId,action,text:bounded(text,650),args:copy(args)||{},expiresAt:now+CONTEXT_TTL_MS};

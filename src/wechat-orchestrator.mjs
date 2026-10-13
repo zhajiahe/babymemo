@@ -28,7 +28,7 @@ function pendingActionFromText(text){
  if(/(?:记录|记一下|记下|记个).{0,12}(?:里程碑|成长瞬间|成长事件)/.test(text))return 'create_milestone';
  return null;
 }
-export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=text,at=Date.now(),thread=null,encryptReply=async x=>x,decryptReply=async x=>x}){
+export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=text,at=Date.now(),thread=null,stepOffset=0,encryptReply=async x=>x,decryptReply=async x=>x}){
  if(!Array.isArray(calls)||!calls.length)return '没有需要执行的工具';
  if(calls.length>4)return '一次最多处理 4 项操作，请分开发送';
  const names=new Set(wechatTools.map(t=>t.function.name)),results=[];
@@ -36,7 +36,7 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   const call=calls[i];
   if(call?.type!=='function'||!names.has(call.function?.name)||typeof call.function.arguments!=='string')
    return [...results,'出现不受支持的工具操作，剩余操作未执行。'].join('\n');
-  const action=call.function.name,kind=KINDS[action]||null,sourceId=messageId+':step:'+i;
+  const action=call.function.name,kind=KINDS[action]||null,sourceId=messageId+':step:'+(stepOffset+i);
   let args;try{args=JSON.parse(call.function.arguments)}catch{return [...results,'模型参数不是合法 JSON，后续操作未执行。'].join('\n')}
   if(!args||typeof args!=='object'||Array.isArray(args))return [...results,'模型参数格式不正确，后续操作未执行。'].join('\n');
   // Claims and results are always scoped by the server-selected baby, not a model babyId.
@@ -56,8 +56,16 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
     continue;
    }
   }
+  // A query executed during THIS message can authorize its returned record ID.
+  // Prior conversation IDs require an explicit server-resolved reference in the
+  // grounded text (e.g. "第一条"). The model cannot invent an ID.
+  const previousQuery=thread?.lastQuery;
+  const verifiedQueryId=typeof args.id==='string'&&previousQuery?.sourceMessageId===messageId&&
+   previousQuery.babyId===baby.id&&previousQuery.kind===kind&&
+   Array.isArray(previousQuery.ids)&&previousQuery.ids.some(id=>id===args.id||id.startsWith(args.id));
+  const toolText=verifiedQueryId?groundedText+' 记录编号 '+args.id:groundedText;
   if(MUTATING_ACTIONS.has(action)){
-   const denied=guardAction(action,args,groundedText,baby,at);
+   const denied=guardAction(action,args,toolText,baby,at);
    if(denied){results.push(denied);break}
   }
   // A preceding query does not authorise writing to another baby or another type.
@@ -74,7 +82,7 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
      ['weight','height','headCircumference'].some(k=>args[k]!==undefined));
    if(recent){results.push('最近五分钟已有相同测量，可能重复。确实重新测量请说“再记一次”，目前未新增。');break}
   }
-  const reply=await runWechatTool(env,baby,action,args,sourceId,groundedText,{thread,at});
+  const reply=await runWechatTool(env,baby,action,args,sourceId,toolText,{thread,at});
   results.push(reply);
   const success=MUTATION_OK.test(reply);
   if(MUTATING_ACTIONS.has(action)&&!success){
@@ -84,7 +92,7 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   }
   if(action==='list_growth'||action==='list_milestones'||action==='list_media'||action==='search_records'){
    const qkind=action==='search_records'?args.kind:kind;
-   if(thread&&qkind)recordQuery(thread,baby.id,qkind,idFromReply(reply),at);
+   if(thread&&qkind)recordQuery(thread,baby.id,qkind,idFromReply(reply),at,messageId);
   }
   if(success&&kind&&thread){
    const after=action.startsWith('create_')?await createdBySource(env,kind,baby.id,sourceId):

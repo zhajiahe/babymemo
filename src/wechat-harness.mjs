@@ -5,9 +5,10 @@ const day={type:'string',description:'真实公历日期 YYYY-MM-DD'};
 const number=(unit,max)=>({type:'number',description:unit+'（必须是用户明确给出的数值）',exclusiveMinimum:0,maximum:max});
 const selector={id:{type:'string',description:'查询结果中的记录编号，至少前 8 位'},day:{type:'string',description:'唯一匹配记录的日期 YYYY-MM-DD；同日多条时需要记录编号'}};
 const tool=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
-import {guardAction,validDay,explicitDay} from './wechat-policy.mjs';
+import {guardAction,validDay,explicitDay,dayInZone} from './wechat-policy.mjs';
 import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
 export const wechatTools=[
+ tool('get_runtime_context','读取消息发出时的可信时间、宝宝时区和目标宝宝；只有需要消歧时才调用'),
  tool('list_babies','列出这个家庭已经创建的宝宝'),
  tool('get_baby','读取当前宝宝的生日、昵称、过敏等档案'),
  tool('update_baby','修改宝宝档案，只根据用户明确说出的字段修改',{name:str,allergies:str,notes:str,birthday:day,birthTime:{type:'string',description:'出生时间 HH:mm'}}),
@@ -120,6 +121,13 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
  const at=options.at||Date.now();
  try{
   if(!args||typeof args!=='object'||Array.isArray(args))return '指令参数不正确，请换一种说法';
+  if(action==='get_runtime_context'){
+   const zone=baby?.time_zone||'Asia/Shanghai';
+   const parts=new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(at));
+   return JSON.stringify({currentTimestamp:new Date().toISOString(),messageTimestamp:new Date(at).toISOString(),
+    messageLocalDay:dayInZone(at,zone),localDay:dayInZone(Date.now(),zone),
+    messageLocalTime:parts,timeZone:zone,targetBaby:baby?.name||null});
+  }
   if(action==='list_babies'){
    const r=await env.DB.prepare('SELECT name,birthday FROM babies ORDER BY created_at LIMIT 30').all();
    return '家庭宝宝：\n'+r.results.map(x=>x.name+'（'+x.birthday+'）').join('\n');

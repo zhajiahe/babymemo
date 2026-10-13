@@ -2,7 +2,15 @@
 
 本文件记录的是**自动化覆盖范围和边界**，不是生产环境验收证明。测试必须使用隔离数据，不使用用户照片、真实微信凭据或线上 D1/R2。
 
-## 微信 Harness 新场景测试（设计中）
+## 微信 ReAct 升级测试（PR #37）
+
+- **新增 Node 纯离线** `scripts/wechat-agent-loop.test.mjs`：实际 role=tool 观察回传、多轮决定、稳定 step 索引、先 journal 再执行、重放、预算、部分成功、非法工具拒绝。
+- **新增本地真实 D1/Worker** `scripts/wechat-worker-e2e.mjs`：模拟 OpenRouter 连续响应，查询真实记录 ID 后修改、`10.1号` 日期回归、可信时间工具、同 ID 重试只落库一次。
+- **新增迁移** `0015_wechat_agent_rounds.sql`：只增表，不改变旧数据。新决策日志采用 DATA_KEY 加密。
+- **尚未涵盖** 真 OpenRouter 多轮一致性、真实微信双账号收发、生产 D1/R2 的宕机一致性和收费模型成本。
+- 覆盖详情见 [R-001～R-014 矩阵](wechat-harness-test-plan.md)；测试代码存在不等于 CI 已通过或生产完成部署。
+
+## 历史 Harness 新场景测试计划（T-001～T-024）
 
 新增的真实场景问题编号 H-01～H-22、待实现的自动化案例 T-001～T-024，分别见 [微信 Harness 场景审查](wechat-harness-review.md) 与 [Harness 自动化测试计划](wechat-harness-test-plan.md)。部分场景已经实现，详见 [Harness 实施对照](wechat-harness-implementation.md)。**原规划的 T-001～T-024 不等于全部已有独立断言或已经通过；应以实际测试名称和 CI 结果为准。** 当前已有的单元测试与模拟 E2E 覆盖范围仍以本文件下文为准。
 

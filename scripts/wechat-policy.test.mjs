@@ -20,6 +20,16 @@ test('negative, hypothetical or conditional commands have zero mutation permissi
  }
  assert.equal(guardAction('delete_growth',{day:'2026-10-12'},'删除昨天的体重记录',baby,at),null);
 });
+test('colloquial dotted date is accepted without misreading a weight as a date',()=>{
+ const at=Date.parse('2026-10-13T11:03:00+08:00'),tz='Asia/Shanghai';
+ assert.equal(explicitDay('10.1号测试宝宝大概13.7kg',at,tz),'2026-10-01');
+ assert.equal(explicitDay('10/1号测试宝宝约13.7kg',at,tz),'2026-10-01');
+ assert.equal(explicitDay('测试宝宝大概13.7kg',at,tz),null);
+ assert.equal(explicitDay('13.7kg',at,tz),null);
+ assert.equal(explicitDay('2.30号称重',at,tz),null);
+ assert.equal(guardAction('create_growth',{day:'2026-10-01',weight:13.7},'10.1号测试宝宝大概13.7kg',{time_zone:tz},at),null);
+ assert.ok(guardAction('create_growth',{day:'2026-10-02',weight:13.7},'10.1号测试宝宝大概13.7kg',{time_zone:tz},at));
+});
 test('model cannot invent a numeric value, unit, record ID or date',()=>{
  assert.equal(measurementGrounded({weight:10.5},'今天体重 10.5kg'),true);
  assert.equal(measurementGrounded({weight:10},'今天体重 20斤'),true);

@@ -1,5 +1,6 @@
 import {handleWechatCommand,handleWechatPhotoMessage,WechatSession} from '../../src/wechat';
 import {encryptSecret,decryptSecret,setSetting} from '../../src/crypto';
+import {getActiveThread} from '../../src/wechat-memory.mjs';
 import {createCipheriv,createDecipheriv,createHash} from 'node:crypto';
 import {Buffer} from 'node:buffer';
 const baby={id:'synthetic-baby',name:'测试宝宝',birthday:'2024-01-01',time_zone:'Asia/Shanghai'};
@@ -14,10 +15,10 @@ export default {async fetch(request:Request,env:any){
   try{const iv=input.emptyIV?Buffer.alloc(0):null;const cipher=createCipheriv('aes-128-ecb',key,iv);const b=Buffer.concat([cipher.update(jpeg),cipher.final()]);const d=createDecipheriv('aes-128-ecb',key,iv);const back=Buffer.concat([d.update(b),d.final()]);return Response.json({ok:back.equals(Buffer.from(jpeg)),sha:createHash('sha256').update(back).digest('hex')})}catch(e:any){return Response.json({ok:false,error:e.message})}
  }
  await env.DB.prepare('INSERT OR IGNORE INTO babies(id,name,birthday,gender,time_zone,created_at) VALUES(?,?,?,?,?,?)').bind(baby.id,baby.name,baby.birthday,'girl',baby.time_zone,new Date().toISOString()).run();
- let models=0,downloads=0;const sent:any[]=[];
+ let models=0,downloads=0;const sent:any[]=[],modelMessages:any[]=[];
  globalThis.fetch=async(url:any,init:any)=>{
   const u=String(url);
-  if(u.startsWith('https://openrouter.ai/')){models++;return Response.json(input.responses?.[models-1]||{choices:[{message:{tool_calls:[]}}]})}
+  if(u.startsWith('https://openrouter.ai/')){models++;modelMessages.push(JSON.parse(init.body).messages);return Response.json(input.responses?.[models-1]||{choices:[{message:{tool_calls:[]}}]})}
   if(u.startsWith('https://novac2c.cdn.weixin.qq.com/')){downloads++;if(new URL(u).pathname!=='/c2c/download'||input.cdnStatus)return new Response('',{status:input.cdnStatus||502});const bytes=input.encryptedBase64?Buffer.from(input.encryptedBase64,'base64'):Uint8Array.from(input.encrypted||[]);return new Response(new ReadableStream({start(controller){for(let offset=0;offset<bytes.length;offset+=32768)controller.enqueue(bytes.subarray(offset,offset+32768));controller.close()}}))}
   if(u.includes('/ilink/bot/getupdates')){
    const auth=init?.headers?.Authorization;
@@ -30,7 +31,7 @@ export default {async fetch(request:Request,env:any){
  try{
   let reply='',status:any=null;
   if(input.failIndexOnce){const db=env.DB;let failed=false;env.DB={prepare(sql:string){const statement=db.prepare(sql);return new Proxy(statement,{get(target,key){if(key==='bind')return (...values:any[])=>{const bound=target.bind(...values);return new Proxy(bound,{get(t,k){if(k==='run')return async()=>{if(!failed&&sql.startsWith('INSERT OR IGNORE INTO media')){failed=true;throw Error('SYNTHETIC_D1_FAILURE')}return t.run()};const value=(t as any)[k];return typeof value==='function'?value.bind(t):value}})};const value=(target as any)[key];return typeof value==='function'?value.bind(target):value}})}}}
-  if(input.mode==='text')reply=await handleWechatCommand(env,input.text,input.id,null,at);
+  if(input.mode==='text')reply=await handleWechatCommand(env,input.text,input.id,getActiveThread(null,'synthetic-bot','synthetic-user',at),at);
   else if(input.mode==='media')reply=await handleWechatPhotoMessage(env,input.raw,input.id);
   else if(input.mode==='multi'){
    const rows=[
@@ -68,7 +69,8 @@ export default {async fetch(request:Request,env:any){
   const growth=await env.DB.prepare('SELECT id,baby_id,day,weight,height,source_message_id FROM growth_records').all();
   const media=await env.DB.prepare('SELECT id,baby_id,size,mime,source_message_id FROM media').all();
   const messages=await env.DB.prepare('SELECT message_id,state,photo_attempts FROM wechat_messages').all();
+  const rounds=input.id?await env.DB.prepare('SELECT round_index FROM wechat_agent_rounds WHERE message_id=? ORDER BY round_index').bind(input.id).all():{results:[]};
   let originalMatches=null;if(media.results.length){const row=media.results.at(-1);const obj=await env.MEDIA.get('private/'+row.baby_id+'/'+row.id);if(obj){const bytes=Buffer.from(await obj.arrayBuffer());originalMatches=input.expectedSHA256?createHash('sha256').update(bytes).digest('hex')===input.expectedSHA256:bytes.equals(Buffer.from(input.expectedPlain||jpeg));}}
-  return Response.json({reply,models,downloads,sent:sent.length,sentTo:sent.map(x=>x.msg.to_user_id),clientIds:sent.map(x=>x.msg.client_id),status,growth:growth.results,media:media.results,messages:messages.results,originalMatches});
+  return Response.json({reply,models,modelMessages,rounds:rounds.results,downloads,sent:sent.length,sentTo:sent.map(x=>x.msg.to_user_id),clientIds:sent.map(x=>x.msg.client_id),status,growth:growth.results,media:media.results,messages:messages.results,originalMatches});
  }catch(e:any){return Response.json({error:e.message,models})}finally{globalThis.fetch=actualFetch}
 }};

@@ -1,36 +1,121 @@
-# BabyMemo 微信 Harness：实施进度与测试边界
+# BabyMemo 微信 Harness：ReAct 架构与实施边界
 
-本文件描述当前 PR 分支的代码改动，不代表 main 已部署。原始问题见 [场景审查](wechat-harness-review.md)，详尽的用例设计见 [自动化测试方案](wechat-harness-test-plan.md)。
+> 本文描述 `feat/wechat-react-loop` PR 中的代码设计与待验证项目。**合并且生产部署前不代表已上线。** 历史场景见 [场景审查](wechat-harness-review.md)，可执行证据见 [测试计划](wechat-harness-test-plan.md) 和 [QA 矩阵](qa-regression-matrix.md)。
 
-## 已实现的能力
+## 一、架构决策（ADR-001，2026-10-13）
 
-| 阶段 | 主要实现 | 文件 |
-| --- | --- | --- |
-| S0 基础设施 | 日期/单位/否定策略单测、结构化记忆和多步骤模拟、离线手动长测 | src/wechat-policy.mjs、src/wechat-memory.mjs、scripts/wechat-policy.test.mjs、scripts/harness-deep-e2e.mjs |
-| S1 正确性 | 防止否定命令误写、日期和测量单位来源校验、宝宝上下文和默认收图冲突拒绝、五分钟同值重复检测、过敏信息追加 | src/wechat-policy.mjs、src/wechat-orchestrator.mjs、src/wechat.ts |
-| S2 会话 | pending task、服务端查询结果 ID、最近照片批次、最近操作、取消、跨宝宝引用失效 | src/wechat-memory.mjs、src/wechat.ts |
-| S3 多步与审计 | 一条消息最多四个工具调用、步骤级持久化回复、操作日志、条件撤销、照片与里程碑关联、编辑/删除/恢复事务审计 | src/wechat-orchestrator.mjs、src/wechat-operations.mjs、migrations/0013_wechat_harness.sql |
-| S4 查询 | 日期区间、关键词检索、成长测量趋势汇总、限制查询结果数；单消息最多两个并行加密媒体上传流，处理耗时统计 | src/wechat-harness.mjs |
+**决定**：继续使用 Cloudflare Workers + iLink Durable Object + D1/R2 + OpenRouter，并在应用内加入小型、多轮、有界的 ReAct 调度层。暂不引入 `pi-agent-core` 运行时依赖，也不引入规范化自然语言解析器、独立 VPS、通用聊天或代码执行工具。
 
-## 自动化与手动触发
+原因：
 
-- PR/main 快速 CI：Node 单测、独立本地 Worker、Chromium、Linux WebKit；不接触真实 OpenRouter、iLink、生产 D1/R2。
-- 长时间离线专项：GitHub Actions 的 Manual Harness Deep E2E 选择 offline，或本机运行 npm run test:harness:deep；至少 240 组合成场景。不会自动触发。
-- 真实模型专项：同一个手动工作流选择 live，或本机设置明确确认环境变量后运行 npm run test:harness:live；只发送虚构中文案例，可能计费，默认不运行。
-- 现有 Manual OpenRouter Live E2E 保持 workflow_dispatch only。真实微信私聊、真 iPhone、生产恢复演练不自动化执行。
+1. 现有微信通道已经实现账号独立轮询、受信任的消息归属、D1 消息去重、媒体重试、审计、条件撤销和 20 分钟短期上下文。迁入另一种 Agent 运行时将改变这些生产边界。
+2. `pi-agent-core` 的核心价值是模型调用、工具观察反馈、事件/状态和回合循环。BabyMemo 现阶段需要的是**有限的请求内闭环**，可用不到百行的独立核心实现。
+3. Cloudflare 官方已提供基于 Pi Durable 的 `PiHarness` 集成，但截至 2026-10-13 仍处于 Beta；其持久会话方案涉及 `agents`、`@earendil-works/pi-durable`、SQLite-backed DO 及生命周期的运维决策，不应在没有真实兼容性测试的情况下替换现有消息处理。
+4. OpenRouter 当前默认模型需要实际验证多轮 `tool_call_id`、`role:tool` 的契约与延迟；不能仅凭本地 Mock 声称线上模型具备完整能力。
 
-## 未完成或需要人工验证
+### 框架选型比较
 
-1. 每条微信消息内媒体最多两个并行流，但 Durable Object 的外层轮询消息仍串行处理，大视频可能阻塞后续文字消息。**本 PR 未实现独立持久媒体消费队列**，避免直接并行带来乱序、重复回复和数据丢失。
-2. 多工具步骤逐步持久化，并非跨 D1 和 R2 的全局原子事务。后续步骤失败需告知已完成内容；不能保证自动回滚。
-3. 同一消息的创建依赖 source_message_id 幂等。不同消息的相同测量仅有限时短窗去重，不应禁止正常的一天多次测量。
-4. 审计与撤销对编辑、软删除和恢复通过 D1 batch 执行条件写入；业务级的宕机与重放、审计竞态、跨客户端更改需要再做完整的本地 iLink/Worker 故障注入。
-5. 日期词法校验、数值来源规则无法对所有中文混合表达给出形式化正确性保证。实际 OpenRouter 模型可否稳定返回多个 tool_calls 尚未通过手动模型测试。
-6. 微信 iLink 是第三方协议；真实照片/视频、真机 HEIC/HEVC、移动网络和模型隐私政策均需人工审查。
-7. D1 LIKE/日期检索只是结构化查找，不是语义向量检索。成长汇总最多读取 500 条有界测量。
+| 方案 | 当前的优势 | 当前不足/迁移成本 | 本轮结论 |
+| --- | --- | --- | --- |
+| 现有 OpenRouter + 独立 ReAct 核心 | 完全复用 D1/DO/iLink、已测的本地协议；模型仍可在网页配置 | 需要维护有界循环、日志与工具契约；不支持复杂的中断续跑 | **选择** |
+| [pi-agent-core](https://www.npmjs.com/package/@mariozechner/pi-agent-core) | 已有成熟模型/工具事件循环和自定义流适配 | 需要验证适配当前 OpenRouter REST/provider、Worker 打包、预算与存储接口 | 候选 PoC |
+| [Cloudflare Pi Harness](https://developers.cloudflare.com/agents/harnesses/pi/) + Pi Durable | DO SQLite 持久事件和崩溃唤醒、长时会话运行时 | 当前 Beta，涉及 agents + Pi Durable 生命周期迁移；不是只增加一个 npm 依赖 | 长任务阶段评估 |
 
-## 发布前要求
+框架以**生产必要性**而非 feature 数量决策。PoC 必须用同一份离线 R 系列安全测试和至少 20 条人工合成真实模型样本对照，一次完成率、误写次数、p95 延迟、工具调用次数、冷启动与每请求成本都有数据之后才考虑切换。仓库不引入未验证的实验性运行时。
 
-必须先通过四组自动 CI，随后主动执行 manual offline 深测和指定真实模型的 live 合成回归。生产发布涉及新增 0013 增量迁移：务必先完成 D1/R2 备份和部署审查，不重建资源、不轮换 SESSION_SECRET 或 DATA_KEY。真实微信与 iPhone 测试结果需单独记录，不能用模拟通过替代。
+**重新评估 pi-agent-core 的触发条件**：需要队列内后台长任务、跨重启续跑、steering/follow-up、流式事件或复杂工具插件生态时，专门做对照 PoC。要求证明 Cloudflare Worker/DO 兼容、OpenRouter 动态模型可选、不会破坏用户数据迁移、双账号隔离、幂等与成本预算。不能只比较 Demo。
 
-新增方案测试 T-001～T-024 仍不能全部声明覆盖：现有新增快速单测是核心正确性样例，长测属于合成属性验证，不是完整的生产协议端到端验收。
+## 二、端到端控制流
+
+```mermaid
+flowchart TD
+    A[微信私聊消息] --> B[iLink 绑定成员过滤与消息去重]
+    B --> C[DO 会话: 当前宝宝与可信消息时间]
+    C --> D[Agent Loop: 读取已持久化决策或请求 LLM]
+    D --> E{返回工具调用?}
+    E -- 否 --> F[工具真实结果或安全无操作回复]
+    E -- 是 --> G[加密写入 D1 决策日志]
+    G --> H[业务白名单与权限策略]
+    H --> I[顺序执行 D1/R2 工具并记录 step]
+    I --> J[作为 role=tool 结果送回 LLM]
+    J --> D
+    F --> K[持久化回复与 client_id]
+    K --> L[向原微信成员发送消息并推进轮询游标]
+```
+
+- **模型**：只决定下一步工具和结构化参数，不获得 SQL、任意 URL、Shell、R2 key、Cloudflare 管理权限或未授权家庭数据。
+- **工具**：`src/wechat-harness.mjs` 是能力白名单和数据库事实来源。新增 `get_runtime_context` 返回可信的发送时间、日期、时区和当前宝宝；普通指令的当天日期仍直接放在系统上下文，避免额外模型回合。
+- **循环**：`src/wechat-agent-loop.mjs` 单轮最多 4 个工具，总计最多 8 个工具、4 次模型决策、90 秒软上限。单轮工具顺序执行；每次调用结果都附上 `role: tool` 和原 `tool_call_id`，模型再决定继续或结束。
+- **安全与执行**：`src/wechat-orchestrator.mjs` 执行每项独立调用、做原文/身份/值域/目标校验、审计和记录去重。拒绝或失败的写操作终止剩余链；只读结果可供下一回合。
+- **输出**：只有工具返回的真实数据才可被当成“已保存/已更新”的依据。发生部分成功，回复必须列出已提交步骤；不得用 LLM 自由文本覆盖工具返回的事实。当前版本主要直接拼接工具实际返回，尚未完成结构化最终摘要。
+- **会话**：Durable Object 按微信连接隔离，最多 4 条历史对话、20 分钟 TTL；模型不拥有跨账号的可复用 recordId。
+
+### 同一条指令中的先查后改
+
+用户「把宝宝昨天的体重改为 10.2kg」：
+
+1. 模型执行 `list_growth(day)`，服务端仅查询当前 babyId。
+2. 工具返回唯一记录编号；`recordQuery` 将 ID、类型、babyId 和**来源消息 ID**存入 DO 短期状态。
+3. 下一回合模型执行 `update_growth(id,weight)`；只有 `recordId` 来自**当前消息的可信查询结果**或上一轮经服务端明确解析的引用，才允许引用。单纯由 LLM 发明的 ID 不授予权限。
+4. D1 更新按目标记录验证并返回真实结果，模型可终止。目标多个或查不到时必须澄清，不能猜测。
+
+## 三、请求重放与恢复顺序
+
+`migrations/0015_wechat_agent_rounds.sql` **仅新增** `wechat_agent_rounds(message_id,round_index,assistant_cipher,created_at)`：
+
+- 第 n 轮先查是否有已加密保存的模型决策；若存在，重放完全相同的 `tool_calls`，**不重新询问模型**。
+- 若不存在，先获取模型结果，校验工具调用结构，再以 `DATA_KEY` 加密并写入 D1，随后才执行任何副作用。
+- 每条工具调用采用稳定键 `message_id:step:<global_step_index>`，继续复用 `wechat_tool_steps`、`wechat_operation_log`、业务源消息 ID 去重及 D1 操作审计。
+- 写工具被拒绝、调用上限或模型后续失败时，必须保留已经成功的执行结果；不存在跨 D1/R2 的全局回滚。
+- 当前写前决策日志保证**重放选择确定性**，但尚不等于任意宕机位置的 exactly-once 事务。所有写操作仍须自身具备 D1/R2 幂等保障；涉及并发操作的实际一致性需要继续验证。
+- 生产日志不得记录 `assistant_cipher` 的明文、家庭真实指令、密钥、图片 URL。正常运维只记录错误代码、耗时和计数。
+
+### 失败矩阵
+
+| 故障时点 | 期望行为 |
+| --- | --- |
+| 模型未返回工具 | 不写库；提示改写或明确补充 |
+| 模型返回无效调用 | 拒绝执行，不猜造参数 |
+| 决策日志写入失败 | **零工具副作用**；保留原消息等待重试 |
+| 模型决策已保存、执行前中断 | 再次请求复用模型决策，按原步骤重试 |
+| 工具写入完成但 step 日志丢失 | 依赖业务 source_message_id / 审计条件重新读取和拒绝重复 |
+| 中间已写入、后续模型限流 | 仅报告已执行部分，提示后续未执行 |
+| 回复发送失败 | 原消息的结果、client_id 和微信游标按既有机制恢复 |
+| 目标缺失/歧义/跨宝宝 | 零越权写入；要求澄清 |
+| 预算耗尽 | 立即停止未开始的新步骤；已提交结果不回滚 |
+
+## 四、关于“自然语言理解和安全校验”的责任划分
+
+不另造一套中文日期 NLP 解析器：复杂语义、用户意图、任务拆解、查询策略由 LLM 负责。但**风险校验仍属于程序**：
+
+- 生效的角色、宝宝归属、唯一记录 ID、日期合法性、单位与范围、否定及条件写入不可让模型绕过。
+- `10.1号` 属于简单但缺失的词法表达，补充一个局部兼容回归即可；不把自然语言日期转换再造为完整 Agent 前置条件。
+- `大概 13.7kg` 不应改变成“实测 13.7kg”。在当前没有独立测量精度列的 schema 中，模型需把估计含义记入 notes，测试检查值和备注。
+- “国庆节”“上上周”“10/1”等超出当前校验可解释边界的表达，还需明确采用证据片段 + 歧义判断策略；**不得仅为提高一次完成率取消误写护栏**。
+
+## 五、代码与测试落点
+
+| 文件 | 作用 |
+| --- | --- |
+| `src/wechat.ts` | 微信收发、账号过滤、消息/会话路由、Agent 调用和加密决策日志适配 |
+| `src/wechat-agent-loop.mjs` | 完全独立的 LLM→Tool→Observation 循环与成本/执行预算 |
+| `src/wechat-harness.mjs` | 工具声明、受控查询/写入、runtime context |
+| `src/wechat-orchestrator.mjs` | 按步骤执行、查询凭证、审计、拒绝策略和去重 |
+| `src/wechat-memory.mjs` | 有 TTL 的微信会话、待补充任务、服务端可信查询结果 |
+| `src/wechat-policy.mjs` | 日期/数值/目标保护；不负责完整自然语言规划 |
+| `migrations/0015_wechat_agent_rounds.sql` | 模型决策的加密写前日志 |
+| `scripts/wechat-agent-loop.test.mjs` | 多轮调用、观察结果、持久重放、预算、部分成功、异常 |
+| `scripts/wechat-policy.test.mjs` | `10.1号` 等日期边界与阻断误写 |
+| `scripts/wechat-worker-e2e.mjs` | 真本地 Worker/D1，合成模型两轮查询修改、实际字段保存 |
+
+本地执行：`npm run verify`、`npm run test:e2e`。真实 OpenRouter 多轮工具协议只在管理员主动运行的手动工作流检查，不能混入自动 PR CI。
+
+## 六、后续任务（未实现）
+
+1. **高优先级**：真实模型多轮 tool-calling 契约、延迟/费用评测；在评估集上看一次完成率和安全拒绝率，检查调用预算是否过小。
+2. 引入可选用户确认状态，使多候选、模糊年份、可能冲突的批量写入有明确询问和确认流程；当前并非所有中文表达可一次完成。
+3. 完善结构化 `ToolResult`（`ok/code/data/committedStepIds`）代替中文字符串成功检测；保留对旧版工具输出的兼容层。
+4. 大媒体消息分流、独立任务队列及真实 iPhone 网络兼容。
+5. 评估 pi-agent-core / Pi Durable 的官方 Cloudflare 集成在新能力上是否有可验证的工程净收益。
+
+**合并门槛**：完整 4 项 CI、D1 增量迁移审查、线上部署和真实账号实验另行分开报告。测试通过并不等于已上线，也不等于真实微信多模型已实测。
