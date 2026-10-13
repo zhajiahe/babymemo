@@ -12,3 +12,38 @@ export function readOnlyFallbackTool(text){
  if(/宝宝档案|宝宝资料|出生日期|过敏档案/.test(t))return 'get_baby';
  return null;
 }
+
+/**
+ * A best-effort, single READ-ONLY tool re-ask for models that answered in
+ * free text despite tools=auto. Do not force a named tool: not all model
+ * providers accept that parameter, even when automatic tool calls work.
+ *
+ * No re-ask is ever permitted for mutation text or ambiguous intent.
+ * Provider errors are fail-closed and do not cause database mutations.
+ */
+export async function retryReadOnlyTool({command,tools,complete,messages}){
+ const name=readOnlyFallbackTool(command);
+ if(!name)return null;
+ const selected=tools.find(t=>t?.type==='function'&&t.function?.name===name);
+ if(!selected)return null;
+ let response;
+ try{
+  response=await complete({
+   messages,
+   tools:[selected],
+   tool_choice:'auto',
+   max_tokens:1200,
+   maxAttempts:1
+  });
+ }catch{return null}
+ const calls=response?.choices?.[0]?.message?.tool_calls;
+ if(!Array.isArray(calls)||calls.length!==1)return null;
+ const call=calls[0];
+ if(call?.type!=='function'||call?.function?.name!==name||
+    typeof call?.function?.arguments!=='string')return null;
+ try{
+  const args=JSON.parse(call.function.arguments);
+  if(!args||typeof args!=='object'||Array.isArray(args))return null;
+ }catch{return null}
+ return calls;
+}
