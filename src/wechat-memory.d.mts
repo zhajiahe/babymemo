@@ -3,6 +3,7 @@ export function getActiveThread(saved:any,botId:string,userId:string,now?:number
 export function appendTurn(thread:any,user:string,reply:string,babyId:string,now?:number):any;
 export function isClearContext(text:string):boolean;
 export function isMilestoneSaveFollowup(text:string):boolean;
+export function confirmsMilestoneProposal(text:string,reply:string):boolean;
 export function buildCommandContext(text:string,thread:any,now?:number,babyId?:string):{modelMessages:Array<{role:string;content:string}>;groundedText:string;milestoneGroundedText:string|null;referencedId:string|null};
 
 export function recordQuery(thread:any,babyId:string,kind:string,ids:string[],now?:number,sourceMessageId?:string):void;

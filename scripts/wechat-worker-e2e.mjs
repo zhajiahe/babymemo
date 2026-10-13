@@ -172,6 +172,69 @@ try{
   assert.equal(r.modelMessages[2].at(-1).role,'tool');
   assert.match(r.modelMessages[2].at(-1).content,/currentTimestamp/); // only the model sees JSON
  });
+ await step('WeChat assistant offers to save a dated trip; user says 好 and one milestone is saved',async()=>{
+  const year=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,4);
+  const day=year+'-10-02';
+  const observation='我们一家人，光召恩惠，10月2号去了钱江世纪公园玩，顺便给测试宝宝妈妈过生日';
+  const proposal='真温馨呀！要我帮你把10月2号去钱江世纪公园玩这件事记下来吗？';
+  const r=await run({mode:'alarm',alarms:2,
+   pollBatches:[
+    [textFrom('yes-trip-observation','synthetic-user','synthetic-bot',observation)],
+    [textFrom('yes-trip-confirm','synthetic-user','synthetic-bot','好')]
+   ],
+   responses:[
+    natural(proposal),
+    tool('create_milestone',{day,title:'钱江世纪公园家庭出游',description:'10月2号一家人去钱江世纪公园玩，顺便给宝宝妈妈过生日。'}),
+    natural('记好啦！已经把10月2日去钱江世纪公园和给妈妈庆生的回忆存进成长日记。')
+   ]
+  });
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,3);
+  assert.equal(r.replies.length,2);
+  const written=r.milestones.filter(x=>x.source_message_id?.endsWith('yes-trip-confirm:step:0'));
+  assert.equal(written.length,1);
+  assert.equal(written[0].day,day);
+  assert.match(written[0].description,/钱江世纪公园.*妈妈过生日/);
+  assert.match(r.replies[1],/记好啦/);
+  assert.equal(r.modelMessages[1].at(-1).role,'user');
+  assert.match(r.modelMessages[1].at(-1).content,/create_milestone/);
+  assert.equal(r.modelMessages[1].at(-2).role,'assistant');
+  assert.match(r.modelMessages[1].at(-2).content,/记下来吗/);
+ });
+ await step('好 after an unrelated question never authorizes a milestone write',async()=>{
+  const year=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,4),day=year+'-10-02';
+  const r=await run({mode:'alarm',alarms:2,
+   pollBatches:[
+    [textFrom('unrelated-good-one','synthetic-user','synthetic-bot','10月2号去了公园玩')],
+    [textFrom('unrelated-good-two','synthetic-user','synthetic-bot','好')]
+   ],
+   responses:[
+    natural('要我帮你查一下最近的照片吗？'),
+    tool('create_milestone',{day,title:'公园玩耍',description:'10月2号去公园玩'}),
+    natural('这次没有保存。')
+   ]
+  });
+  assert.equal(r.error,undefined);
+  assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('unrelated-good-two')).length,0);
+  assert.match(r.replies[1],/未|没有|尚未/);
+ });
+ await step('assistant-supplied date cannot ground a confirmed diary creation',async()=>{
+  const year=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,4),day=year+'-10-02';
+  const r=await run({mode:'alarm',alarms:2,
+   pollBatches:[
+    [textFrom('hallucinated-date-one','synthetic-user','synthetic-bot','去公园玩了')],
+    [textFrom('hallucinated-date-two','synthetic-user','synthetic-bot','好')]
+   ],
+   responses:[
+    natural('要我帮你把10月2号去公园玩这件事记下来吗？'),
+    tool('create_milestone',{day,title:'公园玩耍',description:'去公园玩了'}),
+    natural('没有实际保存，因为日期还需要你确认。')
+   ]
+  });
+  assert.equal(r.error,undefined);
+  assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('hallucinated-date-two')).length,0);
+  assert.match(r.replies[1],/没有实际保存/);
+ });
  await step('negated delete cannot mutate local D1',async()=>{const r=await run({mode:'text',id:'negated-delete',text:'不要删除测试宝宝今天的体重',responses:[tool('delete_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})})]});assert.equal(r.growth.length,2);assert.doesNotMatch(r.reply,/已删除/)});
  await step('four consecutive WeChat messages naturally respond, then save one consolidated diary milestone',async()=>{
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});

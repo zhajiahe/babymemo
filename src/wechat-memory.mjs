@@ -37,6 +37,14 @@ export function setPending(thread,babyId,action,text,args={},now=Date.now()){
 export function isMilestoneSaveFollowup(text){
  return /^(?:(?:好的?[，,]?|那就|就|帮我|给我|请|把(?:这段|这些|这个|刚才说的|前面说的|上面说的))\s*)?(?:记下来|记下(?:来|吧)?|记录(?:下来|一下)?|保存(?:下来|一下)?|存下来|写进(?:日记|里程碑)|记(?:到|入)(?:日记|里程碑))(?:吧|呀|哦|啦|。|！|!|\s)*$/.test(String(text||'').trim());
 }
+// "好" is a write authorization ONLY immediately after the assistant has
+// explicitly proposed saving the last user's observation. Assistant-generated
+// dates/descriptions are never treated as database grounding.
+export function confirmsMilestoneProposal(text,reply){
+ const affirmative=/^(?:好|好的|好呀|好啊|好哒|行|可以|嗯|嗯嗯|没问题|就这么办)(?:[～~。！!，,\s]*)$/;
+ if(!affirmative.test(String(text||'').trim()))return false;
+ return /(?:要(?:不要)?我|需要我|想让我|我可以|要不要|是否).{0,100}(?:记下|记录|保存|写进|存入).{0,25}(?:吗|么|[？?])/.test(String(reply||''));
+}
 export function buildCommandContext(text,thread,now=Date.now(),babyId=thread.babyId){
  const turns=(thread.turns||[]).filter(t=>t.babyId===babyId),last=turns.at(-1),messages=[];
  for(const turn of turns){
@@ -50,13 +58,15 @@ export function buildCommandContext(text,thread,now=Date.now(),babyId=thread.bab
  // A follow-up "记下来" can refer to preceding observations. Do not trust
  // assistant replies as source material or authorise any other write tool.
  // Include only recent, same-baby observations, and respect the conversation TTL.
- const noteSave=isMilestoneSaveFollowup(text);
- const observations=noteSave?turns.slice(-3).map(t=>t.user.trim()).filter(s=>s.length>=4
+ const agreed=last&&confirmsMilestoneProposal(text,last.reply);
+ const noteSave=isMilestoneSaveFollowup(text)||agreed;
+ const sourceTurns=agreed?[last]:turns.slice(-3);
+ const observations=noteSave?sourceTurns.map(t=>t.user.trim()).filter(s=>s.length>=4
   && !/^(?:查|查询|查看|删除|删掉|修改|更正|恢复|撤销|帮助|你能|请问|为什么)/.test(s)
   && !/[？?]\s*$/.test(s)):[];
  const milestoneGroundedText=observations.length?observations.join('\n')+'\n'+text:null;
  if(milestoneGroundedText){
-  modelText='[“记下来”引用当前宝宝最近的用户描述。请合并为一条 create_milestone，不引用助手回复。]\n'+modelText;
+  modelText='[用户明确同意记录此前描述。请仅凭当前宝宝的用户原话调用一次 create_milestone；日期和事实不能来自助手回答。]\n'+modelText;
  }
  const ordinal=text.match(/第\s*([一二三四五六七八九十1-9]|10)\s*(?:条|项|个|张|段)/);
  const ordinals={'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10};
