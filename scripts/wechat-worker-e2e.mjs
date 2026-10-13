@@ -56,6 +56,48 @@ try{
   assert.match(r.modelMessages[0][0].content,/根据生日和消息本地日期计算年龄/);
   assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
  });
+ await step('real age query: empty/generic first final triggers tool-free synthesis, not the complete profile',async()=>{
+  const r=await run({mode:'text',id:'ai-age-generic-final',text:'测试宝宝多大了',
+   responses:[
+    tool('get_baby',{}),
+    natural('操作已完成'),
+    natural('测试宝宝现在两岁九个月啦。')
+   ]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,3);
+  assert.equal(r.reply,'测试宝宝现在两岁九个月啦。');
+  assert.deepEqual(r.modelHasTools,[true,true,false]);
+  assert.match(r.modelMessages[1].at(-1).content,/生日 2024-01-01/);
+  assert.doesNotMatch(r.reply,/档案|生日|过敏|备注/);
+ });
+ await step('real age query: how many days always produces grounded days even when two model finals are bad',async()=>{
+  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const days=Math.round((Date.parse(today+'T00:00:00Z')-Date.parse('2024-01-01T00:00:00Z'))/86400000);
+  const r=await run({mode:'text',id:'ai-days-profile-fallback',text:'测试宝宝多少天了',
+   responses:[tool('get_baby',{}),
+    natural('测试宝宝 的档案：生日 2024-01-01，过敏和注意事项：无'),
+    natural('操作已完成')
+   ]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,3);
+  assert.deepEqual(r.modelHasTools,[true,true,false]);
+  assert.equal(r.reply,'测试宝宝从出生到今天已经 '+days+' 天啦。');
+  assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
+ });
+ await step('real age query: plausible but wrong model age is rejected in favor of server birthday arithmetic',async()=>{
+  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const year=Number(today.slice(0,4)),month=Number(today.slice(5,7)),date=Number(today.slice(8,10));
+  const ageYears=year-2024-(month<1?1:0);
+  const r=await run({mode:'text',id:'ai-age-wrong-final',text:'测试宝宝多大了',
+   responses:[tool('get_baby',{}),
+    natural('测试宝宝现在 99 岁 9 个月啦。'),
+    natural('还是 99 岁，已经长大了。')
+   ]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,3);
+  assert.match(r.reply,new RegExp('测试宝宝现在 '+ageYears+' 岁'));
+  assert.doesNotMatch(r.reply,/99 岁|档案：/);
+ });
  await step('ChatGPT-style: verified milestone write has a concise AI final, not its DB receipt',async()=>{
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
   const r=await run({mode:'text',id:'ai-milestone-final',text:'测试宝宝今天第一次学会鼓掌了，帮我记下来',

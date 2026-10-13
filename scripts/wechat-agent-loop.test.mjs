@@ -213,3 +213,47 @@ test('a no-tool cheerful acknowledgement cannot impersonate a successful write',
   execute:async()=>{throw Error('unexpected')}});
  assert.match(r,/没有实际保存或修改/);
 });
+
+test('invalid final after a genuine read gets a tool-free second chance instead of raw profile',async()=>{
+ let round=0,summarize=0;
+ const profile='小好 的档案：生日 2025-05-30 21:01，过敏和注意事项：无，备注：拉屎困难户';
+ const messages=[];
+ const out=await runWechatAgentLoop({...args,
+  messages:[{role:'user',content:'小好多大了'}],
+  complete:async()=>round++===0?reply(call('b','get_baby')):done('操作已完成'),
+  execute:async()=>profile,
+  validateFinal:({content})=>/1\s*岁/.test(content)&&/4\s*个?月/.test(content),
+  finalize:async({observations,messages:history,reason})=>{
+   summarize++;messages.push(structuredClone(history));
+   assert.equal(reason,'inadequate_final');
+   assert.deepEqual(observations,[{name:'get_baby',content:profile}]);
+   return done('小好现在 1 岁 4 个月 13 天啦。');
+  }
+ });
+ assert.equal(out,'小好现在 1 岁 4 个月 13 天啦。');
+ assert.equal(summarize,1);
+ assert.equal(messages[0].at(-1).content,'操作已完成');
+});
+test('invalid age final and invalid second attempt fall back to a grounded short answer',async()=>{
+ let tries=0,round=0;
+ const out=await runWechatAgentLoop({...args,
+  complete:async()=>round++===0?reply(call('b','get_baby')):done('小好 的档案：生日 2025-05-30，备注：无'),
+  execute:async()=> '小好 的档案：生日 2025-05-30，备注：无',
+  validateFinal:({content})=>!content.includes('档案')&&content.includes('501 天'),
+  finalize:async()=>{tries++;return done('操作已完成')},
+  fallbackReply:()=> '小好从出生到今天已经 501 天啦。'
+ });
+ assert.equal(tries,1);
+ assert.equal(out,'小好从出生到今天已经 501 天啦。');
+ assert.doesNotMatch(out,/档案|备注/);
+});
+test('a tool-free explanation cannot fabricate write success after an invalid read reply',async()=>{
+ let summary=0;
+ const out=await runWechatAgentLoop({...args,
+  complete:async({round})=>round===0?reply(call('b','get_baby')):done('操作已完成'),
+  execute:async()=> '小好 的档案：生日 2025-05-30',
+  finalize:async()=>{summary++;return done('我已经保存到成长日记了！')}
+ });
+ assert.equal(summary,1);
+ assert.equal(out,'小好 的档案：生日 2025-05-30'); // real facts, not fake write success
+});

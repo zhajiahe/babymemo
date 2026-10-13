@@ -51,10 +51,10 @@ export function ageReplyMatches(text,age){
  const chinese=age.years<cn.length?cn[age.years]:null;
  const chineseMonth=age.months<cn.length?cn[age.months]:null;
  if(age.years>0){
-  const hasYears=str.includes(years+'岁')||(chinese&&str.includes(chinese+'岁'));
+  const hasYears=str.includes(years+'岁')||(chinese&&str.includes(chinese+'岁'))||(age.years===2&&str.includes('两岁'));
   if(!hasYears)return false;
   if(age.months>0){
-   const hasMonths=str.includes(months+'个月')||(chineseMonth&&str.includes(chineseMonth+'个月'));
+   const hasMonths=str.includes(months+'个月')||(chineseMonth&&str.includes(chineseMonth+'个月'))||(age.months===2&&str.includes('两个月'));
    return !!hasMonths;
   }
   return true;
