@@ -10,6 +10,8 @@ import {getWechatConnection,listWechatConnections} from './wechat-connections';
 import { mediaDownloadHeader } from './media-filename.mjs';
 import { finalizeUpload, FinalizeMismatchError } from './upload-finalize.mjs';
 import { cleanupExpiredUploads } from './upload-cleanup.mjs';
+import {mediaTiming} from './media-timing.mjs';
+import {canDirectUpload} from './media-transfer.mjs';
 export { WechatSession } from './wechat';
 
 const app = new Hono<{Bindings:Env}>();
@@ -176,6 +178,55 @@ app.get('/api/media/thumbnail-backfill',async c=>{
   ).bind(babyId).first<{total:number}>();
   return c.json({items:batch.results,remaining:count?.total||0,cursor:batch.results.at(-1)?.id||after});
 });
+// Small-file fast path: one authenticated same-origin request, private R2
+// storage, stable client UUID for retries and no Multipart start/finish RTTs.
+// A D1 failure after R2 PUT can be recovered by the same upload UUID.
+app.put('/api/upload/direct/:id',async c=>{
+  const started=performance.now(),id=c.req.param('id');
+  const babyId=c.req.header('x-baby-id')||'';
+  const day=c.req.header('x-upload-day')||'';
+  const mime=c.req.header('content-type')?.split(';')[0]?.trim().toLowerCase()||'';
+  const size=Number(c.req.header('content-length'));
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)||
+     !dayOk(day)||!allowedMime(mime)||!canDirectUpload(size)||!await babyExists(c.env,babyId))
+    return fail(c,400,'INVALID_DIRECT_MEDIA');
+  let title='';
+  try{title=decodeURIComponent(c.req.header('x-upload-title')||'').slice(0,120)}catch{return fail(c,400,'INVALID_DIRECT_MEDIA')}
+  if(!title.trim())return fail(c,400,'INVALID_DIRECT_MEDIA');
+  const key='private/'+babyId+'/'+id;
+  let phase='upload';
+  try{
+    const recorded=await c.env.DB.prepare('SELECT id,baby_id,mime,size FROM media WHERE id=?')
+      .bind(id).first<{id:string;baby_id:string;mime:string;size:number}>();
+    if(recorded){
+      if(recorded.baby_id!==babyId||recorded.size!==size||recorded.mime!==mime)return fail(c,409,'UPLOAD_ID_CONFLICT');
+      mediaTiming({channel:'web',stage:'direct',size,startedAt:started});
+      return c.json({id,completed:true,alreadyCompleted:true});
+    }
+    let object=await c.env.MEDIA.head(key);
+    if(object&&(object.size!==size||object.httpMetadata?.contentType!==mime))
+      return fail(c,409,'UPLOAD_ID_CONFLICT');
+    if(!object){
+      if(!c.req.raw.body)return fail(c,400,'EMPTY_MEDIA');
+      object=await c.env.MEDIA.put(key,c.req.raw.body,{httpMetadata:{contentType:mime}});
+      if(!object||object.size!==size){
+        await c.env.MEDIA.delete(key);
+        return fail(c,413,'UPLOAD_SIZE_MISMATCH');
+      }
+    }
+    phase='index';
+    await c.env.DB.prepare('INSERT OR IGNORE INTO media(id,baby_id,day,title,object_key,mime,size,created_at) VALUES(?,?,?,?,?,?,?,?)')
+      .bind(id,babyId,day,title,key,mime,size,now()).run();
+    const committed=await c.env.DB.prepare('SELECT id,baby_id,size FROM media WHERE id=?')
+      .bind(id).first<{id:string;baby_id:string;size:number}>();
+    if(!committed||committed.baby_id!==babyId||committed.size!==size)throw Error('DIRECT_INDEX_FAILED');
+    mediaTiming({channel:'web',stage:'direct',size,startedAt:started});
+    return c.json({id,completed:true},201);
+  }catch{
+    mediaTiming({channel:'web',stage:phase==='index'?'index':'direct',size,startedAt:started,status:'error'});
+    return fail(c,502,'UPLOAD_DIRECT_FAILED');
+  }
+});
 // Resume after Safari reload by re-selecting the same local file. No public uploads.
 app.get('/api/upload/pending',async c=>{
   const babyId=c.req.query('babyId');
@@ -201,6 +252,7 @@ app.post('/api/upload/start',async c=>{
   }catch{return fail(c,400,'UPLOAD_START_FAILED');}
 });
 app.put('/api/upload/:id/part/:number',async c=>{
+  const started=performance.now();
   const id=c.req.param('id'),number=Number(c.req.param('number'));
   if(!Number.isInteger(number)||number<1||number>25)return fail(c,400,'INVALID_PART');
   const row=await c.env.DB.prepare('SELECT * FROM media_uploads WHERE id=?').bind(id).first<{object_key:string;upload_id:string;size:number}>();
@@ -212,8 +264,9 @@ app.put('/api/upload/:id/part/:number',async c=>{
     const part=await c.env.MEDIA.resumeMultipartUpload(row.object_key,row.upload_id).uploadPart(number,c.req.raw.body!);
     await c.env.DB.prepare('INSERT INTO media_upload_parts(media_upload_id,part_number,etag) VALUES(?,?,?) ON CONFLICT(media_upload_id,part_number) DO UPDATE SET etag=excluded.etag').bind(id,number,part.etag).run();
     await c.env.DB.prepare('UPDATE media_uploads SET updated_at=? WHERE id=?').bind(now(),id).run();
+    mediaTiming({channel:'web',stage:'part',size:expectedLength,startedAt:started});
     return c.json({ok:true,partNumber:number});
-  }catch{return fail(c,502,'UPLOAD_PART_FAILED');}
+  }catch{mediaTiming({channel:'web',stage:'part',size:expectedLength,startedAt:started,status:'error'});return fail(c,502,'UPLOAD_PART_FAILED');}
 });
 // Clean up incomplete R2 multipart uploads after a failed mobile transfer.
 app.post('/api/upload/:id/cancel',async c=>{
@@ -234,6 +287,7 @@ app.post('/api/upload/:id/cancel',async c=>{
   }catch{return fail(c,502,'UPLOAD_CANCEL_FAILED');}
 });
 app.post('/api/upload/:id/finish',async c=>{
+  const started=performance.now();
   const id=c.req.param('id');
   const recorded=async()=>!!await c.env.DB.prepare('SELECT id FROM media WHERE id=?').bind(id).first();
   try {
@@ -254,8 +308,10 @@ app.post('/api/upload/:id/finish',async c=>{
         ]);
       }
     });
+    mediaTiming({channel:'web',stage:'finish',size:row.size,startedAt:started});
     return c.json({id,completed:true,recovered:result.recovered},result.recovered?200:201);
   }catch(e){
+    mediaTiming({channel:'web',stage:'finish',size:0,startedAt:started,status:'error'});
     if(e instanceof FinalizeMismatchError)return fail(c,409,e.message);
     return fail(c,502,'UPLOAD_FINISH_FAILED');
   }
