@@ -82,7 +82,8 @@ export default function App(){
  },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media]);
  function changed(){void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
  function selectBaby(id:string){
-  if(!state?.babies.some(item=>item.id===id)||id===babyId)return;
+  // A newly created baby is valid before /api/state refresh includes the new ID.
+  if(!id||id===babyId)return;
   setBabyId(id);
   setMedia([]);setRecords([]);setMilestones([]);setGrowthHistory([]);setHistoryLimited(false);
   setHasMore({growth:false,moments:false,album:false});
