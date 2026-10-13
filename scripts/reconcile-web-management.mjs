@@ -9,6 +9,15 @@ import {fileURLToPath} from 'node:url';
 const TARGET='0016_web_management.sql',PREVIOUS='0015_wechat_agent_rounds.sql';
 export const VERSION_TABLES=['babies','growth_records','milestones','media'];
 const source=()=>readFileSync(new URL('../migrations/'+TARGET,import.meta.url),'utf8');
+export function mediaDescriptionPlan({columns,applied}){
+ const target='0017_media_description.sql',tables=['media','media_uploads'];
+ for(const table of tables){const c=columns[table]?.find(c=>c.name==='description');if(c&&(!/(?:TEXT|CHAR|CLOB)/i.test(c.type||'')||Number(c.pk||0)!==0||![null,undefined,"''",'""'].includes(c.dflt_value)))throw Error('MEDIA_DESCRIPTION_SCHEMA_MISMATCH')}
+ if(applied.includes(target)){if(tables.some(t=>!columns[t]?.some(c=>c.name==='description')))throw Error('MEDIA_DESCRIPTION_MARKED_WITHOUT_COLUMN');return{decision:'verified',sql:''}}
+ if(!applied.includes(TARGET)||!tables.some(t=>columns[t]?.some(c=>c.name==='description')))return{decision:'apply',sql:''};
+ let sql=tables.filter(t=>!columns[t]?.some(c=>c.name==='description')).map(t=>"ALTER TABLE "+t+" ADD COLUMN description TEXT NOT NULL DEFAULT '';\n").join('');
+ sql+=tables.map(t=>"UPDATE "+t+" SET description='' WHERE description IS NULL;").join('\n');
+ sql+="\nINSERT INTO d1_migrations(name) VALUES('"+target+"');\n";return{decision:'reconcile',sql};
+}
 export function webManagementPlan({columns,applied,objects=[]}){
  const migration=source(),adds=[...migration.matchAll(/^ALTER TABLE (\w+) ADD COLUMN (\w+) ([^;]+);/gm)];
  for(const [,table,name] of adds){const column=columns[table]?.find(c=>c.name===name);if(column&&(!/(?:TEXT|CHAR|CLOB)/i.test(column.type||'')||Number(column.pk||0)!==0||![null,undefined,"''",'""'].includes(column.dflt_value)))throw Error('WEB_SCHEMA_MISMATCH:'+table+'.'+name)}
@@ -38,10 +47,12 @@ function query(args){
 }
 export function reconcileWebManagement(){
  const applied=query(['--command','SELECT name FROM d1_migrations']).map(x=>x.name),columns={};
- for(const table of VERSION_TABLES)columns[table]=query(['--command','PRAGMA table_info('+table+')']);
+ for(const table of [...VERSION_TABLES,'media_uploads'])columns[table]=query(['--command','PRAGMA table_info('+table+')']);
  const objects=query(['--command',"SELECT name FROM sqlite_master WHERE type IN ('table','trigger')"]).map(x=>x.name);
  const plan=webManagementPlan({columns,applied,objects});
- if(plan.sql){const dir=mkdtempSync(join(tmpdir(),'babymemo-web-schema-'));try{const file=join(dir,'migration.sql');writeFileSync(file,plan.sql,{mode:0o600});query(['--file',file])}finally{rmSync(dir,{recursive:true,force:true})}}
+ const descriptions=mediaDescriptionPlan({columns,applied:plan.sql?[...applied,TARGET]:applied});
+ const sql=plan.sql+'\n'+descriptions.sql;
+ if(sql.trim()){const dir=mkdtempSync(join(tmpdir(),'babymemo-web-schema-'));try{const file=join(dir,'migration.sql');writeFileSync(file,sql,{mode:0o600});query(['--file',file])}finally{rmSync(dir,{recursive:true,force:true})}}
  console.log('[D1] web management migration: '+plan.decision);return plan.decision;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){try{reconcileWebManagement()}catch(e){console.error('[D1] '+(e instanceof Error?e.message:'RECONCILIATION_FAILED'));process.exitCode=1}}
