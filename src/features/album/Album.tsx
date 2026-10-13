@@ -4,10 +4,10 @@ import {MediaViewer,type MediaItem} from '../../components/MediaViewer';
 import {createAlbumThumbnail,createVideoThumbnail,fingerprintFile} from '../../media-upload';
 import {pickMatchingUpload,remainingPartNumbers} from '../../upload-plan.mjs';
 import {bestEffortFileDay} from '../../media-date.mjs';
-import {CloudUpload,Camera,Heart,Trash2,Plus} from 'lucide-react';
+import {CloudUpload,Camera,Trash2,Plus} from 'lucide-react';
 import {api,post,today,ApiFailure,type BabyInfo} from '../../lib/client';
 
-export function Album({baby,media,favoriteOnly,onFavoriteOnly,favoriteUpdated,mediaEdited,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];favoriteOnly:boolean;onFavoriteOnly:(v:boolean)=>void;favoriteUpdated:(id:string,favorite:boolean)=>void;mediaEdited:(id:string,value:{day:string})=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
+export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];mediaEdited:(id:string,value:{day:string})=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
  const [showUploader,setShowUploader]=useState(false);
  const [uploadDay,setUploadDay]=useState(today()),[autoDate,setAutoDate]=useState(true);
@@ -131,7 +131,6 @@ export function Album({baby,media,favoriteOnly,onFavoriteOnly,favoriteUpdated,me
   }
  }
  async function remove(id:string){if(!confirm('将这项媒体移入回收站？30 天内可恢复。'))return;try{await api('/api/media/'+id,{method:'DELETE'});if(selected?.id===id)setSelected(null);changed();notify('已移入回收站，可在设置中恢复')}catch(e){notify(e instanceof Error?e.message:'删除失败')}}
- async function toggleFavorite(item:MediaItem){try{const favorite=!item.favorite;await post('/api/media/'+item.id+'/favorite',{favorite});favoriteUpdated(item.id,favorite);setSelected(old=>old?.id===item.id?{...old,favorite:favorite?1:0}:old);notify(favorite?'已收藏':'已取消收藏')}catch(e){notify(e instanceof Error?e.message:'收藏失败')}}
  async function saveMedia(value:{day:string}){
   if(!selected)return;
   await api('/api/media/'+selected.id,{method:'PATCH',body:JSON.stringify(value)});
@@ -149,7 +148,7 @@ export function Album({baby,media,favoriteOnly,onFavoriteOnly,favoriteUpdated,me
  return <>
  <div className="album-toolbar album-content-toolbar">
   <div className="album-toolbar-heading"><h2>全部照片</h2></div>
-  <div className="album-toolbar-actions"><label className="album-favorite-filter"><input type="checkbox" checked={favoriteOnly} onChange={e=>onFavoriteOnly(e.target.checked)}/><Heart size={16}/> 仅看收藏</label>
+  <div className="album-toolbar-actions">
    <button type="button" className="primary album-add-btn" aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(v=>!v)}><Plus size={17}/>{showUploader?'收起上传':'添加照片或视频'}</button></div>
  </div>
  {showUploader&&<Card className="upload-card"><div id="album-upload-panel" className="album-upload-panel"><CloudUpload size={30}/><h3>上传照片或视频</h3><p className="muted">可一次选择多张照片或视频。网络中断后重新选择原文件即可续传。</p>
@@ -162,11 +161,11 @@ export function Album({baby,media,favoriteOnly,onFavoriteOnly,favoriteUpdated,me
     <span className="photo-frame">{item.mime.startsWith('image/')||item.thumbnail_ready?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt=""/>:<span className="video-placeholder" aria-hidden="true"><Camera size={32}/><span>视频 · 点击播放</span></span>}</span>
     <span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button>
    </div>)}</div></section>
- ):<div className="empty card"><p>{favoriteOnly?'还没有收藏的照片或视频。':'还没有照片，上传第一张成长回忆吧。'}</p>{!favoriteOnly&&<button type="button" className="primary" onClick={()=>setShowUploader(true)}><Plus size={16}/> 添加照片或视频</button>}</div>}
+ ):<div className="empty card"><p>还没有照片，上传第一张成长回忆吧。</p><button type="button" className="primary" onClick={()=>setShowUploader(true)}><Plus size={16}/> 添加照片或视频</button></div>}
  <Pager page={page} setPage={setPage} hasMore={hasMore}/>
  {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">中断后重新选择原文件，可以继续上传已经保存的分片。</p>
   {pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><div className="pending-actions">{item.completedParts.length===Math.ceil(item.size/8388608)&&<button className="primary" type="button" disabled={uploading} onClick={()=>void finishPending(item.id)}>完成保存</button>}<button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div></div>)}
  </Card>}
- {selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia} onFavorite={()=>{if(selected)void toggleFavorite(selected)}} onDelete={()=>{if(selected)void remove(selected.id)}}/>}
+ {selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia} onDelete={()=>{if(selected)void remove(selected.id)}}/>}
  </>;
 }

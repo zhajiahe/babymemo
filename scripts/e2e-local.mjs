@@ -380,8 +380,8 @@ async function e2e() {
     const list=await json('/api/media?babyId='+babyId);
     assert.equal(list.data.items[0].title,'Edited photo');
     assert.equal(list.data.items[0].day,'2026-02-01');
-    assert.equal((await json('/api/media/'+mediaId+'/favorite',{method:'POST',body:{favorite:true}})).status,200);
-    assert.ok((await json('/api/media?babyId='+babyId+'&q=Edited&favorite=1')).data.items.some(x=>x.id===mediaId));
+    assert.equal((await json('/api/media/'+mediaId+'/favorite',{method:'POST',body:{favorite:true}})).status,404);
+    assert.ok((await json('/api/media?babyId='+babyId+'&q=Edited')).data.items.some(x=>x.id===mediaId));
     assert.equal((await json('/api/media?babyId='+babyId+'&q=missing')).data.items.length,0);
     const etag=(await request('/api/media/'+mediaId+'/thumbnail')).headers.get('etag');
     assert.ok(etag);
@@ -574,6 +574,8 @@ async function browserE2e(){
         }));
       });
       assert.deepEqual(imageAssets,[[512,512],[192,192],[180,180],[32,32]],'PWA icons must decode in a real browser');
+      assert.equal((await page.locator('.topbar .space-name').textContent())?.trim(),'E2E Test Home');
+      assert.equal((await page.locator('.sidebar .side-space-name').textContent())?.trim(),'E2E Test Home');
       await page.screenshot({path:join(evidence,'desktop-overview.png'),fullPage:true});
     });
     await step((useWebKit?'WebKit':'Chromium')+': page reload and new tab reuse the same login',async()=>{
@@ -600,14 +602,17 @@ async function browserE2e(){
       await create.getByLabel('性别').selectOption('girl');
       await create.getByRole('button',{name:/创建并切换到新宝宝/}).click();
       await page.getByRole('heading',{name:'Browser New Baby'}).waitFor();
-      await page.locator('select[aria-label="选择宝宝"]').waitFor();
-      await page.waitForFunction(()=>document.querySelector('select[aria-label="选择宝宝"]')?.selectedOptions[0]?.textContent==='Browser New Baby');
-      const options=await page.locator('select[aria-label="选择宝宝"] option').allTextContents();
+      assert.equal(await page.locator('.page-heading select[aria-label="选择宝宝"]').count(),0);
+      await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
+      const picker=page.locator('.settings-baby-switch select[aria-label="选择宝宝"]');
+      await picker.waitFor();
+      const options=await picker.locator('option').allTextContents();
       assert.ok(options.includes('Test Baby'));
       assert.ok(options.includes('Second Baby'));
       assert.ok(options.includes('Browser New Baby'));
-      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
-      await page.waitForFunction(()=>document.querySelector('select[aria-label="选择宝宝"]')?.selectedOptions[0]?.textContent==='Test Baby');
+      assert.equal(await picker.locator('option:checked').textContent(),'Browser New Baby');
+      await picker.selectOption({label:'Test Baby'});
+      assert.equal(await picker.locator('option:checked').textContent(),'Test Baby');
     });
     await step((useWebKit?'WebKit':'Chromium')+': gallery is photo-first; maintenance is out of product',async()=>{
       // Generate a browser-native PNG so WebKit and Chromium decode the same valid fixture.
@@ -646,6 +651,8 @@ async function browserE2e(){
       await page.locator('.photo-preview').first().click();
       await page.getByRole('dialog',{name:'相册预览'}).waitFor();
       const img=page.locator('.media-viewer-stage img');
+      assert.equal(await page.getByRole('button',{name:'收藏'}).count(),0);
+      assert.equal(await page.getByText('仅看收藏').count(),0);
       await img.waitFor();
       await page.waitForFunction(()=>document.querySelector('.media-viewer-stage img')?.naturalWidth > 0);
       await page.screenshot({path:join(evidence,'desktop-album-viewer.png'),fullPage:false});
@@ -698,6 +705,9 @@ async function browserE2e(){
           }));
           assert.ok(Math.max(result.html,result.body)<=result.width+1,
             'Horizontal overflow on '+width+'px '+nav+': '+JSON.stringify(result));
+          assert.equal(await page.locator('.topbar .space-name').isVisible(),true,'family name hidden at '+width+'px');
+          assert.equal((await page.locator('.topbar .space-name').textContent())?.trim(),'E2E Test Home');
+          assert.equal(await page.locator('.page-heading select[aria-label="选择宝宝"]').count(),0);
           if(width===320||width===768)await page.screenshot({
             path:join(evidence,'responsive-'+width+'-'+nav+'.png'),fullPage:true
           });
@@ -719,14 +729,21 @@ async function browserE2e(){
       };
       await openMoments();
       const input=page.locator('input[placeholder*="第一次独立走路"]');
-      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
+      await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      const picker=page.locator('.settings-baby-switch select[aria-label="选择宝宝"]');
+      await picker.selectOption({label:'Test Baby'});
+      await openMoments();
       await input.fill('只属于宝宝A的临时草稿');
       await page.locator('.mobile-nav button[aria-label="成长"]').click();
       await openMoments();
       await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
-      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Second Baby'});
+      await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      await picker.selectOption({label:'Second Baby'});
+      await openMoments();
       await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='');
-      await page.locator('select[aria-label="选择宝宝"]').selectOption({label:'Test Baby'});
+      await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      await picker.selectOption({label:'Test Baby'});
+      await openMoments();
       await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
       const fontSize=await input.evaluate(el=>Number.parseFloat(getComputedStyle(el).fontSize));
       assert.ok(fontSize>=16,'Mobile Safari text input should not trigger focus zoom');

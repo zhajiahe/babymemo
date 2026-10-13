@@ -154,9 +154,8 @@ app.get('/api/media',async c=>{
   const page=Math.min(1000,Math.max(0,Number.parseInt(c.req.query('page')||'0',10)||0));
   const query=(c.req.query('q')||'').trim();
   if(query.length>80)return fail(c,400,'SEARCH_TOO_LONG');
-  const favoriteOnly=c.req.query('favorite')==='1';
-  const sql='SELECT id,baby_id,day,title,mime,size,thumbnail_ready,created_at,favorite FROM media WHERE baby_id=? AND deleted_at IS NULL'+
-    (query?' AND title LIKE ?':'')+(favoriteOnly?' AND favorite=1':'')+' ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?';
+   const sql='SELECT id,baby_id,day,title,mime,size,thumbnail_ready,created_at FROM media WHERE baby_id=? AND deleted_at IS NULL'+
+    (query?' AND title LIKE ?':'')+' ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?';
   const bindings=query?[babyId,'%'+query+'%',page*36]:[babyId,page*36];
   const rows=await c.env.DB.prepare(sql).bind(...bindings).all();
   return c.json({items:rows.results,hasMore:rows.results.length===36});
@@ -306,15 +305,6 @@ app.put('/api/media/:id/thumbnail',async c=>{
   return c.json({ok:true});
 });
 // Metadata edits never alter the private R2 object.
-app.post('/api/media/:id/favorite',async c=>{
-  const id=c.req.param('id');
-  try{
-    const v=await json(c.req.raw);
-    if(typeof v.favorite!=='boolean')return fail(c,400,'INVALID_FAVORITE');
-    const result=await c.env.DB.prepare('UPDATE media SET favorite=? WHERE id=? AND deleted_at IS NULL').bind(v.favorite?1:0,id).run();
-    return result.meta.changes?c.json({ok:true,favorite:v.favorite}):fail(c,404,'NOT_FOUND');
-  }catch{return fail(c,400,'INVALID_FAVORITE')}
-});
 app.patch('/api/media/:id',async c=>{
   let value:unknown;
   try{value=await json(c.req.raw)}catch{return fail(c,400,'INVALID_INPUT')}
