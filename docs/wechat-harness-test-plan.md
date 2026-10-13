@@ -1,6 +1,33 @@
 # BabyMemo 微信 Harness 自动化测试方案
 
-> 状态：**实施方案，新增场景测试尚未实现，不应计为已通过**。场景依据见 [真实场景审查](./wechat-harness-review.md)。现有自动化与执行命令分别见 [QA 回归矩阵](./qa-regression-matrix.md)、[E2E 执行指南](./e2e-testing.md)。固定代码基线 main@61c0ecd，2026-10-13。
+> 状态：**历史 T-001～T-024 计划 + ReAct R-001～R-014 的新验收矩阵**。下表不是已通过报告；PR 里的新增测试要等 CI 通过后才计为验证。场景依据见 [真实场景审查](./wechat-harness-review.md)。现有自动化与执行命令分别见 [QA 回归矩阵](./qa-regression-matrix.md)、[E2E 执行指南](./e2e-testing.md)。固定代码基线 main@61c0ecd，2026-10-13。
+
+## 2026-10-13 新增：ReAct 闭环专项验收（PR #37）
+
+核心控制流是 **模型决策 → 加密写前日志 → 工具执行 → role:tool 观察 → 下一次模型决策**。先测程序是否正确执行这一协议，再通过人工合成语料评估真实 OpenRouter 模型；两者不能互相代替。
+
+| ID | 场景 | 自动测试文件 | 必须断言 | 版本状态 |
+| --- | --- | --- | --- | --- |
+| R-001 | 查询记录→把真实 ID 传给模型→修改 | `wechat-agent-loop.test.mjs`、`wechat-worker-e2e.mjs` | 第二次 LLM 请求含先前 role=tool；D1 仅更新目标 | PR 待 CI |
+| R-002 | `10.1号测试宝宝大概13.7kg` | `wechat-policy.test.mjs`、`wechat-worker-e2e.mjs` | 日期 2026-10-01、体重 13.7、估计值备注 | PR 待 CI |
+| R-003 | `get_runtime_context` | `wechat-worker-e2e.mjs` | 日期时区源于 Worker，不由模型编造 | PR 待 CI |
+| R-004 | 单次返回多个工具 | `wechat-agent-loop.test.mjs` | 顺序执行，结果按原 tool_call_id 注入 | PR 待 CI |
+| R-005 | 模型回答“保存成功”但零工具 | `wechat-agent-loop.test.mjs` | 不得声称发生 D1 写入 | PR 待 CI |
+| R-006 | 模型规划日志写库失败 | `wechat-agent-loop.test.mjs` | 零工具调用，必须先持久化再执行 | PR 待 CI |
+| R-007 | 同一消息 ID 重放已保存规划 | `wechat-agent-loop.test.mjs`、Worker E2E | 不重新调用模型规划；步骤 ID 不漂移；无重复创建 | PR 待 CI |
+| R-008 | 第一步成功、后续 LLM 429 | `wechat-agent-loop.test.mjs` | 回复仅报告成功部分、明确后续失败，禁止伪回滚 | PR 待 CI |
+| R-009 | 4轮、8工具、90秒软限制 | `wechat-agent-loop.test.mjs` | 达预算停止剩余操作，旧写入保留 | PR 待 CI |
+| R-010 | 非法工具结构、未知工具、重复调用 ID | `wechat-agent-loop.test.mjs`、`wechat-orchestrator.test.mjs` | 零越权工具执行 | PR 待 CI |
+| R-011 | 先查后改时的 ID 来源 | `wechat-worker-e2e.mjs` | ID 来自同条消息真实查询，不能跨宝宝或模型编造 | PR 待 CI |
+| R-012 | 写操作被策略拒绝 | `wechat-agent-loop.test.mjs` + 原有 policy suite | 停止后续写入；无隐式重试绕过 | PR 待补充 |
+| R-013 | 真实 OpenRouter 连续两轮工具调用 | `Manual OpenRouter Live E2E`（待扩展） | 真模型发出两轮规范 tool_calls/tool_call_id；模型耗时/费用可测 | **仅手动，未验证** |
+| R-014 | 真实微信账号、短期上下文、媒体/文本交错 | 真机与真实 iLink 专项 | 多账号独立、同一个消息 replay、查询修改结果正确 | **人工待验收** |
+
+运行指令：`npm run test:unit`、`npm run test:e2e`、`npm run verify`。PR CI 用离线合成响应和私有 D1/R2，**不允许自动调用真实 OpenRouter/iLink**。
+
+自动回归还应该记录：一次性任务成功率（无需让用户重述）、多轮工具调用次数、错误拒绝率、错误写入数、重复写入数、p95 延迟、每任务模型成本；没有真实模型测量数据时不得编造数字。
+
+以下 T-001～T-024 是原方案的历史风险全集，部分叙述代表此前基线；以 [ReAct 实施文档](wechat-harness-implementation.md) 为最新行为说明。
 
 ## 1. 测试目标与不可改变的边界
 
@@ -11,7 +38,7 @@
 1. 全部自动 PR/CI 用**虚构宝宝、虚构日期和测试媒体字节**；不读取生产 D1/R2、真实微信、真实 OpenRouter Key 或真实家庭聊天。
 2. Node 单测和本地 Wrangler Worker E2E 自动执行；Chromium 和 Linux WebKit 是现有自动 CI 的一部分；不能把它们称为真实微信/iPhone 验收。
 3. **真实 OpenRouter/iLink 的测试只允许人工手动触发**；对真实外部提供商调用须隔离账户、显式授权且可能计费，不能自动纳入 push、PR、schedule 或发布依赖。
-4. 维持现有单工具、精确目标与模型/执行分离的安全行为。未来设计的多步、自然更正等能力，在生产代码落地前使用「需求待实现」，**不伪装为当前通过的断言，也不使用自动跳过来掩盖回归**。
+4. 维持白名单、精确目标、模型/执行分离与来源证据校验；当前 PR 改为有界的多轮 ReAct。尚未真实验证的能力必须标为待验收，不把本地合成模型结果等同真实 OpenRouter 性能。
 5. 测试不发送实际删除或修改生产数据的请求；生产/真机验收单独走人工审批。
 
 ## 2. 最小可行覆盖矩阵
@@ -33,7 +60,7 @@
 | T-011 | H-12/H-19 | 取消尚未执行的待办 / 撤销已提交更正 | 取消不写入；撤销使用精确操作凭证；冲突版本拒绝 | state + D1 | S2/S3 |
 | T-012 | H-04/H-05 | 发两张图+附文、随后「昨天拍的，记里程碑」 | 媒体 batch 的 ID 可被引用；只创建用户明确授权的里程碑，照片日期核对 | Worker + R2 | S2/S3 |
 | T-013 | H-07 | 微信今天发去年照片并注明旧日期 | 日期来源清晰，纠正仅修改目标 batch，不猜测 EXIF | Worker + D1 | S2 |
-| T-014 | H-01 | 单条请求包含两条测量和一条里程碑 | 现行版本拒绝多工具；S3 新方案分步执行，返回每步真实状态 | model contract + D1 | S3 |
+| T-014 | H-01 | 单条请求包含两条测量和一条里程碑 | 有界多工具链分步执行，返回每步真实状态 | model contract + D1 | S3 |
 | T-015 | H-13 | 「看看我刚删的东西」 | 查询所有类型或追问；不得假装已查询全部但只返回 growth | policy + D1 | S2 |
 | T-016 | H-14 | 「过去 30 天体重」「上次医院记录」 | 确切日期区间、关键词结果集、分页和 babyId 过滤；不用模型生成虚假事实 | D1 + Worker | S4 |
 | T-017 | H-22 | 写入成功、发送回复前断网；轮询重复获得原消息 | 新增/更新/删除不重复；回复复用持久化结果和 client_id | chaos + Worker | S0/S1 |
@@ -107,7 +134,7 @@
 | 故障注入点 | 期望 |
 | --- | --- |
 | OpenRouter 调用前 / 响应 429、504 | 未执行任何 D1/R2 修改；有界退避和明确错误 |
-| 模型返回未知工具、多个工具、不合法参数 | 现行系统拒绝；未来 Planner 按契约拒绝非法步骤 |
+| 模型返回未知工具、多个工具、不合法参数 | 当前 Agent Loop 拒绝超过预算的工具批次，执行器拒绝非法参数 |
 | D1 INSERT 已提交但回复发送超时 | 轮询重试用已保存结果回复，不重复 INSERT |
 | R2 原件完成、D1 媒体索引失败 | 下次从确定性对象 key 恢复索引，不重复上传 |
 | R2 multipart 中途失败 | abort 或安全留待可恢复清理；无已完成的虚假媒体记录 |
