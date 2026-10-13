@@ -169,7 +169,7 @@ test('a read cannot authorize the model to invent a successful save',async()=>{
   complete:async({round})=>round===0?reply(call('read','get_baby')):done('我已经把小好的睡眠保存到日记啦！'),
   execute:async()=> '小好 的档案：生日 2025-05-30'});
  assert.doesNotMatch(r,/已经把|保存到日记/);
- assert.match(r,/生日 2025-05-30/);
+ assert.match(r,/暂时没能整理成可靠的回答/);
 });
 test('a failed write can be explained naturally without permitting another write',async()=>{
  let writeCount=0,finalCount=0;
@@ -205,7 +205,7 @@ test('reading the baby profile never authorizes a fake cheerful diary acknowledg
  const r=await runWechatAgentLoop({...args,
   complete:async({round})=>round===0?reply(call('a','get_baby')):done('记好啦！小好的睡眠已经记进日记了。'),
   execute:async()=> '小好 的档案：生日 2025-05-30'});
- assert.equal(r,'小好 的档案：生日 2025-05-30');
+ assert.match(r,/暂时没能整理成可靠的回答/);
 });
 test('a no-tool cheerful acknowledgement cannot impersonate a successful write',async()=>{
  const r=await runWechatAgentLoop({...args,
@@ -222,7 +222,6 @@ test('invalid final after a genuine read gets a tool-free second chance instead 
   messages:[{role:'user',content:'小好多大了'}],
   complete:async()=>round++===0?reply(call('b','get_baby')):done('操作已完成'),
   execute:async()=>profile,
-  validateFinal:({content})=>/1\s*岁/.test(content)&&/4\s*个?月/.test(content),
   finalize:async({observations,messages:history,reason})=>{
    summarize++;messages.push(structuredClone(history));
    assert.equal(reason,'inadequate_final');
@@ -234,18 +233,16 @@ test('invalid final after a genuine read gets a tool-free second chance instead 
  assert.equal(summarize,1);
  assert.equal(messages[0].at(-1).content,'操作已完成');
 });
-test('invalid age final and invalid second attempt fall back to a grounded short answer',async()=>{
+test('unhelpful model final plus unhelpful retry does not expose raw private baby profile',async()=>{
  let tries=0,round=0;
  const out=await runWechatAgentLoop({...args,
   complete:async()=>round++===0?reply(call('b','get_baby')):done('小好 的档案：生日 2025-05-30，备注：无'),
   execute:async()=> '小好 的档案：生日 2025-05-30，备注：无',
-  validateFinal:({content})=>!content.includes('档案')&&content.includes('501 天'),
-  finalize:async()=>{tries++;return done('操作已完成')},
-  fallbackReply:()=> '小好从出生到今天已经 501 天啦。'
+  finalize:async()=>{tries++;return done('操作已完成')}
  });
  assert.equal(tries,1);
- assert.equal(out,'小好从出生到今天已经 501 天啦。');
- assert.doesNotMatch(out,/档案|备注/);
+ assert.match(out,/暂时没能整理成可靠的回答/);
+ assert.doesNotMatch(out,/档案|备注|2025-05-30/);
 });
 test('a tool-free explanation cannot fabricate write success after an invalid read reply',async()=>{
  let summary=0;
@@ -255,7 +252,7 @@ test('a tool-free explanation cannot fabricate write success after an invalid re
   finalize:async()=>{summary++;return done('我已经保存到成长日记了！')}
  });
  assert.equal(summary,1);
- assert.equal(out,'小好 的档案：生日 2025-05-30'); // real facts, not fake write success
+ assert.match(out,/暂时没能整理成可靠的回答/); // no raw profile exposure
 });
 
 test('a completed tool observation has a stable cached AI final across message replay',async()=>{
@@ -270,7 +267,6 @@ test('a completed tool observation has a stable cached AI final across message r
   saveDecision:async(r,v)=>{decisionJournal.set(r,v)},
   loadFinalAnswer:async()=>finalJournal.get('reply')||null,
   saveFinalAnswer:async answer=>{if(finalJournal.has('reply'))throw Error('duplicated final journal');finalJournal.set('reply',answer)},
-  validateFinal:({content})=>content.includes('501 天'),
   finalize:async()=>{summaries.push(1);return done('小好从出生到今天已经 501 天啦。')}
  };
  const first=await runWechatAgentLoop(opts),second=await runWechatAgentLoop(opts);
