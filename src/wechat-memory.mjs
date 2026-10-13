@@ -41,7 +41,10 @@ export function buildCommandContext(text,thread,now=Date.now(),babyId=thread.bab
  const turns=(thread.turns||[]).filter(t=>t.babyId===babyId),last=turns.at(-1),messages=[];
  for(const turn of turns){
   messages.push({role:'user',content:bounded(turn.user,600)});
-  messages.push({role:'assistant',content:bounded(turn.reply,1200)});
+  // Drop only legacy protocol/JSON noise, not the user's observations.
+  const prior=bounded(turn.reply,1200);
+  const withoutRuntime=prior.replace(/^\{"currentTimestamp":[^\n]*\}\s*/,'');
+  messages.push({role:'assistant',content:withoutRuntime.includes('模型没有返回可执行的工具指令')?'上轮未执行记录操作。':withoutRuntime||'上轮工具结果已处理。'});
  }
  let executableText=text,modelText=text;
  // A follow-up "记下来" can refer to preceding observations. Do not trust

@@ -66,8 +66,40 @@ try{
  await step('runtime context comes from Worker clock rather than model guesses',async()=>{
   const r=await run({mode:'text',id:'react-clock',text:'查询当前时间',
    responses:[tool('get_runtime_context',{}),stop]});
-  assert.equal(r.error,undefined);assert.ok(r.reply.includes('Asia/Shanghai'));
-  assert.match(r.reply,/localDay/);assert.equal(r.growth.length,2);
+  assert.equal(r.error,undefined);
+  assert.equal(r.reply,'操作已完成');
+  assert.doesNotMatch(r.reply,/currentTimestamp|localDay|timeZone|Asia\/Shanghai/);
+  assert.equal(r.modelMessages[1].at(-1).role,'tool');
+  assert.match(r.modelMessages[1].at(-1).content,/messageLocalDay|timeZone/);
+  assert.equal(r.growth.length,2);
+ });
+ await step('diary date from 昨晚 stays grounded; internal clock JSON never appears in final message',async()=>{
+  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const yesterday=new Date(Date.parse(today+'T12:00:00Z')-86400000).toISOString().slice(0,10);
+  const note='测试宝宝昨晚半小时一醒，中间睡了三个小时，后来又半小时一醒';
+  const natural=content=>({choices:[{message:{content,tool_calls:[]},finish_reason:'stop'}]});
+  const r=await run({mode:'alarm',alarms:2,
+   pollBatches:[
+    [textFrom('json-diary-one','synthetic-user','synthetic-bot',note)],
+    [textFrom('json-diary-two','synthetic-user','synthetic-bot','记下来')]
+   ],
+   responses:[
+    natural('昨晚确实睡得不安稳，要我帮你记到日记吗？'),
+    tool('get_runtime_context',{}),
+    tool('create_milestone',{day:yesterday,title:'昨晚睡眠观察',description:'昨晚半小时一醒，中间睡了三个小时，后来又半小时一醒。'}),
+    stop
+   ]
+  });
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,4);
+  assert.equal(r.replies.length,2);
+  assert.equal(r.milestones.length,1);
+  assert.equal(r.milestones[0].day,yesterday);
+  assert.match(r.replies[1],/已保存成长事件/);
+  assert.doesNotMatch(r.replies.join(' '),/currentTimestamp|messageTimestamp|timeZone|messageLocalDay|\{"current/);
+  assert.match(r.modelMessages[1][0].content,new RegExp(yesterday)); // date in trusted instruction
+  assert.equal(r.modelMessages[2].at(-1).role,'tool');
+  assert.match(r.modelMessages[2].at(-1).content,/currentTimestamp/); // only the model sees JSON
  });
  await step('negated delete cannot mutate local D1',async()=>{const r=await run({mode:'text',id:'negated-delete',text:'不要删除测试宝宝今天的体重',responses:[tool('delete_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})})]});assert.equal(r.growth.length,2);assert.doesNotMatch(r.reply,/已删除/)});
  await step('four consecutive WeChat messages naturally respond, then save one consolidated diary milestone',async()=>{
@@ -94,10 +126,11 @@ try{
   assert.match(r.replies[1],/连续三个小时/);
   assert.match(r.replies[2],/又恢复了半小时一醒/);
   assert.match(r.replies[3],/已保存成长事件/);
-  assert.equal(r.milestones.length,1);
-  assert.equal(r.milestones[0].baby_id,'synthetic-baby');
-  assert.equal(r.milestones[0].day,yesterday);
-  assert.match(r.milestones[0].description,/半小时一醒.*三个小时.*半小时一醒/);
+  const thisMessageMilestones=r.milestones.filter(x=>x.source_message_id?.includes('diary-turn-3:step:0'));
+  assert.equal(thisMessageMilestones.length,1); // independent of prior test fixtures
+  assert.equal(thisMessageMilestones[0].baby_id,'synthetic-baby');
+  assert.equal(thisMessageMilestones[0].day,yesterday);
+  assert.match(thisMessageMilestones[0].description,/半小时一醒.*三个小时.*半小时一醒/);
   const finalRequest=r.modelMessages[3];
   assert.deepEqual(finalRequest.filter(x=>x.role==='user').slice(0,3).map(x=>x.content),messages.slice(0,3));
   assert.match(finalRequest.at(-1).content,/create_milestone/);
