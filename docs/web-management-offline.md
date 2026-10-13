@@ -45,6 +45,6 @@
 
 ## 兼容与验证
 
-新功能需要先应用增量迁移 `0016_web_management.sql`，再发布Worker。旧表和原件保留。
+新功能需要先应用增量迁移 `0016_web_management.sql`，再发布Worker。旧表和原件保留。若旧导入库已有兼容的 `updated_at`，先运行 `node scripts/reconcile-web-management.mjs`：保留旧列和非空版本，只补齐缺少的结构，并在同一批次记录0016；旧头像键会保留到新头像字段。
 
 测试包含只读误选写工具、新旧日期角色、瞬间记录快捷判断、清理认领、ZIP标准读取器校验、网页版本冲突与请求重放；浏览器覆盖编辑、头像、首页分页及离线重开/同步。Chromium/Linux WebKit均不代表真实iPhone Safari验收。

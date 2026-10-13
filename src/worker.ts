@@ -474,7 +474,7 @@ app.get('/api/export/file',async c=>{
  const id=c.req.query('id'),kind=c.req.query('kind');if(!id||!['avatar','original','thumbnail'].includes(kind||''))return fail(c,400,'INVALID_EXPORT_FILE');
  let key:string|undefined;
  if(kind==='avatar'){const baby=await c.env.DB.prepare('SELECT avatar_key FROM babies WHERE id=?').bind(id).first<{avatar_key:string}>();key=baby?.avatar_key}
- else{const media=await c.env.DB.prepare('SELECT object_key,thumbnail_ready FROM media WHERE id=? AND purge_token IS NULL').bind(id).first<{object_key:string;thumbnail_ready:number}>();if(media)key=kind==='original'?media.object_key:media.thumbnail_ready?thumbKey(id):undefined}
+ else{const media=await c.env.DB.prepare('SELECT * FROM media WHERE id=? AND purge_token IS NULL').bind(id).first<{object_key:string;thumbnail_ready:number;thumbnail_object_key?:string}>();if(media)key=kind==='original'?media.object_key:media.thumbnail_object_key|| (media.thumbnail_ready?thumbKey(id):undefined)}
  if(!key)return fail(c,404,'EXPORT_OBJECT_UNAVAILABLE');
  const object=await c.env.MEDIA.get(key);if(!object)return fail(c,404,'EXPORT_OBJECT_UNAVAILABLE');
  return new Response(object.body,{headers:{'Content-Type':object.httpMetadata?.contentType||'application/octet-stream','Content-Length':String(object.size),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
