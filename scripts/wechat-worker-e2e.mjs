@@ -90,7 +90,7 @@ try{
  });
  await step('runtime context comes from Worker clock rather than model guesses',async()=>{
   const r=await run({mode:'text',id:'react-clock',text:'查询当前时间',
-   responses:[tool('get_runtime_context',{}),natural('现在是下午，按宝宝所在时区 Asia/Shanghai 计算。')]});
+   responses:[tool('get_runtime_context',{}),natural('现在是下午四点多。')]});
   assert.equal(r.error,undefined);
   assert.match(r.reply,/现在是下午/);
   assert.doesNotMatch(r.reply,/currentTimestamp|localDay|timeZone|Asia\/Shanghai/);
