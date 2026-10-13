@@ -800,6 +800,25 @@ async function browserE2e(){
       assert.equal(await page.locator('.upload-card').count(),0);
       await page.screenshot({path:join(evidence,'mobile-album.png'),fullPage:true});
     });
+    await step((useWebKit?'WebKit':'Chromium')+': expanded filters stay inside narrow Safari viewports',async()=>{
+      for(const width of [320,375,390,430]){
+        await page.setViewportSize({width,height:844});
+        for(const nav of ['成长','相册']){
+          await page.locator('.mobile-nav button[aria-label="'+nav+'"]').click();
+          const toggle=page.locator('.record-filter-toggle');
+          await toggle.click();
+          assert.equal(await toggle.getAttribute('aria-expanded'),'true','filter panel failed to expand');
+          const measure=await page.locator('.record-filter-fields input[type="date"]').evaluateAll(inputs=>
+            inputs.map(input=>{const r=input.getBoundingClientRect();return{left:r.left,right:r.right,width:r.width}}));
+          assert.equal(measure.length,2,'both date filters remain available');
+          for(const input of measure)assert.ok(input.left>=-1&&input.right<=width+1,'Date input overflow '+width+'px '+nav+': '+JSON.stringify(input));
+          const overflow=await page.evaluate(()=>document.documentElement.scrollWidth);
+          assert.ok(overflow<=width+1,'Expanded filter overflow at '+width+'px '+nav+': '+overflow);
+          await toggle.click();
+        }
+      }
+      await page.setViewportSize({width:390,height:844});
+    });
     await step((useWebKit?'WebKit':'Chromium')+': four responsive widths across primary views',async()=>{
       // Browser viewports prove layout contracts, not physical iPhone behavior.
       const cases=[320,375,390,768],views=[
