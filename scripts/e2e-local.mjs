@@ -322,7 +322,7 @@ async function e2e() {
     const id='2f0e90a1-bb1a-4f3f-8090-99f26a000001';
     const sample=Uint8Array.from([255,216,255,224,0,16,74,70,73,70,73,255,217]);
     const headers={'Content-Type':'image/jpeg','x-baby-id':babyId,'x-upload-day':'2026-01-12',
-     'x-upload-title':encodeURIComponent('小照片.jpg')};
+     'x-upload-title':encodeURIComponent('小照片.jpg'),'x-upload-description':encodeURIComponent('第一次看到小猫')};
     assert.equal((await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers,anonymous:true})).status,401);
     assert.equal((await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers:{...headers,Origin:'https://attacker.invalid'}})).status,403);
     assert.equal((await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers:{...headers,'Content-Type':'text/html'}})).status,400);
@@ -336,6 +336,7 @@ async function e2e() {
     assert.equal(read.status,200);assert.deepEqual(new Uint8Array(await read.arrayBuffer()),sample);
     const list=await json('/api/media?babyId='+babyId);
     assert.equal(list.data.items.filter(item=>item.id===id).length,1);
+    assert.equal(list.data.items.find(item=>item.id===id).description,'第一次看到小猫');
     const pending=await json('/api/upload/pending?babyId='+babyId);
     assert.equal(pending.data.items.some(item=>item.id===id),false);
     assert.equal((await json('/api/media/'+id,{method:'DELETE'})).status,200);
@@ -344,7 +345,7 @@ async function e2e() {
   await step('image multipart start and pending incomplete uploads',async()=>{
     original=Uint8Array.from([255,216,255,224,1,2,3,4,5,255,217]);
     const pending=await json('/api/upload/start',{method:'POST',body:{
-      babyId,day:'2026-01-15',title:'family-photo.jpg',mime:'image/jpeg',size:original.length,
+      babyId,day:'2026-01-15',title:'family-photo.jpg',description:'周末一起玩耍',mime:'image/jpeg',size:original.length,
       fingerprint:'a'.repeat(64)
     }});
     assert.equal(pending.status,201,JSON.stringify(pending.data));
@@ -361,6 +362,7 @@ async function e2e() {
     assert.equal(part.status,200,JSON.stringify(part.data));
     list=await json('/api/upload/pending?babyId='+babyId);
     assert.deepEqual(list.data.items[0].completedParts,[1]);
+    assert.equal(list.data.items[0].description,'周末一起玩耍');
     const finished=await json('/api/upload/'+mediaId+'/finish',{method:'POST',body:{}});
     assert.equal(finished.status,201,JSON.stringify(finished.data));
     assert.equal(finished.data.completed,true);
@@ -373,6 +375,7 @@ async function e2e() {
     assert.equal(missing.data.items.some(x=>x.id===mediaId),true);
     const once=await json('/api/media?babyId='+babyId);
     assert.equal(once.data.items.filter(x=>x.id===mediaId).length,1);
+    assert.equal(once.data.items.find(x=>x.id===mediaId).description,'周末一起玩耍');
   });
   await step('private original media, byte ranges, safe download header',async()=>{
     const missing=await json('/api/media/'+mediaId+'/content',{anonymous:true});
@@ -408,11 +411,16 @@ async function e2e() {
     assert.equal(completedBackfill.data.items.some(x=>x.id===mediaId),false);
     const mediaRow=await json('/api/media?babyId='+babyId);
     assert.equal(mediaRow.data.items.find(x=>x.id===mediaId).thumbnail_ready,1);
-    const edited=await json('/api/media/'+mediaId,{method:'PATCH',body:{title:'Edited photo',day:'2026-02-01'}});
+    const edited=await json('/api/media/'+mediaId,{method:'PATCH',body:{title:'Edited photo',day:'2026-02-01',description:'春游第一天'}});
     assert.equal(edited.status,200);
     const list=await json('/api/media?babyId='+babyId);
     assert.equal(list.data.items[0].title,'Edited photo');
     assert.equal(list.data.items[0].day,'2026-02-01');
+    assert.equal(list.data.items[0].description,'春游第一天');
+    assert.ok((await json('/api/media?babyId='+babyId+'&q='+encodeURIComponent('春游'))).data.items.some(x=>x.id===mediaId));
+    assert.equal((await json('/api/media/'+mediaId,{method:'PATCH',body:{day:'2026-02-01',description:'x'.repeat(1001)}})).status,400);
+    assert.equal((await json('/api/media/'+mediaId,{method:'PATCH',body:{day:'2026-02-01',description:''}})).status,200);
+    assert.equal((await json('/api/media?babyId='+babyId)).data.items[0].description,'');
     assert.equal((await json('/api/media/'+mediaId+'/favorite',{method:'POST',body:{favorite:true}})).status,404);
     assert.ok((await json('/api/media?babyId='+babyId+'&q=Edited')).data.items.some(x=>x.id===mediaId));
     assert.equal((await json('/api/media?babyId='+babyId+'&q=missing')).data.items.length,0);
@@ -436,7 +444,7 @@ async function e2e() {
     file.fill(31);
     file[0]=0;file[1]=0;file[size-1]=99;
     const created=await json('/api/upload/start',{method:'POST',body:{
-      babyId,day:'2026-01-15',title:'two-parts.mp4',mime:'video/mp4',size,
+      babyId,day:'2026-01-15',title:'two-parts.mp4',description:'周末在湖边跑步',mime:'video/mp4',size,
       fingerprint:'c'.repeat(64)
     }});
     assert.equal(created.status,201,JSON.stringify(created.data));
@@ -455,6 +463,7 @@ async function e2e() {
     assert.equal(second.status,200,JSON.stringify(second.data));
     const finish=await json('/api/upload/'+id+'/finish',{method:'POST',body:{}});
     assert.equal(finish.status,201,JSON.stringify(finish.data));
+    assert.equal((await json('/api/media?babyId='+babyId)).data.items.find(x=>x.id===id).description,'周末在湖边跑步');
     const range=await request('/api/media/'+id+'/content',{
       headers:{Range:'bytes='+chunkSize+'-'+(size-1)}
     });

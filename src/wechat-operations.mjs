@@ -4,7 +4,7 @@ import {retentionCutoff} from './media-retention.mjs';
 const COLUMNS={
  growth:['weight','height','head_circumference','notes','day','deleted_at'],
  milestones:['day','title','description','deleted_at'],
- media:['day','favorite','deleted_at'],
+ media:['day','description','favorite','deleted_at'],
  baby:['name','birthday','birth_time','allergies','notes']
 };
 export function operationSnapshot(kind,row){

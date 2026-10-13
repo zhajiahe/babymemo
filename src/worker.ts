@@ -181,10 +181,10 @@ app.get('/api/media',async c=>{
   const query=(c.req.query('q')||'').trim(),start=c.req.query('startDay')||'',end=c.req.query('endDay')||'',type=c.req.query('type')||'';
   if(query.length>80||start&&!dayOk(start)||end&&!dayOk(end)||start&&end&&start>end||type&&!['image','video'].includes(type))return fail(c,400,'INVALID_SEARCH');
   const clauses=['baby_id=?','deleted_at IS NULL'],bindings:(string|number)[]=[babyId];
-  if(query){clauses.push('title LIKE ?');bindings.push('%'+query+'%')}
+  if(query){clauses.push('(title LIKE ? OR description LIKE ?)');bindings.push('%'+query+'%','%'+query+'%')}
   if(start){clauses.push('day>=?');bindings.push(start)}if(end){clauses.push('day<=?');bindings.push(end)}
   if(type){clauses.push('mime LIKE ?');bindings.push(type+'/%')}
-  const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,thumbnail_ready,created_at,updated_at FROM media WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?').bind(...bindings,page*36).all();
+  const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,description,mime,size,thumbnail_ready,created_at,updated_at FROM media WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?').bind(...bindings,page*36).all();
   return c.json({items:rows.results,hasMore:rows.results.length===36});
 });
 // Enumerate missing private derivatives in bounded batches across the *entire*
@@ -231,6 +231,10 @@ app.put('/api/upload/direct/:id',async c=>{
   let title='';
   try{title=decodeURIComponent(c.req.header('x-upload-title')||'').slice(0,120)}catch{return fail(c,400,'INVALID_DIRECT_MEDIA')}
   if(!title.trim())return fail(c,400,'INVALID_DIRECT_MEDIA');
+  let description='';
+  try{description=decodeURIComponent(c.req.header('x-upload-description')||'')}catch{return fail(c,400,'INVALID_DIRECT_MEDIA')}
+  if(description.length>1000)return fail(c,400,'INVALID_MEDIA_DESCRIPTION');
+  description=description.trim();
   const key='private/'+babyId+'/'+id;
   let phase='upload';
   try{
@@ -253,8 +257,8 @@ app.put('/api/upload/direct/:id',async c=>{
       }
     }
     phase='index';
-    await c.env.DB.prepare('INSERT OR IGNORE INTO media(id,baby_id,day,title,object_key,mime,size,created_at) VALUES(?,?,?,?,?,?,?,?)')
-      .bind(id,babyId,day,title,key,mime,size,now()).run();
+    await c.env.DB.prepare('INSERT OR IGNORE INTO media(id,baby_id,day,title,description,object_key,mime,size,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+      .bind(id,babyId,day,title,description,key,mime,size,now()).run();
     const committed=await c.env.DB.prepare('SELECT id,baby_id,size FROM media WHERE id=?')
       .bind(id).first<{id:string;baby_id:string;size:number}>();
     if(!committed||committed.baby_id!==babyId||committed.size!==size)throw Error('DIRECT_INDEX_FAILED');
@@ -270,8 +274,8 @@ app.get('/api/upload/pending',async c=>{
   const babyId=c.req.query('babyId');
   if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const sessions=await c.env.DB.prepare(
-    'SELECT id,day,title,mime,size,fingerprint,created_at,updated_at FROM media_uploads WHERE baby_id=? ORDER BY created_at DESC LIMIT 30'
-  ).bind(babyId).all<{id:string;day:string;title:string;mime:string;size:number;fingerprint:string;created_at:string}>();
+    'SELECT id,day,title,description,mime,size,fingerprint,created_at,updated_at FROM media_uploads WHERE baby_id=? ORDER BY created_at DESC LIMIT 30'
+  ).bind(babyId).all<{id:string;day:string;title:string;description:string;mime:string;size:number;fingerprint:string;created_at:string}>();
   const items=await Promise.all(sessions.results.map(async session=>{
     const parts=await c.env.DB.prepare('SELECT part_number FROM media_upload_parts WHERE media_upload_id=? ORDER BY part_number')
       .bind(session.id).all<{part_number:number}>();
@@ -282,7 +286,7 @@ app.get('/api/upload/pending',async c=>{
 app.post('/api/upload/start',async c=>{
   try{
     const v=await json(c.req.raw);
-    if(typeof v.babyId!=='string'||!await babyExists(c.env,v.babyId)||!dayOk(v.day)||typeof v.mime!=='string'||!allowedMime(v.mime)||!Number.isSafeInteger(v.size)||v.size<1||v.size>209715200||v.fingerprint!==undefined&&!uploadFingerprintOk(v.fingerprint))return fail(c,400,'INVALID_MEDIA');
+    if(typeof v.babyId!=='string'||!await babyExists(c.env,v.babyId)||!dayOk(v.day)||typeof v.mime!=='string'||!allowedMime(v.mime)||!Number.isSafeInteger(v.size)||v.size<1||v.size>209715200||v.fingerprint!==undefined&&!uploadFingerprintOk(v.fingerprint)||v.description!==undefined&&(typeof v.description!=='string'||v.description.length>1000))return fail(c,400,'INVALID_MEDIA');
     const id=v.requestId||crypto.randomUUID(),key='private/'+v.babyId+'/'+id;
     if(!/^[a-f0-9-]{36}$/i.test(id))return fail(c,400,'INVALID_REQUEST_ID');
     const recorded=await c.env.DB.prepare('SELECT baby_id,size,mime FROM media WHERE id=?').bind(id).first<{baby_id:string;size:number;mime:string}>();
@@ -290,7 +294,7 @@ app.post('/api/upload/start',async c=>{
     const pending=await c.env.DB.prepare('SELECT baby_id,size,mime,fingerprint FROM media_uploads WHERE id=?').bind(id).first<{baby_id:string;size:number;mime:string;fingerprint:string}>();
     if(pending)return pending.baby_id===v.babyId&&pending.size===v.size&&pending.mime===v.mime&&pending.fingerprint===(v.fingerprint||'')?c.json({id,chunkSize:8388608}):fail(c,409,'UPLOAD_ID_CONFLICT');
     const handle=await c.env.MEDIA.createMultipartUpload(key,{httpMetadata:{contentType:v.mime}});
-    try{await c.env.DB.prepare('INSERT INTO media_uploads(id,baby_id,object_key,upload_id,day,title,mime,size,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,key,handle.uploadId,v.day,String(v.title||'').slice(0,120),v.mime,v.size,v.fingerprint||'',now(),now()).run()}
+    try{await c.env.DB.prepare('INSERT INTO media_uploads(id,baby_id,object_key,upload_id,day,title,description,mime,size,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,key,handle.uploadId,v.day,String(v.title||'').slice(0,120),String(v.description||'').trim(),v.mime,v.size,v.fingerprint||'',now(),now()).run()}
     catch(e){await handle.abort().catch(()=>{});throw e}
     return c.json({id,chunkSize:8388608},201);
   }catch{return fail(c,400,'UPLOAD_START_FAILED');}
@@ -337,7 +341,7 @@ app.post('/api/upload/:id/finish',async c=>{
   try {
     // A lost 201 response must never start another multipart completion.
     if(await recorded())return c.json({id,completed:true,alreadyCompleted:true},200);
-    const row=await c.env.DB.prepare('SELECT * FROM media_uploads WHERE id=?').bind(id).first<{object_key:string;upload_id:string;size:number;baby_id:string;day:string;title:string;mime:string}>();
+    const row=await c.env.DB.prepare('SELECT * FROM media_uploads WHERE id=?').bind(id).first<{object_key:string;upload_id:string;size:number;baby_id:string;day:string;title:string;description:string;mime:string}>();
     if(!row)return fail(c,404,'UPLOAD_NOT_FOUND');
     const parts=await c.env.DB.prepare('SELECT part_number AS partNumber,etag FROM media_upload_parts WHERE media_upload_id=? ORDER BY part_number').bind(id).all<{partNumber:number;etag:string}>();
     const expected=Math.ceil(row.size/8388608);
@@ -347,7 +351,7 @@ app.post('/api/upload/:id/finish',async c=>{
       bucket:c.env.MEDIA,row,parts:parts.results,isRecorded:recorded,
       persist:async()=>{
         await c.env.DB.batch([
-          c.env.DB.prepare('INSERT INTO media(id,baby_id,day,title,object_key,mime,size,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,row.baby_id,row.day,row.title,row.object_key,row.mime,row.size,now()),
+          c.env.DB.prepare('INSERT INTO media(id,baby_id,day,title,description,object_key,mime,size,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,row.baby_id,row.day,row.title,row.description||'',row.object_key,row.mime,row.size,now()),
           c.env.DB.prepare('DELETE FROM media_uploads WHERE id=?').bind(id)
         ]);
       }
@@ -411,11 +415,18 @@ app.patch('/api/media/:id',async c=>{
   try{value=await json(c.req.raw)}catch{return fail(c,400,'INVALID_INPUT')}
   if(!value||typeof value!=='object')return fail(c,400,'INVALID_MEDIA_METADATA');
   const v=value as Record<string,unknown>;
-  if(!dayOk(v.day)||(v.title!==undefined&&(typeof v.title!=='string'||!v.title.trim()||v.title.trim().length>120)))return fail(c,400,'INVALID_MEDIA_METADATA');
+  if(!dayOk(v.day)||(v.title!==undefined&&(typeof v.title!=='string'||!v.title.trim()||v.title.trim().length>120))||
+     v.description!==undefined&&(typeof v.description!=='string'||v.description.length>1000))return fail(c,400,'INVALID_MEDIA_METADATA');
   const record=await c.env.DB.prepare('SELECT id,baby_id,updated_at FROM media WHERE id=? AND deleted_at IS NULL AND purge_token IS NULL').bind(c.req.param('id')).first<{id:string;baby_id:string;updated_at:string}>();
   if(!record||v.babyId!==undefined&&v.babyId!==record.baby_id)return fail(c,404,'NOT_FOUND');
   const version=crypto.randomUUID();
-  if(v.title!==undefined){
+  if(v.description!==undefined){
+    const hasTitle=v.title!==undefined;
+    const sql='UPDATE media SET '+(hasTitle?'title=?,':'')+'description=?,day=?,updated_at=? WHERE id=? AND deleted_at IS NULL AND updated_at=?';
+    const changes=await commitMutation(c,c.env.DB.prepare(sql)
+      .bind(...(hasTitle?[String(v.title).trim()]:[]),String(v.description).trim(),v.day,version,c.req.param('id'),v.expectedUpdatedAt??record.updated_at),{ok:true,updated_at:version});
+    if(!changes)return fail(c,409,'EDIT_CONFLICT');
+  }else if(v.title!==undefined){
     const changes=await commitMutation(c,c.env.DB.prepare('UPDATE media SET title=?,day=?,updated_at=? WHERE id=? AND deleted_at IS NULL AND updated_at=?').bind(v.title.trim(),v.day,version,c.req.param('id'),v.expectedUpdatedAt??record.updated_at),{ok:true,updated_at:version});
     if(!changes)return fail(c,409,'EDIT_CONFLICT');
   }else{

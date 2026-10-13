@@ -36,7 +36,7 @@ export function projectMutation(resource,job){
   value.items=value.items.flatMap(row=>row.id!==rowId?[row]:job.method==='DELETE'?[]:[{...row,...body,updated_at:pending,pending:true}]).filter(dayMatch);
  }
  if(job.kind==='media'&&url.pathname==='/api/media'&&url.searchParams.get('babyId')===body.babyId){
-  const row={id:job.id,baby_id:body.babyId,day:body.day,title:body.title,mime:body.mime,size:job.file.size,updated_at:pending,pending:true};
+  const row={id:job.id,baby_id:body.babyId,day:body.day,title:body.title,description:body.description||'',mime:body.mime,size:job.file.size,updated_at:pending,pending:true};
   if(dayMatch(row)&&!value.items.some(x=>x.id===row.id))value.items.unshift(row);
  }
  if(babyMatch&&url.pathname==='/api/state'){
