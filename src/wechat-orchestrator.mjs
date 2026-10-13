@@ -77,9 +77,17 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
    const after=action.startsWith('create_')?await createdBySource(env,kind,baby.id,sourceId):
      action==='update_recent_media'?null:await recordFor(env,kind,baby.id,before?{id:before.id}:args);
    if(after){
-    const opId=await auditChange(env,{sourceId:sourceId+':audit',babyId:baby.id,kind,recordId:after.id,action,
-     before:operationSnapshot(kind,before),after:operationSnapshot(kind,after)});
-    thread.lastOperation={babyId:baby.id,opId,expiresAt:at+1200000};
+    const atomicAudit=new Set(['update_baby','update_growth','update_milestone','update_media','delete_growth','delete_milestone','delete_media','restore_trash']);
+    let opId;
+    if(atomicAudit.has(action)){
+     const existing=await env.DB.prepare('SELECT id FROM wechat_operation_log WHERE source_message_id=? AND baby_id=? LIMIT 1')
+       .bind(sourceId,baby.id).first();
+     opId=existing?.id||null;
+    }else{
+     opId=await auditChange(env,{sourceId:sourceId+':audit',babyId:baby.id,kind,recordId:after.id,action,
+       before:operationSnapshot(kind,before),after:operationSnapshot(kind,after)});
+    }
+    if(opId)thread.lastOperation={babyId:baby.id,opId,expiresAt:at+1200000};
     if(action==='create_milestone'&&thread.lastMedia?.babyId===baby.id&&thread.lastMedia.expiresAt>at&&/照片|视频|图片|刚才发的/.test(groundedText)){
      let linked=0;
      for(const id of thread.lastMedia.ids.slice(0,4)){
