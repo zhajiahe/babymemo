@@ -253,18 +253,18 @@ try{
  await step('a later text context cannot be overwritten by an older media caption operation',async()=>{
   const message=raw('caption-context-changed');message.item_list.push({type:1,text_item:{text:'测试宝宝今天记录第一次走路里程碑'}});
   const r=await run({mode:'alarm',holdMedia:true,messages:[message],followupMessages:[textFrom('newer-query','synthetic-user','synthetic-bot','查询测试宝宝最近五条体重记录')],responses:[tool('list_growth',{limit:5})],encryptedBase64:encrypt(jpeg)});
-  assert.equal(r.error,undefined);assert.equal(r.models,2);assert.match(r.reply,/附文操作未执行/);
+  assert.equal(r.error,undefined);assert.equal(r.models,3);assert.match(r.reply,/附文操作未执行/);
  });
  await step('an unchanged reception context executes the explicitly authorized caption after save',async()=>{
   const message=raw('caption-context-current');message.item_list.push({type:1,text_item:{text:'测试宝宝今天记录体重 11.5kg'}});
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
   const r=await run({mode:'alarm',messages:[message],responses:[tool('create_growth',{day,weight:11.5})],encryptedBase64:encrypt(jpeg)});
-  assert.equal(r.error,undefined);assert.equal(r.models,2,r.reply);assert.doesNotMatch(r.reply,/附文操作未执行/);assert.match(r.reply,/已保存/);
+  assert.equal(r.error,undefined);assert.equal(r.models,3,r.reply);assert.doesNotMatch(r.reply,/附文操作未执行/);assert.match(r.reply,/已保存/);
   const record=r.growth.find(x=>x.source_message_id==='synthetic-bot:caption-context-current:caption:step:0');assert.equal(record.weight,11.5);savedCaptionWeightRecordId=record.id;
  });
  await step('a media caption query publishes trusted IDs for the next text follow-up',async()=>{
   const message=raw('caption-query-reference-'+ 'a'.repeat(64)+'_%');message.item_list.push({type:1,text_item:{text:'测试宝宝查询今天成长记录'}});
-  const r=await run({mode:'alarm',alarms:2,messages:[message],followupMessages:[textFrom('caption-query-followup','synthetic-user','synthetic-bot','修改第一条体重为12kg')],responses:[tool('list_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})}),stop,tool('update_growth',{id:savedCaptionWeightRecordId.slice(0,8),weight:12}),stop],encryptedBase64:encrypt(jpeg)});
+  const r=await run({mode:'alarm',alarms:2,messages:[message],followupMessages:[textFrom('caption-query-followup','synthetic-user','synthetic-bot','修改第一条体重为12kg')],responses:[tool('list_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})}),natural('已经找到今天的成长测量。'),tool('update_growth',{id:savedCaptionWeightRecordId.slice(0,8),weight:12}),natural('好的，体重已更正为 12 公斤。')],encryptedBase64:encrypt(jpeg)});
   assert.equal(r.error,undefined);assert.equal(r.models,4,r.reply);assert.equal(r.growth.find(x=>x.id===savedCaptionWeightRecordId).weight,12,r.reply);
  });
  console.log(JSON.stringify({suite:'isolated WeChat Worker E2E',passed,failed:0,realExternalCalls:0,productionWrites:0}));
