@@ -28,7 +28,7 @@ function pendingActionFromText(text){
  if(/(?:记录|记一下|记下|记个).{0,12}(?:里程碑|成长瞬间|成长事件)/.test(text))return 'create_milestone';
  return null;
 }
-export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=text,at=Date.now(),thread=null}){
+export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=text,at=Date.now(),thread=null,encryptReply=async x=>x,decryptReply=async x=>x}){
  if(!Array.isArray(calls)||!calls.length)return '没有需要执行的工具';
  if(calls.length>4)return '一次最多处理 4 项操作，请分开发送';
  const names=new Set(wechatTools.map(t=>t.function.name)),results=[];
@@ -42,7 +42,7 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   // Claims and results are always scoped by the server-selected baby, not a model babyId.
   const cached=await env.DB.prepare('SELECT reply FROM wechat_tool_steps WHERE source_message_id=? AND baby_id=? LIMIT 1')
     .bind(sourceId,baby.id).first();
-  if(cached){results.push(cached.reply);continue}
+  if(cached){results.push(await decryptReply(cached.reply));continue}
   // A transaction can commit before the message reply/step journal is persisted.
   // Do not replay an old edit over a newer record state after such a crash.
   if(['update_baby','update_growth','update_milestone','update_media','delete_growth','delete_milestone','delete_media','restore_trash','update_recent_media'].includes(action)){
@@ -52,7 +52,7 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
     const recovered='此前已成功提交此操作（操作编号 '+prior.id.slice(0,8)+'），已跳过重复执行。';
     results.push(recovered);
     await env.DB.prepare('INSERT OR IGNORE INTO wechat_tool_steps(source_message_id,baby_id,action,reply,created_at) VALUES(?,?,?,?,?)')
-     .bind(sourceId,baby.id,action,recovered,new Date().toISOString()).run();
+     .bind(sourceId,baby.id,action,await encryptReply(recovered),new Date().toISOString()).run();
     continue;
    }
   }
@@ -114,7 +114,7 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   }
   // Persist every executed step before the next step or the final WeChat reply.
   await env.DB.prepare('INSERT OR IGNORE INTO wechat_tool_steps(source_message_id,baby_id,action,reply,created_at) VALUES(?,?,?,?,?)')
-   .bind(sourceId,baby.id,action,bounded(results.at(-1),1500),new Date().toISOString()).run();
+   .bind(sourceId,baby.id,action,await encryptReply(bounded(results.at(-1),1500)),new Date().toISOString()).run();
   if(thread&&success)thread.pending=null;
  }
  return results.join('\n');
