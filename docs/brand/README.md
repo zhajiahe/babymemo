@@ -1,22 +1,28 @@
-# BabyMemo 品牌资源 · Calm Editorial
+# BabyMemo 品牌资源 · 宝宝与成长日记
 
-当前正式视觉采用“守护与成长”的几何符号：一条保护性外弧与内部的小身影组成的统一标记，简洁、无爱心、星星与装饰渐变。颜色：背景 `#F5EAE0`、主笔画 `#845A46`、内层 `#C18D73`。
+现用品牌图标是宝宝从蓝色成长日记本探出头的插画，保留黄色书签、粉色爱心与蓝色主色。**Web Logo 与 favicon 透明；iOS 主屏幕、maskable 图标使用浅蓝底。** 这一差异是为了适应主屏幕裁切，不是额外的网页背景。
 
-## 当前启用
+## 单一源图
 
-- `public/brand/mark.svg`：侧边栏和登录页的品牌标识。
-- `public/brand/wordmark.svg`：品牌字样与“家庭成长日记”的横向组合。
-- `public/favicon.svg`、`public/favicon-32.png`、`public/favicon.ico`：浏览器标签、书签和旧浏览器兼容图标。
-- `public/apple-touch-icon.png`：180×180，iOS 添加主屏幕用。
-- `public/icon-192.png`、`public/icon-512.png`：Web App Manifest 中 192/512 图标，512 使用 maskable 安全区域。
-- `public/site.webmanifest`、`index.html`：统一安装名称、主题色和资源引用。
+- `public/brand/baby-journal-source.png`：用户选定图案，经透明边裁切与 192px 优化的 8 位调色板 PNG；它是唯一需要手动更新的位图资源。
+- `scripts/build-brand-assets.mjs`：只使用 Node.js 内置模块生成全部尺寸，不添加依赖。每次 `npm run dev`、`npm run test:unit`、`npm run build` 自动执行。
+- 自动生成：`favicon.svg`、`favicon-32.png`、`favicon.ico`（16/32/48）、`apple-touch-icon.png`（180）、`icon-192.png`、`icon-512.png`、`icon-maskable-512.png`，以及 `brand/mark.svg`、`brand/wordmark.svg`。
+- 生成文件不提交 Git，避免部分更新导致 PWA 与页面 Logo 不一致。部署构建在复制 `public/` 前生成全部资源。
 
-上述资源属于同一套设计，不要只改 SVG 而忘记再生成 PNG/ICO。PNG 使用索引色与透明角，不包含用户照片、名字或其他隐私数据。
+## 配色
 
-## 历史提案
+| 使用场景 | 色值 |
+| --- | --- |
+| 页面 | `#F7FAFD` |
+| 品牌蓝 | `#2165A8` |
+| 品牌浅蓝 | `#E9F2FB` |
+| 文本 | `#243448` |
+| 次要文字 | `#586D80` |
+| 线条 | `#DDE6EF` |
+| iOS / maskable 背景 | `#EAF4FC` |
 
-`docs/brand/options/` 保留此前三套候选标识，仅供参考；它们都不是当前线上品牌资源。
+正文和操作按钮保持可读性，不用大量蓝色铺满照片或卡片。
 
-## 验收
+## 上线验证
 
-合并 PR 后可通过浏览器强制刷新、iOS 删除旧主屏幕快捷方式再重新添加，确认缓存之外的图标显示效果。无需迁移、修改 D1/R2 或轮换密钥。
+构建后检查首页、登录页 Logo，favicon 的 16/32px，Safari「添加到主屏幕」、Android PWA 标准与 maskable 图标。主屏幕旧图标可能由系统缓存，必要时删除旧快捷方式后重新添加。当前变更不触碰数据库、照片、微信连接或业务 API。

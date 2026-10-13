@@ -15,12 +15,12 @@
 
 | 用途 | Token / 色值 |
 | --- | --- |
-| 页面 | `--bm-page: #FAF9F6` |
+| 页面 | `--bm-page: #F7FAFD` |
 | 内容 | `--bm-surface: #FFFFFF` |
-| 正文 | `--bm-ink: #252524` |
-| 次要文字 | `--bm-muted: #6D6964` |
-| 品牌强调 | `--bm-brand: #845A46` |
-| 轻描边 | `--bm-border: #E8E4DF` |
+| 正文 | `--bm-ink: #243448` |
+| 次要文字 | `--bm-muted: #586D80` |
+| 品牌强调 | `--bm-brand: #2165A8` |
+| 轻描边 | `--bm-border: #DDE6EF` |
 
 不引入网络字体，优先系统字体、苹方等回退字体。信息层级通过字重、字号和间距表达，不依赖彩色装饰卡片。
 
@@ -32,7 +32,7 @@
 - `src/features/album/Album.tsx` 保持分页和照片日期分组；只移动视觉控制，不改变上传/断点续传或元数据 API。
 - `src/features/growth/RecordView.tsx` 优先呈现曲线、历史时间线，随后是新增表单。
 - `src/components/MediaViewer.tsx` 承载移入回收站、下载和日期修改，保留原生 `dialog` 焦点管理。
-- `public/brand/mark.svg`、`public/favicon.*`、`public/icon-*.png`、`public/site.webmanifest` 共同使用“守护与成长”几何符号，无图标渐变。
+- `public/brand/baby-journal-source.png` 为唯一品牌源图（透明背景、宝宝与蓝色日记本）；`scripts/build-brand-assets.mjs` 在开发、单元测试和构建前生成 favicon、wordmark、Apple touch 图标及标准/maskable PWA 图标，杜绝图标版本不一致。图标允许原插画中的渐变，页面不增加大面积渐变装饰。
 
 ## 质量与上线检查
 

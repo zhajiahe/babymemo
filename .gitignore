@@ -10,3 +10,14 @@ coverage/
 
 # Complete family backup includes sensitive database content and private media
 .backup-private/
+
+# Generated from public/brand/baby-journal-source.png by scripts/build-brand-assets.mjs
+/public/favicon.svg
+/public/favicon-32.png
+/public/favicon.ico
+/public/apple-touch-icon.png
+/public/icon-192.png
+/public/icon-512.png
+/public/icon-maskable-512.png
+/public/brand/mark.svg
+/public/brand/wordmark.svg

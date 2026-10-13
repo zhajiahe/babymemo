@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
 export function Logo() {
   return (
     <div className="logo">
-      <span className="logo-icon"><img src="/brand/mark.svg" alt="" width="36" height="36" /></span>
+      <span className="logo-icon"><img src="/brand/baby-journal-source.png" alt="" width="44" height="44" /></span>
       <span>BabyMemo</span>
     </div>
   );

@@ -27,8 +27,8 @@ test('album is a compact photo grid with actions in the native details dialog',(
 });
 
 test('favicon and all PWA assets decode with expected PNG headers and dimensions',()=>{
- assert.deepEqual(manifest.icons.filter(i=>i.type==='image/png').map(i=>i.sizes),['192x192','512x512']);
- for(const [file,size] of [['favicon-32.png',32],['apple-touch-icon.png',180],['icon-192.png',192],['icon-512.png',512]]){
+ assert.deepEqual(manifest.icons.filter(i=>i.type==='image/png').map(i=>i.sizes),['192x192','512x512','512x512']);
+ for(const [file,size] of [['favicon-32.png',32],['apple-touch-icon.png',180],['icon-192.png',192],['icon-512.png',512],['icon-maskable-512.png',512]]){
   const b=bytes('public/'+file);
   assert.equal(b.subarray(0,8).toString('hex'),'89504e470d0a1a0a');
   assert.equal(b.readUInt32BE(16),size);
@@ -37,8 +37,8 @@ test('favicon and all PWA assets decode with expected PNG headers and dimensions
  const ico=bytes('public/favicon.ico');
  assert.equal(ico.readUInt16LE(2),1);
  assert.ok(ico.readUInt16LE(4)>=2);
- assert.match(text('public/brand/mark.svg'),/#845A46/i);
- assert.match(text('public/favicon.svg'),/#845A46/i);
+ assert.match(text('public/brand/mark.svg'),/data:image\/png;base64/);
+ assert.match(text('public/favicon.svg'),/data:image\/png;base64/);
 });
 
 test('family name and Settings-only baby switch remain available on mobile',()=>{
