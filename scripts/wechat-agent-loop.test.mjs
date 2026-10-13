@@ -276,3 +276,14 @@ test('a completed tool observation has a stable cached AI final across message r
  assert.deepEqual(executions,['get_baby','get_baby']); // D1 tool journal idempotency tested in Worker
  assert.equal(finalJournal.get('reply'),first);
 });
+
+test('a paraphrased raw profile dump is not a conversational answer',async()=>{
+ let tries=0;
+ const res=await runWechatAgentLoop({...args,
+  complete:async({round})=>round===0?reply(call('profile','get_baby')):done('小好的档案：生日 2025-05-30，过敏和注意事项：无'),
+  execute:async()=> '小好 的档案：生日 2025-05-30，年龄 1 岁 4 个月 13 天，过敏和注意事项：无',
+  finalize:async()=>{tries++;return done('小好现在 1 岁 4 个月啦。')}
+ });
+ assert.equal(tries,1);
+ assert.equal(res,'小好现在 1 岁 4 个月啦。');
+});

@@ -40,7 +40,7 @@ function mutationKind(name){
 }
 function credibleReply(text,committedKinds,failedWrite=false){
  if(!text||/^(?:操作已完成|任务已完成|已处理|处理完成|完成|好的|OK)[。!！\s]*$/i.test(text))return false;
- if(text.includes('模型没有返回可执行的工具指令')||RAW_OBSERVATION.test(text))return false;
+ if(text.includes('模型没有返回可执行的工具指令')||RAW_OBSERVATION.test(text)||/(?:的档案：|过敏和注意事项：)/.test(text))return false;
  const claims={
   create:/(?:已(?:经)?|成功).{0,14}(?:保存|记录|记下|记好|记进|记到|写入|新增|创建|添加|存入)|(?:保存|记录|写入|创建|添加|记下)(?:成功|完成|好了)|(?:^|[，。！!\s])记好(?:了|啦|喽|咯)[！!。\s]*/,
   update:/(?:已(?:经)?|成功).{0,14}(?:修改|更新|更正|调整)|(?:修改|更新|更正)(?:成功|完成|好了)/,
