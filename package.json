@@ -16,7 +16,8 @@
     "provision:remote": "node scripts/provision-cloudflare.mjs",
     "smoke:check": "node scripts/smoke-check.mjs",
     "verify": "npm run check && npm run test:unit && npm run build",
-    "test:e2e": "node scripts/e2e-local.mjs"
+    "test:e2e": "node scripts/e2e-local.mjs",
+    "test:openrouter:live": "node scripts/openrouter-live-e2e.mjs"
   },
   "cloudflare": {
     "bindings": {
