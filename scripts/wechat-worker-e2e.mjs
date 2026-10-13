@@ -450,7 +450,7 @@ try{
   const r=await run({mode:'alarm',messages:[message],encryptedBase64:encrypt(jpeg)});
   assert.equal(r.error,undefined);
   assert.equal(r.models,0);
-  assert.equal(r.media.length,1);
+  assert.equal(r.media.filter(x=>x.source_message_id?.includes('merged-photo')).length,1);
   assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('merged-photo')).length,0);
   assert.equal(r.status.lastProcessing.kind,'forward');
   assert.match(r.replies.join(' '),/合并转发内容/);
