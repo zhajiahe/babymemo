@@ -2,7 +2,7 @@ export interface AgentDecision {role:'assistant';content:string|null;tool_calls:
 export interface AgentLoopOptions {
  messages:any[]; tools:any[];
  complete:(options:{messages:any[];tools:any[];round:number})=>Promise<any>;
- execute:(call:AgentDecision['tool_calls'][number],stepOffset:number,round:number)=>Promise<string>|string;
+ execute:(call:AgentDecision['tool_calls'][number],stepOffset:number,round:number)=>Promise<string|{content:string;halt?:boolean}>|string|{content:string;halt?:boolean};
  loadDecision?:(round:number)=>Promise<AgentDecision|null>;
  saveDecision?:(round:number,assistant:AgentDecision)=>Promise<void>;
  now?:()=>number;
