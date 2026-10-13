@@ -8,7 +8,7 @@ export function readOnlyFallbackTool(text){
  if(/回收站|垃圾箱/.test(t))return 'list_trash';
  if(/相册|照片|图片|视频/.test(t))return 'list_media';
  if(/里程碑|成长瞬间|成长事件|第一次/.test(t))return 'list_milestones';
- if(/体重|身高|头围|测量|成长曲线/.test(t))return 'list_growth';
+ if(/体重|身高|头围|测量|成长曲线|成长记录/.test(t))return 'list_growth';
  if(/宝宝档案|宝宝资料|出生日期|过敏档案/.test(t))return 'get_baby';
  return null;
 }
