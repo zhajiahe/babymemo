@@ -486,7 +486,7 @@ app.post('/api/settings/wechat/connections/:id/:action',async c=>{
 app.get('/api/settings/wechat/connections/:id/status',async c=>{
   const id=c.req.param('id');
   if(!await getWechatConnection(c.env,id))return fail(c,404,'WECHAT_CONNECTION_NOT_FOUND');
-  const response=await workerBot(c.env,id).fetch('https://bot.internal/status');
+  const response=await workerBot(c.env,id).fetch('https://bot.internal/status?connectionId='+encodeURIComponent(id));
   return c.json(await response.json());
 });
 app.delete('/api/settings/wechat/connections/:id',async c=>{
