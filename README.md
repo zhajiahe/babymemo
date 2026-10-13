@@ -86,3 +86,11 @@ npm run test:e2e
 所有照片和视频默认保存在私有 R2。微信 iLink 是第三方协议，可能发生兼容性变化；发送给 OpenRouter 的微信文字和目标宝宝信息需由家庭管理员自行评估隐私。正式数据不应混入测试快照、CI Artifact、Issue 或 PR。旧 MyBaby 站点的 Neon/Vercel/R2 数据不在 BabyMemo 自动部署的迁移范围内。
 
 许可证见 [LICENSE](LICENSE)。
+
+## OpenRouter 默认模型与主动 E2E
+
+尚未保存模型偏好时，默认使用 [`meta/muse-spark-1.3-contributor`](https://openrouter.ai/meta/muse-spark-1.3-contributor)。已经在 D1 保存过模型 ID 的实例不会被自动覆盖，可在「设置 → 微信操作引擎」调整。
+
+若要验证真实 OpenRouter 工具调用，前往 **GitHub Actions → Manual OpenRouter Live E2E → Run workflow**，选中 `main` 后主动运行。该测试只发送合成宝宝的只读查询、不读写真实 D1/R2、不会运行真实微信，也**不会由 PR、push、定时任务或自动部署触发**。需事先配置 GitHub Secret `OPENROUTER_API_KEY`，可能产生少量模型费用。
+
+也可在安全的本地终端提供 OpenRouter Key，设置 `OPENROUTER_E2E_CONFIRM=YES` 后执行 `npm run test:openrouter:live`。该开关缺失时脚本直接拒绝执行。Contributor 模型的提示词和输出可能用于改进 Meta 产品，真实家庭隐私请谨慎处理。

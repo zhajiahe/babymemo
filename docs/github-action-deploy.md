@@ -134,3 +134,9 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 ## 迁移记录修复说明（0012）
 
 如果线上 `babies.birth_time` 已经由其他发布或人工操作创建，但 `d1_migrations` 未记录 `0012_birth_time.sql`，旧流程会报 `duplicate column name: birth_time`。新版部署先只读检查文本类型、可空性、默认值和 `0011_wechat_photo.sql` 记录，符合条件时仅向 `d1_migrations` 添加对应的迁移名称，再由 Wrangler 正常处理其他迁移。兼容历史可空文本定义，但拒绝非文本字段、非空默认值及主键结构异常；若不符合条件，部署会明确失败，禁止直接删列、重建数据库或手动跳过整批迁移。修复不等同于生产数据备份。
+
+## 手动触发 OpenRouter 真实 E2E（默认禁用）
+
+在 GitHub Actions 中选择 **Manual OpenRouter Live E2E → Run workflow**，且必须选择 `main` 分支。该工作流**仅**接受 `workflow_dispatch`，不响应 PR、push、schedule、`workflow_run` 或生产部署。它使用 GitHub（或 `production` Environment）中的 `OPENROUTER_API_KEY` Secret，向默认模型发送一条虚构的成长记录查询，校验响应是否是符合 BabyMemo 规范的 `list_growth` 工具调用。
+
+测试脚本最多执行**一次**外部 API 调用（不重试），不访问线上 Cloudflare D1/R2，不会写入真实宝宝数据。它与现有自动运行的模拟 Worker、Chromium/WebKit E2E **独立**。本地如需显式执行，在安全终端设置 `OPENROUTER_API_KEY` 和 `OPENROUTER_E2E_CONFIRM=YES`，运行 `npm run test:openrouter:live`。禁止把密钥放到工作流 input、命令行参数或日志中。Contributor 模型的提示词与输出可能被用于改进 Meta 产品，真实微信业务中的家庭隐私需单独评估。

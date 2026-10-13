@@ -48,3 +48,7 @@ npm run test:e2e
 - `docs/qa-e2e-report-2026-10-12.md`：历史报告，仅作当日证据，不作为当前功能清单。
 
 修复旧文档时必须**删去已失效的操作步骤**，而不是在文末追加一段与旧内容相矛盾的新说明。
+
+## 外部 API 真实测试门禁
+
+会调用收费模型、真实微信账号或生产资源的 E2E 不得加入 `test:unit`、`test:e2e` 或自动 CI 依赖。`scripts/openrouter-live-e2e.mjs` 刻意不采用 `.test.mjs` 后缀，要求 `OPENROUTER_E2E_CONFIRM=YES`，对应 GitHub Actions 仅允许 `workflow_dispatch` 和 `main` 分支，使用 GitHub Secret 注入 Key。真实请求只使用虚构数据且不自动重试；常规 Worker/浏览器 E2E 保持自动执行。

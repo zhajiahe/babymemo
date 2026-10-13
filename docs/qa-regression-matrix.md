@@ -46,3 +46,11 @@ CI 使用自动生成的本地测试密钥与临时 D1/R2 存储，不连接生�
 - 新增场景如发现缺陷，应先修复生产代码或在 PR 中记录明确的阻塞项，不能简单删除失败断言。
 - 核验截图，并进行真实 iPhone、微信账号和完整离线恢复演练后，才可声称相关功能通过生产验收。
 - 合并测试 PR 时不要轮换 SESSION_SECRET / DATA_KEY，也不要运行生产数据迁移之外的破坏性脚本。
+
+## 手动真实模型验证（不随 CI 自动触发）
+
+| 测试 | 入口 | 自动执行 | 访问真实家庭数据 |
+| --- | --- | --- | --- |
+| OpenRouter Tool Calling E2E | GitHub Actions `Manual OpenRouter Live E2E` 或设置确认变量后执行 `npm run test:openrouter:live` | **否** | 不访问 Cloudflare D1/R2 或微信，仅向外部模型发送一条虚构指令 |
+
+本地 Worker E2E 与 Chromium/WebKit E2E **继续自动执行**，它们使用假 Key 和临时存储，不会产生 OpenRouter 调用费用。手动模型测试需要管理员配置真实 Key，可能产生小额 API 费用；可验证目标模型当前是否返回标准工具调用，而不是验证真实微信授权或用户家庭数据。
