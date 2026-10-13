@@ -64,7 +64,7 @@ try{
  await step('runtime context comes from Worker clock rather than model guesses',async()=>{
   const r=await run({mode:'text',id:'react-clock',text:'查询当前时间',
    responses:[tool('get_runtime_context',{}),stop]});
-  assert.equal(r.error,undefined);assert.match(r.reply,/Asia\\/Shanghai/);
+  assert.equal(r.error,undefined);assert.ok(r.reply.includes('Asia/Shanghai'));
   assert.match(r.reply,/localDay/);assert.equal(r.growth.length,2);
  });
  await step('negated delete cannot mutate local D1',async()=>{const r=await run({mode:'text',id:'negated-delete',text:'不要删除测试宝宝今天的体重',responses:[tool('delete_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})})]});assert.equal(r.growth.length,1);assert.doesNotMatch(r.reply,/已删除/)});
