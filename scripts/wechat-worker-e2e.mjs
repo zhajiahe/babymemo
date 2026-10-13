@@ -126,10 +126,11 @@ try{
   assert.match(r.replies[1],/连续三个小时/);
   assert.match(r.replies[2],/又恢复了半小时一醒/);
   assert.match(r.replies[3],/已保存成长事件/);
-  assert.equal(r.milestones.length,1);
-  assert.equal(r.milestones[0].baby_id,'synthetic-baby');
-  assert.equal(r.milestones[0].day,yesterday);
-  assert.match(r.milestones[0].description,/半小时一醒.*三个小时.*半小时一醒/);
+  const thisMessageMilestones=r.milestones.filter(x=>x.source_message_id?.includes('diary-turn-3:step:0'));
+  assert.equal(thisMessageMilestones.length,1); // independent of prior test fixtures
+  assert.equal(thisMessageMilestones[0].baby_id,'synthetic-baby');
+  assert.equal(thisMessageMilestones[0].day,yesterday);
+  assert.match(thisMessageMilestones[0].description,/半小时一醒.*三个小时.*半小时一醒/);
   const finalRequest=r.modelMessages[3];
   assert.deepEqual(finalRequest.filter(x=>x.role==='user').slice(0,3).map(x=>x.content),messages.slice(0,3));
   assert.match(finalRequest.at(-1).content,/create_milestone/);
