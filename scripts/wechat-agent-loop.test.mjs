@@ -18,7 +18,6 @@ test('ReAct observes real tool result then decides next tool and ends',async()=>
  assert.equal(seen[1].at(-1).tool_call_id,'c1');
  assert.match(seen[1].at(-1).content,/abcdef12/);
  assert.deepEqual(seen[2].slice(-2).map(x=>x.role),['assistant','tool']);
- assert.match(result,/已更新体重/);
  assert.equal(result,'已经修改'); // Final model response is the surface; verified tool write authorizes this.
 });
 test('all calls in one turn execute sequentially with globally unique offsets',async()=>{
