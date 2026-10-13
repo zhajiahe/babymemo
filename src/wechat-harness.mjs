@@ -6,11 +6,12 @@ const number=(unit,max)=>({type:'number',description:unit+'（必须是用户明
 const selector={id:{type:'string',description:'查询结果中的记录编号，至少前 8 位'},day:{type:'string',description:'唯一匹配记录的日期 YYYY-MM-DD；同日多条时需要记录编号'}};
 const tool=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
 import {guardAction,validDay,explicitDay,dayInZone} from './wechat-policy.mjs';
+import {ageOnDay} from './wechat-answer.mjs';
 import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
 export const wechatTools=[
  tool('get_runtime_context','读取消息发出时的可信时间、宝宝时区和目标宝宝；只有需要消歧时才调用'),
  tool('list_babies','列出这个家庭已经创建的宝宝'),
- tool('get_baby','读取当前宝宝的生日、昵称、过敏等档案；用户问“多大了/几个月/几岁”等时，按消息本地日期计算年龄，不要直接复述档案'),
+ tool('get_baby','读取当前宝宝档案（含生日及消息当天的准确年龄）'),
  tool('update_baby','修改宝宝档案，只根据用户明确说出的字段修改',{name:str,allergies:str,notes:str,birthday:day,birthTime:{type:'string',description:'出生时间 HH:mm'}}),
  tool('list_growth','查询成长测量，结果中含记录编号',{day,limit:{type:'integer',minimum:1,maximum:10}}),
  tool('create_growth','新增一条体重/身高/头围测量，必须有用户明确提供的数值和单位',{day,weight:number('kg',150),height:number('cm',250),headCircumference:number('cm',100),notes:str},['day']),
@@ -133,7 +134,12 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    return '家庭宝宝：\n'+r.results.map(x=>x.name+'（'+x.birthday+'）').join('\n');
   }
   if(!baby)return '请先在 BabyMemo 中建立宝宝档案';
-  if(action==='get_baby')return baby.name+' 的档案：生日 '+baby.birthday+(baby.birth_time?' '+baby.birth_time:'（出生时间未填写）')+'，过敏和注意事项：'+(baby.allergies||'未填写')+'，备注：'+(baby.notes||'无');
+  if(action==='get_baby'){
+   const age=ageOnDay(baby.birthday,dayInZone(at,baby.time_zone||'Asia/Shanghai'));
+   const ageInfo=age?'，截至消息当天年龄 '+age.years+'岁'+age.months+'个月'+age.remainderDays+'天，出生'+age.days+'天':'';
+   return baby.name+' 的档案：生日 '+baby.birthday+(baby.birth_time?' '+baby.birth_time:'（出生时间未填写）')+
+    ageInfo+'，过敏和注意事项：'+(baby.allergies||'未填写')+'，备注：'+(baby.notes||'无');
+  }
   if(action==='update_baby'){
    if(!/修改|更正|更改|更新|设置|改成|改为|改一下|记为|添加过敏|补充过敏/.test(originalText))return '请明确说明“修改宝宝资料”，防止误操作';
    const changes={};

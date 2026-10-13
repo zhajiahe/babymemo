@@ -56,7 +56,7 @@ export function buildCommandContext(text,thread,now=Date.now(),babyId=thread.bab
   && !/[？?]\s*$/.test(s)):[];
  const milestoneGroundedText=observations.length?observations.join('\n')+'\n'+text:null;
  if(milestoneGroundedText){
-  modelText='[用户本轮明确要求将上面最近描述的观察保存为一条日记/里程碑。请只合并用户的原始叙述，不把助手回复当作事实，调用一次 create_milestone；无明确日期或事实时先询问，不要猜测。]\n'+modelText;
+  modelText='[“记下来”引用当前宝宝最近的用户描述。请合并为一条 create_milestone，不引用助手回复。]\n'+modelText;
  }
  const ordinal=text.match(/第\s*([一二三四五六七八九十1-9]|10)\s*(?:条|项|个|张|段)/);
  const ordinals={'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10};

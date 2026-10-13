@@ -60,7 +60,10 @@ function render(results,finalText='',suffix='',committedKinds=new Set(),failedWr
  // Prefer the assistant's last natural reply to literal tool output. The tools
  // remain authoritative and unverified mutation claims are blocked.
  if(credibleReply(text,committedKinds,failedWrite))return text.slice(0,1500);
- if(results.length)return verified.length>1800?verified.slice(0,1690)+'\n结果较长，请到 BabyMemo 网页核对。':verified;
+ if(results.length){
+  if(!committedKinds.size&&!failedWrite)return '已查到相关资料，但暂时没能整理成可靠的回答，请稍后再问我一次。';
+  return verified.length>1800?verified.slice(0,1690)+'\n结果较长，请到 BabyMemo 网页核对。':verified;
+ }
  if(text.includes('模型没有返回可执行的工具指令'))
   return '这次没有修改记录。你可以继续说刚才的情况，需要保存时直接说“记下来”。';
  if(claimsUnverifiedWrite(text)||/(?:^|[，。！!\s])记好(?:了|啦|喽|咯)[！!。\s]*/.test(text))
@@ -68,7 +71,7 @@ function render(results,finalText='',suffix='',committedKinds=new Set(),failedWr
  return text.slice(0,1500)||'我在听。想让我把刚才的内容记入日记，可以说“记下来”。';
 }
 export async function runWechatAgentLoop({
- messages,tools,complete,execute,finalize=null,validateFinal=null,fallbackReply=null,loadDecision=async()=>null,saveDecision=async()=>{},
+ messages,tools,complete,execute,finalize=null,loadDecision=async()=>null,saveDecision=async()=>{},
  loadFinalAnswer=async()=>null,saveFinalAnswer=async()=>{},
  now=Date.now,limits=DEFAULT_AGENT_LIMITS
 }){
@@ -76,9 +79,8 @@ export async function runWechatAgentLoop({
  let failedWrite=false;
  const started=now();
  const replyIsValid=content=>credibleReply(String(content||'').trim(),committedKinds,failedWrite)&&
-  (typeof validateFinal!=='function'||validateFinal({content:String(content||''),observations,committedKinds,failedWrite})===true);
+  !observations.some(item=>item.content.trim()===String(content||'').trim());
  const finalResult=(content='',suffix='')=>render(results,content,suffix,committedKinds,failedWrite);
- const safeFallback=()=>typeof fallbackReply==='function'?fallbackReply({observations,committedKinds,failedWrite}):null;
  async function finishAfterTools(reason,suffix=''){
   if(suffix)return finalResult('',suffix);
   // Final prose is a business-visible, deterministic part of a message.
@@ -99,8 +101,7 @@ export async function runWechatAgentLoop({
     }
    }catch{/* Never hide a committed write or fabricate a result. */}
   }
-  const factual=safeFallback();
-  const answer=factual||finalResult('',suffix);
+  const answer=finalResult('',suffix);
   if(observations.length)await saveFinalAnswer(answer);
   return answer;
  }

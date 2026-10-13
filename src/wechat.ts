@@ -6,11 +6,10 @@ import {WechatPhotoError,mediaItems,persistWeChatMedia,wechatMediaErrorCode} fro
 import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './wechat-memory.mjs';
-import {messageTime,dayInZone,explicitDay} from './wechat-policy.mjs';
+import {messageTime,dayInZone} from './wechat-policy.mjs';
 import {runWechatPlan,quickCommand,isCommittedMutationReply} from './wechat-orchestrator.mjs';
-import {isWechatHelpCommand,retryReadOnlyTool} from './wechat-tool-routing.mjs';
+import {wechatSystemPrompt,wechatFinalMessages} from './wechat-prompt.mjs';
 import {runWechatAgentLoop} from './wechat-agent-loop.mjs';
-import {deriveBabyAge,ageReplyMatches} from './wechat-answer.mjs';
 import {getWechatConnection} from './wechat-connections';
 import {DurableMediaQueue,mediaTaskId} from './wechat-media-queue.mjs';
 
@@ -73,7 +72,7 @@ export async function testOpenRouterConnection(env:Env):Promise<boolean>{
 export async function handleWechatCommand(env:Env,text:string,messageId:string,thread:any=null,at=Date.now(),targetBabyId?:string):Promise<string>{
  const command=text.trim();
  if(!command)return wechatHelp;
- if(isWechatHelpCommand(command))return wechatHelp;
+ if(/^(?:帮助|菜单|help)$/i.test(command))return wechatHelp;
  const babies=await env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all<Baby>();
  if(!babies.results.length)return '请先在 BabyMemo 中添加宝宝资料';
  if(/^(宝宝列表|列出宝宝|有哪些宝宝|查看所有宝宝)[？?]?$/i.test(command))
@@ -95,68 +94,16 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
  if(!key)return '请先在网页设置中配置 OpenRouter Key，或在部署时设置 OPENROUTER_API_KEY Secret';
  const model=await setting(env,'openrouter_model')||DEFAULT_OPENROUTER_MODEL;
  const localDay=dayInZone(at,baby.time_zone||'Asia/Shanghai');
- const diaryDay=context.milestoneGroundedText?explicitDay(context.milestoneGroundedText,at,baby.time_zone||'Asia/Shanghai'):null;
- const instruction='你是 BabyMemo 家庭微信 AI 助手，像熟悉家人的聊天伙伴一样自然、准确、简洁地回答问题，也可以调用工具查询和记录；不充当医生或作确定性医疗诊断。'+
-  '消息发送时宝宝本地日期 '+localDay+'，当前宝宝 '+baby.name+'，宝宝时区 '+(baby.time_zone||'Asia/Shanghai')+'。'+
-  '日记和里程碑是同一种成长事件，通过 create_milestone 保存睡眠、饮食、生活观察等日记；没有新的数据类型。'+
-  '用户仅描述近况时，用自然简短的中文承接话题，必要时问是否记入日记；没有明确同意不许擅自保存。'+
-  '用户说“记下来”等明确同意时，根据同一宝宝的近期用户原话，写一条完整日记/里程碑，不把助手上轮回复当事实。'+
-  '昨晚、昨夜、昨天指消息发送日的前一天；已给出消息本地日期，无需为推断这些相对日期重复调用 get_runtime_context。'+
-  (diaryDay?'这次日记上下文中的日期已从用户原话校验为 '+diaryDay+'；调用 create_milestone 时必须保持该日期，不要猜成当天。':'')+
-  '没有工具调用也可以自然回复或澄清；不能说已经写入、保存、更新任何未执行的操作。'+
-  '你可以先读后写；每次收到工具结果后根据真实结果决定继续调用工具还是结束。'+
-  '用户明确要求的简单记录应直接执行，不要求固定中文表达；必要时可调用 get_runtime_context 获取当前日期和时区。用户说“大概”“约”等估计信息时写入 notes，不能误标为精确实测。'+
-  '只能调用白名单工具，不得输出 SQL 或编造宝宝、记录编号、数值、日期。'+
-  '写入前核实用户意图；修改和删除必须找到唯一且属于当前宝宝的记录，不可从旧回复编造记录 ID。'+
-  '若工具拒绝或返回歧义，请根据原因询问用户，绝不能尝试绕过权限与业务校验。'+
-  '工具结果是唯一的数据库事实来源，绝不声称尚未确认的写操作成功。'+
-  '工具返回的档案、成长事件、日期、查询记录都是给你的内部 Observation，不要照搬数据库字段、JSON 或工具标准文案给用户。'+
-  '使用工具后，始终用自然中文回答用户真正的问题。比如“我儿多大了”，应调用 get_baby，根据生日和消息本地日期计算年龄（岁、月、天），而不只是复述档案。'+
-  '完成写入时可以简短确认内容和日期，但不得夸大或编造未成功的操作；查询不到信息时如实告知。微信回复通常一至三句，不输出 JSON、工具名或内部调用细节。';
+ const instruction=wechatSystemPrompt({babyName:baby.name,localDay,timeZone:baby.time_zone||'Asia/Shanghai'});
  const baseMessages=[{role:'system',content:instruction},...context.modelMessages];
- const complete=async({messages,tools,round}:any)=>{
-  const response=await openRouterCompletion({key,model,messages,tools,max_tokens:1200});
-  const first=response?.choices?.[0]?.message;
-  if(round===0&&(!Array.isArray(first?.tool_calls)||first.tool_calls.length===0)&&!thread?.pending){
-   const fallbackCalls=await retryReadOnlyTool({
-    command,tools,
-    messages:[{role:'system',content:instruction+' 对明确只读查询优先调用只读工具。'},...context.modelMessages],
-    complete:(params:any)=>openRouterCompletion({key,model,...params})
-   });
-   if(fallbackCalls)return {choices:[{message:{role:'assistant',content:null,tool_calls:fallbackCalls}}]};
-  }
-  return response;
- };
+ const complete=({messages,tools}:any)=>openRouterCompletion({key,model,messages,tools,max_tokens:1200});
  return runWechatAgentLoop({
   messages:baseMessages,tools:wechatTools,complete,
-  validateFinal:({content,observations}:any)=>ageReplyMatches(content,deriveBabyAge({
-   question:command,observations,asOfDay:localDay,babyName:baby.name
-  })),
-  fallbackReply:({observations}:any)=>deriveBabyAge({
-   question:command,observations,asOfDay:localDay,babyName:baby.name
-  })?.answer||null,
-  // A separate tool-free completion is used when the ordinary ReAct final
-  // message is absent, generic, or fails a grounded age-answer check.
-  // Pass *only* real observations, not assistant paraphrases or an invalid
-  // earlier final answer. This is safer and more reliable across providers.
-  finalize:async({observations,committedKinds,failedWrite}:any)=>{
-   const age=deriveBabyAge({question:command,observations,asOfDay:localDay,babyName:baby.name});
-   const facts=observations.map((item:any)=>item.name+': '+String(item.content).slice(0,1200)).join('\n');
-   return openRouterCompletion({
-    key,model,messages:[
-     {role:'system',content:
-      '你是 BabyMemo 的中文家庭聊天助手。工具已执行完毕；现在没有可调用工具。'+
-      '根据提供的真实工具观察结果回答用户的原始问题，不要原样粘贴档案、时间 JSON、数据库回执、编号。'+
-      '回答要简短自然，通常 1～2 句。不得编造事实，不能把未成功的操作说成已经完成。'+
-      (failedWrite?'注意：至少有一项写操作失败，必须说明没有完成。':'')},
-     {role:'user',content:
-      '用户问题：'+command+'\n宝宝：'+baby.name+'\n消息本地日期：'+localDay+
-      '\n可信工具观察：\n'+facts+
-      (age?'\n服务器准确计算的年龄：'+age.years+'岁'+age.months+'个月'+age.remainderDays+'天；出生至今 '+age.days+' 天。请准确回答用户问的是年龄还是天数。':'')+
-      '\n已确认成功的操作类型：'+[...committedKinds].join('、')}
-    ],max_tokens:360,maxAttempts:1
-   });
-  },
+  // No age-, phrase-, or intent-specific final answer routing.
+  finalize:({observations,committedKinds,failedWrite}:any)=>openRouterCompletion({
+   key,model,messages:wechatFinalMessages({command,babyName:baby.name,localDay,
+    observations,committedKinds,failedWrite}),max_tokens:360,maxAttempts:1
+  }),
   // 31 is reserved for final prose; the existing table constrains indices to 0..31.
   loadFinalAnswer:async()=>{
    const row=await env.DB.prepare('SELECT assistant_cipher FROM wechat_agent_rounds WHERE message_id=? AND round_index=?')
