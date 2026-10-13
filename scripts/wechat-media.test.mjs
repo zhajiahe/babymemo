@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCipheriv} from 'node:crypto';
-import {decodeWeChatAesKey,wechatCdnUrl,downloadWeChatImage,persistWeChatPhotos,photoRecordId,WechatPhotoError,wechatMediaErrorCode} from '../src/wechat-media.mjs';
+import {decodeWeChatAesKey,wechatCdnUrl,downloadWeChatImage,persistWeChatPhotos,photoRecordId,WechatPhotoError,wechatMediaErrorCode,storeEncryptedMedia} from '../src/wechat-media.mjs';
 
 const jpeg=Uint8Array.from([255,216,255,224,0,16,74,70,73,70,0,1,255,217]);
 const key=Buffer.from('000102030405060708090a0b0c0d0e0f','hex');
@@ -117,4 +117,56 @@ test('two media streams run concurrently but preserve independent durable IDs',a
  assert.equal(peak,2);
  assert.equal(env.rows.size,2);
  assert.equal(new Set([...env.rows.values()].map(x=>x.object_key)).size,2);
+});
+
+test('large WeChat video pipelines at most two R2 parts and finalizes in numeric order',async()=>{
+ const original=Buffer.alloc(19*1024*1024+123,7);
+ original.writeUInt32BE(24,0);original.write('ftypisom',4);
+ const enc=createCipheriv('aes-128-ecb',key,null);
+ const encrypted=Buffer.concat([enc.update(original),enc.final()]);
+ const video={type:5,video_item:{media:{full_url:'https://novac2c.cdn.weixin.qq.com/c2c/download?x=valid',aes_key:key.toString('base64')}}};
+ let active=0,peak=0,completed=[],aborts=0,uploads=0;
+ const bucket={
+  async put(){throw Error('must use Multipart for large media')},
+  async createMultipartUpload(k,options){
+   assert.equal(options.httpMetadata.contentType,'video/mp4');
+   return {
+    async uploadPart(number,bytes){
+     uploads++;active++;peak=Math.max(peak,active);
+     await new Promise(resolve=>setTimeout(resolve,number===1?14:4));
+     completed.push([number,Buffer.from(bytes)]);active--;
+     return {etag:'test-etag-'+number};
+    },
+    async complete(parts){
+     assert.equal(active,0);assert.deepEqual(parts.map(p=>p.partNumber),[1,2,3]);
+     const body=Buffer.concat(completed.sort((a,b)=>a[0]-b[0]).map(x=>x[1]));
+     assert.deepEqual(body,original);
+    },
+    async abort(){aborts++}
+   };
+  }
+ };
+ const out=await storeEncryptedMedia(bucket,'private/synthetic/video',video,
+  {fetchImpl:async()=>new Response(encrypted)});
+ assert.equal(out.size,original.length);assert.equal(out.mime,'video/mp4');
+ assert.equal(uploads,3);assert.equal(peak,2);assert.equal(aborts,0);
+});
+test('WeChat multipart failure waits for in-flight parts then aborts without completing',async()=>{
+ const original=Buffer.alloc(17*1024*1024,9);original.writeUInt32BE(24,0);original.write('ftypisom',4);
+ const enc=createCipheriv('aes-128-ecb',key,null);
+ const video={type:5,video_item:{media:{full_url:'https://novac2c.cdn.weixin.qq.com/c2c/download?x=valid',aes_key:key.toString('base64')}}};
+ let active=0,aborted=0,completed=0;
+ const bucket={
+  async createMultipartUpload(){return{
+   async uploadPart(number){
+    active++;await new Promise(resolve=>setTimeout(resolve,number===1?2:10));active--;
+    if(number===1)throw Error('R2_PART_FAILED');return {etag:String(number)};
+   },
+   async complete(){completed++},
+   async abort(){assert.equal(active,0);aborted++}
+  }}
+ };
+ await assert.rejects(()=>storeEncryptedMedia(bucket,'private/test/broken',video,
+   {fetchImpl:async()=>new Response(Buffer.concat([enc.update(original),enc.final()]))}),/R2_PART_FAILED/);
+ assert.equal(active,0);assert.equal(aborted,1);assert.equal(completed,0);
 });

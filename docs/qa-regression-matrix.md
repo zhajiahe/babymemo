@@ -14,6 +14,14 @@
 
 新增的真实场景问题编号 H-01～H-22、待实现的自动化案例 T-001～T-024，分别见 [微信 Harness 场景审查](wechat-harness-review.md) 与 [Harness 自动化测试计划](wechat-harness-test-plan.md)。部分场景已经实现，详见 [Harness 实施对照](wechat-harness-implementation.md)。**原规划的 T-001～T-024 不等于全部已有独立断言或已经通过；应以实际测试名称和 CI 结果为准。** 当前已有的单元测试与模拟 E2E 覆盖范围仍以本文件下文为准。
 
+## 网页与微信媒体性能优化（PR #38）
+
+- 小文件 `PUT /api/upload/direct/:id`：已登录/同源/MIME/大小校验，原件与 D1 入库，重复请求不产生重复记录；大文件保留 Multipart 断点续传。
+- 网页批量传输使用有界并发；缩略图任务串行但不阻塞下一原件；`media-transfer.test.mjs` 验证并发上限和故障隔离。
+- 微信 8MiB Multipart 最多 2 个分片在途，`wechat-media.test.mjs` 测试分片顺序、并发上限与失败后 abort；已有 Worker E2E 覆盖真实隔离 R2 视频原件。
+- 只记录 `MEDIA_TRANSFER_TIMING` 固定字段；浏览器端的 `client` 耗时才包括手机到 Worker 的上行网络。
+- 性能说明和人工验收指标见 [媒体上传性能](media-upload-performance.md)。**合成测试不等于真实国内网络和微信协议已测速度，未声称确定性加速倍数。**
+
 ## 自动化入口
 
 | 入口 | 环境 | 覆盖内容 |

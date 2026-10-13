@@ -308,6 +308,36 @@ async function e2e() {
     assert.equal(state.data.openrouter.managedByDeployment,false);
     assert.equal(JSON.stringify(state.data).includes('sk-or-local-fake'),false);
   });
+  await step('browser upload performance metric endpoint is authenticated and excludes user identifiers',async()=>{
+    const metric={stage:'client',size:1048576,durationMs:1200,status:'ok'};
+    assert.equal((await json('/api/upload/metrics',{method:'POST',anonymous:true,body:metric})).status,401);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:metric,headers:{Origin:'https://attacker.invalid'}})).status,403);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:{...metric,stage:'filename'}})).status,400);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:{...metric,durationMs:Infinity}})).status,400);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:metric})).status,200);
+  });
+  await step('direct photo fast path is private, idempotent and does not create multipart sessions',async()=>{
+    const id='2f0e90a1-bb1a-4f3f-8090-99f26a000001';
+    const sample=Uint8Array.from([255,216,255,224,0,16,74,70,73,70,73,255,217]);
+    const headers={'Content-Type':'image/jpeg','x-baby-id':babyId,'x-upload-day':'2026-01-12',
+     'x-upload-title':encodeURIComponent('小照片.jpg')};
+    assert.equal((await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers,anonymous:true})).status,401);
+    assert.equal((await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers:{...headers,Origin:'https://attacker.invalid'}})).status,403);
+    assert.equal((await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers:{...headers,'Content-Type':'text/html'}})).status,400);
+    const first=await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers});
+    assert.equal(first.status,201,JSON.stringify(first.data));
+    const repeat=await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers});
+    assert.equal(repeat.status,200);assert.equal(repeat.data.alreadyCompleted,true);
+    const conflict=await json('/api/upload/direct/'+id,{method:'PUT',body:Uint8Array.from([...sample,1]),headers});
+    assert.equal(conflict.status,409);
+    const read=await request('/api/media/'+id+'/content');
+    assert.equal(read.status,200);assert.deepEqual(new Uint8Array(await read.arrayBuffer()),sample);
+    const list=await json('/api/media?babyId='+babyId);
+    assert.equal(list.data.items.filter(item=>item.id===id).length,1);
+    const pending=await json('/api/upload/pending?babyId='+babyId);
+    assert.equal(pending.data.items.some(item=>item.id===id),false);
+    assert.equal((await json('/api/media/'+id,{method:'DELETE'})).status,200);
+  });
   let mediaId,original;
   await step('image multipart start and pending incomplete uploads',async()=>{
     original=Uint8Array.from([255,216,255,224,1,2,3,4,5,255,217]);
@@ -788,7 +818,9 @@ async function browserE2e(){
       const encoded=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=16;canvas.height=16;canvas.getContext('2d').fillRect(0,0,16,16);return canvas.toDataURL('image/jpeg').split(',')[1]});
       const image=Buffer.from(encoded,'base64');const original=Buffer.concat([image.subarray(0,2),Buffer.from(exifJpeg().subarray(2,76)),image.subarray(2)]);
       const open=page.getByRole('button',{name:'添加照片或视频',exact:true}).first();await open.click();
-      const finished=page.waitForResponse(r=>/\/api\/upload\/[^/]+\/finish$/.test(r.url())&&r.request().method()==='POST');
+      const finished=page.waitForResponse(r=>r.ok()&&(
+        /\/api\/upload\/direct\/[^/]+$/.test(r.url())&&r.request().method()==='PUT'||
+        /\/api\/upload\/[^/]+\/finish$/.test(r.url())&&r.request().method()==='POST'));
       await page.locator('input[type="file"]').setInputFiles({name:'capture-date-original.jpg',mimeType:'image/jpeg',buffer:original});await finished;
       const state=await page.evaluate(async()=>{const state=await(await fetch('/api/state')).json();const media=await(await fetch('/api/media?babyId='+state.babies[0].id)).json();return {state,media}});
       const saved=state.media.items.find(x=>x.title==='capture-date-original.jpg');assert.ok(saved);assert.equal(saved.day,'2020-09-03');

@@ -3,6 +3,7 @@
 // two 50 MiB buffers in a Cloudflare Worker. AES-ECB is iLink wire compatibility.
 import {createDecipheriv,createHash} from 'node:crypto';
 import {r2PhotoCaptureDay,validCaptureDay} from './media-date.mjs';
+import {mediaTiming} from './media-timing.mjs';
 export const MAX_WECHAT_MEDIA_BYTES=50*1024*1024;
 export const MAX_WECHAT_IMAGE_BYTES=MAX_WECHAT_MEDIA_BYTES; // backwards compatibility
 const MAX_ITEMS=4,PART=8*1024*1024,CDN='novac2c.cdn.weixin.qq.com';
@@ -92,6 +93,7 @@ export function photoRecordId(sourceId){
  return h.slice(0,8)+'-'+h.slice(8,12)+'-5'+h.slice(13,16)+'-a'+h.slice(17,20)+'-'+h.slice(20,32);
 }
 async function cdnFetch(item,{fetchImpl=fetch,maxBytes=MAX_WECHAT_MEDIA_BYTES}={}){
+ const startedAt=performance.now();
  const {media,key,kind}=mediaReference(item);
  const aesKey=decodeWeChatAesKey(key),url=wechatCdnUrl(media);
  const expected=kind==='video'?item.video_item.video_size:item.image_item?.mid_size;
@@ -107,6 +109,7 @@ async function cdnFetch(item,{fetchImpl=fetch,maxBytes=MAX_WECHAT_MEDIA_BYTES}={
  const length=response.headers.get('Content-Length');
  if(length!==null&&Number(length)>maxBytes+16)bad('微信图片或视频超过 50 MB 限制');
  if(!response.body)bad('微信媒体响应为空');
+ mediaTiming({channel:'wechat',stage:'cdn',size:Number(length||0),startedAt});
  return {reader:response.body.getReader(),aesKey,kind};
 }
 async function decryptAndSink(item,write,{fetchImpl=fetch,maxBytes=MAX_WECHAT_MEDIA_BYTES}={}){
@@ -151,10 +154,19 @@ export async function downloadWeChatVideo(item,options={}){
  if(!result.mime.startsWith('video/'))bad('不是有效视频');
  return {bytes:new Uint8Array(Buffer.concat(chunks)),mime:result.mime};
 }
-// Main path: O(8 MiB) resident buffering even for a 50 MiB video.
+// At most two R2 parts in flight for a single 50 MiB WeChat video.
+// The CDN download continues while R2 uploads complete, with explicit
+// backpressure at 2 parts (plus one pending 8 MiB buffer). Parts are ordered
+// by part number before completion, irrespective of network completion order.
 export async function storeEncryptedMedia(bucket,objectKey,item,options={}){
  let pending=[],pendingSize=0,multipart=null,partNo=0,parts=[],detectedMime=null;
- const metadata=mime=>({httpMetadata:{contentType:mime}});
+ const active=[],metadata=mime=>({httpMetadata:{contentType:mime}});
+ const drainOne=async()=>{
+  const {index,result}=await Promise.race(active.map((p,index)=>p.then(result=>({index,result}))));
+  active.splice(index,1);
+  if(!result.ok)throw result.error;
+  parts.push({partNumber:result.number,etag:result.etag});
+ };
  async function uploadBlocks(){
   if(!multipart)multipart=await bucket.createMultipartUpload(objectKey,metadata(detectedMime||'application/octet-stream'));
   while(pendingSize>=PART){
@@ -162,30 +174,48 @@ export async function storeEncryptedMedia(bucket,objectKey,item,options={}){
    const block=combined.subarray(0,PART);
    pending=combined.length>PART?[combined.subarray(PART)]:[];
    pendingSize=combined.length-PART;
-   const part=await multipart.uploadPart(++partNo,block);
-   parts.push({partNumber:partNo,etag:part.etag});
+   const number=++partNo,startedAt=performance.now();
+   // Convert rejected promises into values, so draining/abort never creates
+   // unhandled rejections if a second in-flight part fails first.
+   const task=multipart.uploadPart(number,block).then(
+    part=>{mediaTiming({channel:'wechat',stage:'r2',size:block.length,startedAt});return {ok:true,number,etag:part.etag}},
+    error=>{mediaTiming({channel:'wechat',stage:'r2',size:block.length,startedAt,status:'error'});return {ok:false,number,error}}
+   );
+   active.push(task);
+   if(active.length>=2)await drainOne();
   }
  }
  try{
-  const result=await decryptAndSink(item,async (chunk,mime)=>{
+  const result=await decryptAndSink(item,async(chunk,mime)=>{
    if(mime)detectedMime=mime;
    pending.push(Buffer.from(chunk));pendingSize+=chunk.length;
    if(pendingSize>=PART)await uploadBlocks();
   },options);
   if(!multipart){
+   const startedAt=performance.now();
    await bucket.put(objectKey,Buffer.concat(pending),metadata(result.mime));
+   mediaTiming({channel:'wechat',stage:'r2',size:result.size,startedAt});
   }else{
    if(pendingSize){
-    const last=await multipart.uploadPart(++partNo,Buffer.concat(pending));
-    parts.push({partNumber:partNo,etag:last.etag});
+    const number=++partNo,block=Buffer.concat(pending),startedAt=performance.now();
+    active.push(multipart.uploadPart(number,block).then(
+     part=>{mediaTiming({channel:'wechat',stage:'r2',size:block.length,startedAt});return {ok:true,number,etag:part.etag}},
+     error=>{mediaTiming({channel:'wechat',stage:'r2',size:block.length,startedAt,status:'error'});return {ok:false,number,error}}
+    ));
    }
+   while(active.length)await drainOne();
+   parts.sort((a,b)=>a.partNumber-b.partNumber);
+   const finishAt=performance.now();
    await multipart.complete(parts);
-   // R2 metadata set on multipart creation: no forceful overwrite of originals.
+   mediaTiming({channel:'wechat',stage:'finish',size:result.size,startedAt:finishAt});
   }
   return result;
- }catch(e){
+ }catch(error){
+  // Wait for any outstanding uploadPart calls before aborting the multipart
+  // session; otherwise parts could land after abort and leak R2 storage.
+  await Promise.all(active);
   if(multipart)try{await multipart.abort()}catch{}
-  throw e;
+  throw error;
  }
 }
 function localDay(raw,baby){
@@ -200,6 +230,7 @@ export async function persistWeChatMedia(env,raw,baby,messageId,options={}){
  if(items.length>MAX_ITEMS)bad('单条消息最多保存 4 项媒体，请分批发送');
  const result=[];
  async function persistItem(i){
+  const itemStartedAt=performance.now();
   const kind=items[i].type===5?'video':'image';
   const sourceId=messageId+':'+kind+':'+i,id=photoRecordId(sourceId);
   const existing=await env.DB.prepare('SELECT id,deleted_at FROM media WHERE source_message_id=?').bind(sourceId).first();
@@ -232,10 +263,13 @@ export async function persistWeChatMedia(env,raw,baby,messageId,options={}){
     }
    }catch{/* Thumbnail is always optional. */}
   }
+  const indexStartedAt=performance.now();
   await env.DB.prepare('INSERT OR IGNORE INTO media(id,baby_id,day,title,object_key,mime,size,created_at,thumbnail_ready,source_message_id) VALUES(?,?,?,?,?,?,?,?,?,?)')
    .bind(id,baby.id,day,title,objectKey,mime,size,new Date().toISOString(),thumbReady,sourceId).run();
   const indexed=await env.DB.prepare('SELECT id FROM media WHERE source_message_id=?').bind(sourceId).first();
   if(!indexed)throw Error('WECHAT_MEDIA_INDEX_FAILED');
+  mediaTiming({channel:'wechat',stage:'index',size,startedAt:indexStartedAt});
+  mediaTiming({channel:'wechat',stage:'total',size,startedAt:itemStartedAt});
   return {id:indexed.id,kind,already:false};
  }
  // At most two parallel decrypt+R2 streams; preserve source order and await all

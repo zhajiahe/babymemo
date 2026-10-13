@@ -1,8 +1,9 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {Card,Pager} from '../../components/ui';
 import {MediaViewer,type MediaItem} from '../../components/MediaViewer';
 import {createAlbumThumbnail,createVideoThumbnail,fingerprintFile} from '../../media-upload';
 import {pickMatchingUpload,remainingPartNumbers} from '../../upload-plan.mjs';
+import {mapBounded,transferConcurrency,canDirectUpload} from '../../media-transfer.mjs';
 import {bestEffortFileDay} from '../../media-date.mjs';
 import {CloudUpload,Camera,Trash2,Plus} from 'lucide-react';
 import {api,post,today,ApiFailure,type BabyInfo} from '../../lib/client';
@@ -10,6 +11,7 @@ import {api,post,today,ApiFailure,type BabyInfo} from '../../lib/client';
 export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];mediaEdited:(id:string,value:{day:string})=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
  const [showUploader,setShowUploader]=useState(false);
+ const thumbnailTail=useRef<Promise<void>>(Promise.resolve());
  const [uploadDay,setUploadDay]=useState(today()),[autoDate,setAutoDate]=useState(true);
  const [selected,setSelected]=useState<MediaItem|null>(null);
  useEffect(()=>{setSelected(null)},[baby.id]);
@@ -49,86 +51,130 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  async function upload(files:File[]){
   if(!files.length||uploading)return;
   setUploading(true);
+  const mobile=window.matchMedia('(pointer:coarse)').matches;
+  const policy=transferConcurrency(mobile,files.length);
+  let saved=0,failedFiles=0;
+  const report=(stage:'client'|'thumbnail',size:number,startedAt:number,status:'ok'|'error')=>{
+   void post('/api/upload/metrics',{stage,size,durationMs:Math.round(performance.now()-startedAt),status}).catch(()=>{});
+  };
   try{
-   let queue=await refreshPending();
-   for(const file of files){
+   const queue=await refreshPending();
+   const reserved=new Set<string>();
+   // Derivatives are best effort and never hold an original-file transfer slot.
+   // Serialize decoding across batches to avoid exhausting iPhone Safari memory.
+   const queueThumbnail=(file:File,mime:string,id:string)=>{
+    if(!mime.startsWith('image/')&&!mime.startsWith('video/'))return;
+    thumbnailTail.current=thumbnailTail.current.catch(()=>{}).then(async()=>{
+     const previewStarted=performance.now();
+     try{
+      const thumb=mime.startsWith('image/')?await createAlbumThumbnail(file):await createVideoThumbnail(file);
+      if(thumb){
+       await api('/api/media/'+id+'/thumbnail',{method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}});
+       changed();
+      }
+      report('thumbnail',file.size,previewStarted,'ok');
+     }catch{report('thumbnail',file.size,previewStarted,'error');notify('原文件已保存，但预览图暂不可用（仍可查看原文件）')}
+    });
+   };
+   const results=await mapBounded(files,policy.files,async file=>{
+    const fileStarted=performance.now();
     let uploadId:string|undefined;
+    let completedId='';
     try{
      if(file.size<1||file.size>209715200)throw Error('文件大小需在 1B～200MB 之间');
      const extension=file.name.toLowerCase().match(/\.(heic|heif|jpg|jpeg|png|webp|gif|mov|mp4|webm)$/)?.[1];
      const formats:Record<string,string>={heic:'image/heic',heif:'image/heif',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',mov:'video/quicktime',mp4:'video/mp4',webm:'video/webm'};
      const mime=file.type||(extension?formats[extension]:'application/octet-stream');
-     setProgress(file.name+' · 正在检查分片');
      const fingerprint=await fingerprintFile(file);
-     const existing=pickMatchingUpload(queue,{title:file.name.slice(0,120),size:file.size,mime,fingerprint}) as PendingUpload|undefined;
-     const session=existing||await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:autoDate?await bestEffortFileDay(file,uploadDay,baby.time_zone):uploadDay,title:file.name,mime,size:file.size,fingerprint});
-     uploadId=session.id;
-     const chunkSize=8388608;
-     const total=Math.ceil(file.size/chunkSize);
-     const numbers=remainingPartNumbers(total,existing?.completedParts||[]);
-     const completed=new Set(existing?.completedParts||[]);
-     if(existing)notify('找到上次的上传，正在续传：'+file.name);
-     let next=0,failed=false;
-     const sendPart=async(number:number)=>{
-      const part=file.slice((number-1)*chunkSize,Math.min(file.size,number*chunkSize));
+     const day=autoDate?await bestEffortFileDay(file,uploadDay,baby.time_zone):uploadDay;
+     const title=file.name.slice(0,120);
+     const matching=queue.find(item=>!reserved.has(item.id)&&pickMatchingUpload([item],{title,size:file.size,mime,fingerprint}));
+     if(matching)reserved.add(matching.id);
+     // A direct upload ID is preserved in sessionStorage until confirmation.
+     // A lost HTTP response or Safari reload can be safely retried.
+     if(!matching&&canDirectUpload(file.size)){
+      const key='bm-direct-'+baby.id+'-'+fingerprint;
+      let id='';
+      try{id=sessionStorage.getItem(key)||''}catch{/* Safari private storage may be unavailable. */}
+      if(!/^[0-9a-f-]{36}$/.test(id)){
+       id=crypto.randomUUID();
+       try{sessionStorage.setItem(key,id)}catch{/* Keep this attempt's ID in memory. */}
+      }
+      uploadId=id;
+      const headers={'Content-Type':mime,'x-baby-id':baby.id,'x-upload-day':day,'x-upload-title':encodeURIComponent(title)};
       for(let attempt=0;attempt<3;attempt++){
        try{
-        await api('/api/upload/'+uploadId+'/part/'+number,{method:'PUT',body:part,headers:{'Content-Type':'application/octet-stream'}});
-        return;
+        await api('/api/upload/direct/'+id,{method:'PUT',body:file,headers});
+        try{sessionStorage.removeItem(key)}catch{/* Storage is best effort. */}
+        completedId=id;
+        uploadId=undefined;
+        break;
        }catch(error){
-        if(attempt===2||error instanceof ApiFailure&&[400,401,403,404,413].includes(error.status))throw error;
+        if(attempt===2||error instanceof ApiFailure&&[400,401,403,409,413,415].includes(error.status))throw error;
         await new Promise(resolve=>setTimeout(resolve,1000*2**attempt));
        }
       }
-     };
-     const concurrency=window.matchMedia('(pointer:coarse)').matches?2:3;
-     const jobs=Array.from({length:Math.min(concurrency,numbers.length)},async()=>{
-      while(!failed&&next<numbers.length){
-       const number=numbers[next++];
-       try{
-        await sendPart(number);
-        completed.add(number);
-        setProgress(file.name+' · '+Math.round(completed.size/total*100)+'%');
-       }catch(error){failed=true;throw error}
+     }else{
+      const session=matching||await post<{id:string;chunkSize:number}>('/api/upload/start',{
+       babyId:baby.id,day,title:file.name,mime,size:file.size,fingerprint
+      });
+      uploadId=session.id;
+      const chunkSize=8388608,total=Math.ceil(file.size/chunkSize);
+      const numbers=remainingPartNumbers(total,matching?.completedParts||[]);
+      let finished=total-numbers.length,next=0,failed=false;
+      if(matching)notify('正在续传：'+file.name);
+      const sendPart=async(number:number)=>{
+       const part=file.slice((number-1)*chunkSize,Math.min(file.size,number*chunkSize));
+       for(let attempt=0;attempt<3;attempt++){
+        try{
+         await api('/api/upload/'+session.id+'/part/'+number,{method:'PUT',body:part,headers:{'Content-Type':'application/octet-stream'}});
+         return;
+        }catch(error){
+         if(attempt===2||error instanceof ApiFailure&&[400,401,403,404,413].includes(error.status))throw error;
+         await new Promise(resolve=>setTimeout(resolve,1000*2**attempt));
+        }
+       }
+      };
+      const workers=Array.from({length:Math.min(policy.parts,numbers.length)},async()=>{
+       while(!failed&&next<numbers.length){
+        const number=numbers[next++];
+        try{
+         await sendPart(number);finished++;
+         setProgress('已保存 '+saved+'/'+files.length+' · '+file.name+' '+Math.round(finished/total*100)+'%');
+        }catch(error){failed=true;throw error}
+       }
+      });
+      const jobs=await Promise.allSettled(workers);
+      const failedJob=jobs.find((x):x is PromiseRejectedResult=>x.status==='rejected');
+      if(failedJob)throw failedJob.reason;
+      for(let attempt=0;attempt<3;attempt++){
+       try{await post('/api/upload/'+session.id+'/finish',{});break}
+       catch(error){
+        if(attempt===2||error instanceof ApiFailure&&[400,401,403,404,409].includes(error.status))throw error;
+        await new Promise(resolve=>setTimeout(resolve,1000*2**attempt));
+       }
       }
-     });
-     const results=await Promise.allSettled(jobs);
-     const rejection=results.find((x):x is PromiseRejectedResult=>x.status==='rejected');
-     if(rejection)throw rejection.reason;
-     setProgress(file.name+' · 正在保存原文件');
-     for(let attempt=0;attempt<3;attempt++){
-      try{await post('/api/upload/'+uploadId+'/finish',{});break;}
-      catch(error){
-       if(attempt===2||error instanceof ApiFailure&&[400,401,403,404,409].includes(error.status))throw error;
-       await new Promise(resolve=>setTimeout(resolve,1000*2**attempt));
-      }
+      completedId=session.id;
+      uploadId=undefined;
      }
-     uploadId=undefined;
-     queue=queue.filter(x=>x.id!==session.id);
+     saved++;
+     const seconds=Math.max(0.001,(performance.now()-fileStarted)/1000);
+     setProgress('已保存 '+saved+'/'+files.length+' · '+(file.size/1048576/seconds).toFixed(1)+' MiB/s');
      changed();
      notify('已保存 '+file.name);
-     // Thumbnails are independent of the original multipart upload.
-     if(mime.startsWith('image/')||mime.startsWith('video/')){
-      try{
-       setProgress(file.name+' · 正在生成预览图');
-       const thumb=mime.startsWith('image/')?await createAlbumThumbnail(file):await createVideoThumbnail(file);
-       if(thumb)await api('/api/media/'+session.id+'/thumbnail',{method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}});
-      }catch{
-       notify(file.name+' 已保存，但预览图暂不可用（仍可查看原文件）');
-      }
-     }
+     queueThumbnail(file,mime,completedId);
+     report('client',file.size,fileStarted,'ok');
     }catch(error){
-     // Never abort a recoverable session automatically; Safari can lose connectivity.
-     notify(file.name+'：'+(error instanceof Error?error.message:'上传中断')+(uploadId?'。重新选择同一文件即可续传。':''));
+     failedFiles++;
+     report('client',file.size,fileStarted,'error');
+     notify(file.name+'：'+(error instanceof Error?error.message:'上传中断')+(uploadId&&!canDirectUpload(file.size)?'。重新选择同一文件即可续传。':''));
     }
-    try{queue=await refreshPending()}catch{}
-   }
+   });
+   if(failedFiles||results.some(x=>x.status==='rejected'))notify('有 '+(failedFiles+results.filter(x=>x.status==='rejected').length)+' 个文件未完成，可重新选择文件重试');
+   await refreshPending();
   }catch(error){
    notify(error instanceof Error?error.message:'无法检查未完成上传，请检查网络后重试');
-  }finally{
-   setUploading(false);
-   setProgress('');
-  }
+  }finally{setUploading(false);setProgress('')}
  }
  async function remove(id:string){if(!confirm('将这项媒体移入回收站？30 天内可恢复。'))return;try{await api('/api/media/'+id,{method:'DELETE'});if(selected?.id===id)setSelected(null);changed();notify('已移入回收站，可在设置中恢复')}catch(e){notify(e instanceof Error?e.message:'删除失败')}}
  async function saveMedia(value:{day:string}){

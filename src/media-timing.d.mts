@@ -1,0 +1,2 @@
+export function mediaSizeBand(size:number):string;
+export function mediaTiming(options:{channel:string;stage:string;size:number;startedAt:number;status?:string;now?:()=>number;emit?:(message:string)=>void}):{level:string;event:string;channel:string;stage:string;status:string;sizeBand:string;durationMs:number};
