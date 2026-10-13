@@ -43,6 +43,19 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   const cached=await env.DB.prepare('SELECT reply FROM wechat_tool_steps WHERE source_message_id=? AND baby_id=? LIMIT 1')
     .bind(sourceId,baby.id).first();
   if(cached){results.push(cached.reply);continue}
+  // A transaction can commit before the message reply/step journal is persisted.
+  // Do not replay an old edit over a newer record state after such a crash.
+  if(['update_baby','update_growth','update_milestone','update_media','delete_growth','delete_milestone','delete_media','restore_trash','update_recent_media'].includes(action)){
+   const prior=await env.DB.prepare('SELECT id FROM wechat_operation_log WHERE baby_id=? AND (source_message_id=? OR source_message_id LIKE ?) LIMIT 1')
+     .bind(baby.id,sourceId,sourceId+':media:%').first();
+   if(prior){
+    const recovered='此前已成功提交此操作（操作编号 '+prior.id.slice(0,8)+'），已跳过重复执行。';
+    results.push(recovered);
+    await env.DB.prepare('INSERT OR IGNORE INTO wechat_tool_steps(source_message_id,baby_id,action,reply,created_at) VALUES(?,?,?,?,?)')
+     .bind(sourceId,baby.id,action,recovered,new Date().toISOString()).run();
+    continue;
+   }
+  }
   if(MUTATING_ACTIONS.has(action)){
    const denied=guardAction(action,args,groundedText,baby,at);
    if(denied){results.push(denied);break}
