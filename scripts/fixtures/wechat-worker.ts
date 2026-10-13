@@ -1,5 +1,6 @@
 import {handleWechatCommand,handleWechatPhotoMessage,WechatSession} from '../../src/wechat';
 import {encryptSecret,decryptSecret,setSetting} from '../../src/crypto';
+import {getActiveThread} from '../../src/wechat-memory.mjs';
 import {createCipheriv,createDecipheriv,createHash} from 'node:crypto';
 import {Buffer} from 'node:buffer';
 const baby={id:'synthetic-baby',name:'测试宝宝',birthday:'2024-01-01',time_zone:'Asia/Shanghai'};
@@ -30,7 +31,7 @@ export default {async fetch(request:Request,env:any){
  try{
   let reply='',status:any=null;
   if(input.failIndexOnce){const db=env.DB;let failed=false;env.DB={prepare(sql:string){const statement=db.prepare(sql);return new Proxy(statement,{get(target,key){if(key==='bind')return (...values:any[])=>{const bound=target.bind(...values);return new Proxy(bound,{get(t,k){if(k==='run')return async()=>{if(!failed&&sql.startsWith('INSERT OR IGNORE INTO media')){failed=true;throw Error('SYNTHETIC_D1_FAILURE')}return t.run()};const value=(t as any)[k];return typeof value==='function'?value.bind(t):value}})};const value=(target as any)[key];return typeof value==='function'?value.bind(target):value}})}}}
-  if(input.mode==='text')reply=await handleWechatCommand(env,input.text,input.id,null,at);
+  if(input.mode==='text')reply=await handleWechatCommand(env,input.text,input.id,getActiveThread(null,'synthetic-bot','synthetic-user',at),at);
   else if(input.mode==='media')reply=await handleWechatPhotoMessage(env,input.raw,input.id);
   else if(input.mode==='multi'){
    const rows=[
