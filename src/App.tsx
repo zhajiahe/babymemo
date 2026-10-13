@@ -82,7 +82,12 @@ export default function App(){
   return ()=>{cancelled=true};
  },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media,favoriteOnly]);
  function changed(){void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
- async function logout(){await post('/api/logout',{});setMode('gate');setState(null)}
+ async function logout(){
+    try{
+      await post('/api/logout',{});
+      setMode('gate');setState(null);
+    }catch(e){setToast(e instanceof Error?e.message:'退出失败，请检查网络后重试')}
+  }
  if(mode==='loading')return <div className="loading-screen"><Logo/><div>正在载入家庭空间…</div></div>;
  if(mode==='gate')return <Gate onReady={()=>void refresh()}/>;
  if(mode==='unavailable')return <div className="loading-screen"><Logo/><p>暂时无法连接家庭空间，已保留你的会话。</p><button className="secondary" onClick={()=>void refresh()}><RefreshCw size={16}/>重新连接</button></div>;
@@ -111,10 +116,10 @@ export default function App(){
    <button type="button" className="home-add-moment" onClick={()=>setActive('moments')}><Plus size={16}/> 记录新瞬间</button>
   </section>
  </div>}
- {active==='growth'&&<RecordView baby={baby} kind="growth" items={records} history={growthHistory} historyLimited={historyLimited} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage}/>}
- {active==='moments'&&<RecordView baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage}/>}
- {active==='album'&&<Album baby={baby} media={media} favoriteOnly={favoriteOnly} onFavoriteOnly={v=>{setFavoriteOnly(v);setAlbumPage(0)}} favoriteUpdated={(id,favorite)=>setMedia(items=>items.map(item=>item.id===id?{...item,favorite:favorite?1:0}:item))} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
- {active==='settings'&&<Settings state={state} baby={baby} changed={changed} notify={setToast} onBabyCreated={id=>{setBabyId(id);setActive('overview');setGrowthPage(0);setMomentPage(0);setAlbumPage(0)}}/>}
+ {active==='growth'&&<RecordView key={'growth-'+baby.id} baby={baby} kind="growth" items={records} history={growthHistory} historyLimited={historyLimited} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage}/>}
+ {active==='moments'&&<RecordView key={'milestones-'+baby.id} baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage}/>}
+ {active==='album'&&<Album key={baby.id} baby={baby} media={media} favoriteOnly={favoriteOnly} onFavoriteOnly={v=>{setFavoriteOnly(v);setAlbumPage(0)}} favoriteUpdated={(id,favorite)=>setMedia(items=>items.map(item=>item.id===id?{...item,favorite:favorite?1:0}:item))} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
+ {active==='settings'&&<Settings key={baby.id} state={state} baby={baby} changed={changed} notify={setToast} onBabyCreated={id=>{setBabyId(id);setActive('overview');setGrowthPage(0);setMomentPage(0);setAlbumPage(0)}}/>}
  
  </div></main>{toast&&<Notice text={toast} onClose={()=>setToast('')}/>}</div>;
 }
