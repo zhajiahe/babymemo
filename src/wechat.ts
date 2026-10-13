@@ -126,7 +126,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
   },
   execute:async(call:any,stepOffset:number)=>{
    const content=await runWechatPlan(env,baby,[call],{
-    messageId,text:command,groundedText:call.function.name==='create_milestone'&&context.milestoneGroundedText?context.milestoneGroundedText:context.groundedText,at,thread,stepOffset,
+    messageId,text:command,at,thread,stepOffset,
     encryptReply:(value:string)=>encryptSecret(env,value),
     decryptReply:(value:string)=>decryptSecret(env,value)
    });

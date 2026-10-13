@@ -5,7 +5,7 @@ const day={type:'string',description:'真实公历日期 YYYY-MM-DD'};
 const number=(unit,max)=>({type:'number',description:unit+'（必须是用户明确给出的数值）',exclusiveMinimum:0,maximum:max});
 const selector={id:{type:'string',description:'查询结果中的记录编号，至少前 8 位'},day:{type:'string',description:'唯一匹配记录的日期 YYYY-MM-DD；同日多条时需要记录编号'}};
 const tool=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
-import {guardAction,validDay,explicitDay,dayInZone} from './wechat-policy.mjs';
+import {validDay,dayInZone} from './wechat-policy.mjs';
 import {ageOnDay} from './wechat-answer.mjs';
 import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
 export const wechatTools=[
@@ -48,25 +48,6 @@ const listLine=(kind,r)=>{
  kind==='milestones'?[r.title||'',r.description||'']:[r.mime||''];
  return short(r.id)+' · '+r.day+' · '+bits.filter(Boolean).join('，');
 };
-function groundedTarget(args,text,baby,at=Date.now()){
- if(typeof text!=='string')return false;
- if(args.id!==undefined)return typeof args.id==='string'&&text.toLowerCase().includes(args.id.slice(0,8).toLowerCase());
- if(!validDate(args.day))return false;
- const [year,month,day]=args.day.split('-').map(Number);
- const full=new RegExp(year+'\\s*[-/年.]\\s*0?'+month+'\\s*[-/月.]\\s*0?'+day+'\\s*日?');
- const partial=new RegExp('(?:^|\\D)0?'+month+'\\s*月\\s*0?'+day+'\\s*日?');
- if(full.test(text)||partial.test(text)||text.includes(args.day))return true;
- const tz=baby.time_zone||'Asia/Shanghai';
- let current;
- current=dayInZone(at,tz)
- const dt=new Date(current+'T00:00:00Z');
- for(const [expression,offset] of [['今天',0],['今日',0],['昨天',-1],['昨日',-1],['前天',-2]]){
-  if(!text.includes(expression))continue;
-  const date=new Date(dt.getTime()+offset*86400000).toISOString().slice(0,10);
-  if(date===args.day)return true;
- }
- return false;
-}
 async function findTarget(env,babyId,kind,args,deleted=false){
  const table=tableForKind[kind];
  if(!table)throw Error('不支持的记录种类');
@@ -141,11 +122,10 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
     ageInfo+'，过敏和注意事项：'+(baby.allergies||'未填写')+'，备注：'+(baby.notes||'无');
   }
   if(action==='update_baby'){
-   if(!/修改|更正|更改|更新|设置|改成|改为|改一下|记为|添加过敏|补充过敏/.test(originalText))return '请明确说明“修改宝宝资料”，防止误操作';
    const changes={};
    if(args.name!==undefined){const name=cleanText(args.name,80);if(!name)throw Error('昵称不能为空');changes.name=name}
    if(args.allergies!==undefined){if(typeof args.allergies!=='string'||args.allergies.length>2000)throw Error('过敏备注最长 2000 字');
-    changes.allergies=/补充过敏|添加过敏|增加过敏/.test(originalText)?[...new Set([...(baby.allergies||'').split(/[，,、;；]+/),args.allergies].map(x=>x.trim()).filter(Boolean))].join('，'):args.allergies;
+    changes.allergies=args.allergies;
    }
    if(args.notes!==undefined){if(typeof args.notes!=='string'||args.notes.length>4000)throw Error('备注最长 4000 字');changes.notes=args.notes}
    if(args.birthday!==undefined){if(!validDate(args.birthday))throw Error('生日日期不正确');changes.birthday=args.birthday}
@@ -166,7 +146,6 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    if(!validDate(args.day))throw Error('请给出有效日期');
    const changes=measurement(args);
    if(!['weight','height','head_circumference'].some(x=>x in changes))throw Error('请明确体重、身高或头围数值');
-   const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const id=crypto.randomUUID(),when=new Date().toISOString();
    await env.DB.prepare('INSERT OR IGNORE INTO growth_records(id,baby_id,day,weight,height,head_circumference,notes,created_at,source_message_id) VALUES(?,?,?,?,?,?,?,?,?)')
    .bind(id,baby.id,args.day,changes.weight??null,changes.height??null,changes.head_circumference??null,changes.notes||'来自微信',when,messageId||null).run();
@@ -186,10 +165,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
   }
   for(const kind of ['growth','milestones','media']){
    if(action==='update_'+(kind==='milestones'?'milestone':kind)){
-    if(!/修改|更正|更改|更新|改成|改为|改一下|设为|标记/.test(originalText))return '请明确说明修改操作';
     if(args.id===undefined&&args.day===undefined)return '请指定记录日期或编号，避免改错记录';
-    if(!groundedTarget(args,originalText,baby,at))return '请在消息中明确指出要修改的日期或记录编号，避免改错记录';
-    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
     const row=await findTarget(env,baby.id,kind,args);
     const changes={};
     if(kind==='growth')Object.assign(changes,measurement(args));
@@ -204,9 +180,6 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
     return await update(env,kind,row,changes,{messageId,thread:options.thread,at});
    }
    if(action==='delete_'+(kind==='milestones'?'milestone':kind)){
-    if(!/删除|删掉|移入回收站|移到回收站/.test(originalText))return '请明确说“删除”并指定日期或编号';
-    if(!groundedTarget(args,originalText,baby,at))return '请在消息中写明需要删除的日期或记录编号，避免误删';
-    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
     const row=await findTarget(env,baby.id,kind,args);
     const deletedAt=new Date().toISOString();
     const stmt=env.DB.prepare('UPDATE '+tableForKind[kind]+' SET deleted_at=? WHERE id=? AND baby_id=? AND deleted_at IS NULL')
@@ -258,8 +231,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
   if(action==='update_recent_media'){
    const batch=options.thread?.lastMedia;
    if(!batch||batch.babyId!==baby.id||batch.expiresAt<=at||!Array.isArray(batch.ids))return '没有可确认的最近照片批次';
-   if(!/照片|图片|视频|这几张|刚才/.test(originalText)||!validDay(args.newDay)||
-      explicitDay(originalText,at,baby.time_zone)!==args.newDay)return '请明确指定刚发送的照片和新日期';
+   if(!validDay(args.newDay))return '请提供有效的新日期';
    const statements=[],opIds=[];
    for(let i=0;i<Math.min(4,batch.ids.length);i++){
     const id=batch.ids[i];
@@ -283,9 +255,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    return '已更新最近 '+changed+'/'+opIds.length+' 项照片或视频日期。'+(changed<opIds.length?'部分记录同时发生变更，请重新查询核对。':'');
   }
   if(action==='restore_trash'){
-   if(!/恢复|还原|找回/.test(originalText))return '请明确说“恢复”并指定记录编号';
    if(!tableForKind[args.kind])throw Error('请说明恢复的是测量、事件或相册');
-   if(!groundedTarget(args,originalText,baby,at))return '请在消息中写明恢复记录的日期或编号';
    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const row=await findTarget(env,baby.id,args.kind,args,true);
    const stmt=env.DB.prepare('UPDATE '+tableForKind[args.kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL').bind(row.id,baby.id);
