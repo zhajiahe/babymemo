@@ -894,7 +894,7 @@ async function browserE2e(){
       const statuses=Object.fromEntries(members.map(member=>[member.id,{connectionId:member.id,connected:true,enabled:member.enabled,lastPoll:stamp,lastMessage:stamp,lastError:member.id==='status-expired'?'WECHAT_AUTH_EXPIRED':null,media:{pending:member.id==='status-saving'?2:0,saving:member.id==='status-saving',retrying:false,lastError:null,lastCompleted:null}}]));
       await page.route('**/api/state',async route=>{const response=await route.fetch();const data=await response.json();data.wechat.connections=members.map(member=>({...member,createdAt:stamp,updatedAt:stamp}));await route.fulfill({response,json:data})});
       await page.route('**/api/settings/wechat/connections/*/status',async route=>{const id=new URL(route.request().url()).pathname.split('/').at(-2);await route.fulfill({json:statuses[id]})});
-      await page.goto(base+'/',{waitUntil:'domcontentloaded'});await page.locator('.mobile-nav button[aria-label="设置"]').click();await page.getByText('运行正常',{exact:true}).waitFor();
+      await page.goto(base+'/',{waitUntil:'domcontentloaded'});await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();await page.getByText('运行正常',{exact:true}).waitFor();
       for(const label of ['媒体保存中','需要重新绑定','已暂停'])assert.equal(await page.getByText(label,{exact:true}).isVisible(),true);
       assert.equal(await page.locator('.status-json').count(),0);
       for(const width of [320,375,768,1280]){await page.setViewportSize({width,height:900});const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,'WeChat status overflow at '+width);if(width===320||width===1280)await page.screenshot({path:join(evidence,'wechat-status-'+width+'.png'),fullPage:true})}
