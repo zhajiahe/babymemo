@@ -64,13 +64,13 @@ export async function hydrateWechatIncoming(env:Env,raw:Record<string,unknown>,b
  for(const item of items.slice(0,16)){
   const file=item?.file_item;
   const filename=typeof file?.file_name==='string'?file.file_name:'';
-  if(item?.type!==4||!/^.{1,100}\\.(?:txt|xml)$/i.test(filename)||!file?.media?.aes_key)continue;
+  if(item?.type!==4||!/^.{1,100}\.(?:txt|xml)$/i.test(filename)||!file?.media?.aes_key)continue;
   try{
    const bytes=await readWechatEncryptedAttachment(file.media,file.media.aes_key,TEXT_LIMIT,fetchImpl);
    const material=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
    if(/[\0]/.test(material))continue;
    const nested=parseWechatIncoming({item_list:[{type:1,text_item:{text:material}}]});
-   if(nested.text){notes.push('[微信转发文件 '+filename+']\\n'+nested.text);base.forwarded=true;base.missingMedia=Math.max(0,base.missingMedia-1)+nested.missingMedia}
+   if(nested.text){notes.push('[微信转发文件 '+filename+']\n'+nested.text);base.forwarded=true;base.missingMedia=Math.max(0,base.missingMedia-1)+nested.missingMedia}
   }catch{/* Untrusted or expired file content must not block other messages. */}
  }
  // Best effort speech-to-text for a real MP3 wire payload when native ASR is absent.
@@ -83,6 +83,6 @@ export async function hydrateWechatIncoming(env:Env,raw:Record<string,unknown>,b
   }catch{/* Preserve explicit missing-audio notice in the parsed result. */}
  }
  if(!notes.length)return base;
- const next=base.text+'\\n'+notes.join('\\n');
+ const next=base.text+'\n'+notes.join('\n');
  return {...base,text:next.slice(0,3000),limited:base.limited||next.length>3000};
 }
