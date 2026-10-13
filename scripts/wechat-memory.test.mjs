@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {getActiveThread,appendTurn,buildCommandContext,isClearContext,recordQuery,setPending,isMilestoneSaveFollowup,CONTEXT_TTL_MS} from '../src/wechat-memory.mjs';
+import {getActiveThread,appendTurn,buildCommandContext,isClearContext,recordQuery,setPending,isMilestoneSaveFollowup,confirmsMilestoneProposal,CONTEXT_TTL_MS} from '../src/wechat-memory.mjs';
 test('scoped bounded memory with TTL and explicit reset',()=>{
  let thread=getActiveThread(null,'botA','userA',1000);
  for(let i=0;i<6;i++)thread=appendTurn(thread,'query '+i,'reply '+i,'baby1',1000+i);
@@ -62,4 +62,42 @@ test('diary follow-up never borrows another baby, an expired session or casual n
  assert.equal(buildCommandContext('记下来',thread,at+1,'baby-b').milestoneGroundedText,null);
  assert.equal(buildCommandContext('不要记下来',thread,at+1,'baby-a').milestoneGroundedText,null);
  assert.equal(buildCommandContext('记下来',getActiveThread(thread,'bot','user',at+CONTEXT_TTL_MS+1),at+CONTEXT_TTL_MS+1,'baby-a').milestoneGroundedText,null);
+});
+
+test('an explicit assistant proposal followed by 好 carries the last user date into create_milestone only',()=>{
+ const at=Date.parse('2026-10-13T17:50:00+08:00');
+ const source='我们一家人，光召恩惠，10月2号去了钱江世纪公园玩，顺便给小好妈妈过生日';
+ let thread=getActiveThread(null,'bot','member',at);
+ thread=appendTurn(thread,source,
+  '听起来好温馨呀，还顺便给小好妈妈过了生日～要我帮你把10月2号去钱江世纪公园玩这件事记下来吗？',
+  'baby-a',at);
+ const ctx=buildCommandContext('好',thread,at+6000,'baby-a');
+ assert.match(ctx.milestoneGroundedText,/10月2号去了钱江世纪公园/);
+ assert.match(ctx.milestoneGroundedText,/顺便给小好妈妈过生日/);
+ assert.doesNotMatch(ctx.milestoneGroundedText,/听起来|要我帮你/);
+ assert.equal(ctx.groundedText,'好'); // never extend grounding for unrelated writes
+ assert.match(ctx.modelMessages.at(-1).content,/create_milestone/);
+ assert.equal(confirmsMilestoneProposal('好',thread.turns[0].reply),true);
+});
+test('a casual 好 does not authorize a write without a recent save proposal for the same baby',()=>{
+ const at=Date.parse('2026-10-13T17:50:00+08:00');
+ const source='10月2日去了钱江世纪公园';
+ let thread=getActiveThread(null,'bot','member',at);
+ thread=appendTurn(thread,source,'要我帮你查一下最近的照片吗？','baby-a',at);
+ assert.equal(buildCommandContext('好',thread,at+1,'baby-a').milestoneGroundedText,null);
+ thread=appendTurn(thread,source,'要我帮你把这件事记下来吗？','baby-a',at+2);
+ for(const no of ['不好','不用','不要','算了','好，但别保存','删除','好的，请删除照片']){
+  assert.equal(buildCommandContext(no,thread,at+3,'baby-a').milestoneGroundedText,null,no);
+ }
+ assert.equal(buildCommandContext('好',thread,at+3,'baby-b').milestoneGroundedText,null);
+ assert.equal(buildCommandContext('好',getActiveThread(thread,'bot','member',at+CONTEXT_TTL_MS+5),at+CONTEXT_TTL_MS+5,'baby-a').milestoneGroundedText,null);
+});
+test('confirmation uses the original description, never dates added by the assistant',()=>{
+ const at=Date.parse('2026-10-13T17:50:00+08:00');
+ let thread=getActiveThread(null,'bot','member',at);
+ thread=appendTurn(thread,'去公园玩了',
+  '要我帮你把10月2号去公园玩这件事记下来吗？','baby-a',at);
+ const ctx=buildCommandContext('好',thread,at+1,'baby-a');
+ assert.equal(ctx.milestoneGroundedText,'去公园玩了\n好');
+ assert.doesNotMatch(ctx.milestoneGroundedText,/10月2号/);
 });
