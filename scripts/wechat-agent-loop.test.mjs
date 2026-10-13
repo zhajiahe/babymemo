@@ -108,3 +108,32 @@ test('no-tool clarification is not replaced by a mandatory tool instruction',asy
  const result=await runWechatAgentLoop({...args,complete:async()=>done('想把这段记录在昨天还是今天？'),execute:async()=>{throw Error('unexpected')}});
  assert.equal(result,'想把这段记录在昨天还是今天？');
 });
+
+test('runtime context JSON stays in model observation but is never sent to WeChat',async()=>{
+ const observed=[];
+ const context='{"currentTimestamp":"2026-10-13T07:21:28Z","messageLocalDay":"2026-10-13","timeZone":"Asia/Shanghai"}';
+ let round=0;
+ const r=await runWechatAgentLoop({...args,
+  complete:async({messages})=>{observed.push(structuredClone(messages));return round++===0?reply(call('time','get_runtime_context')):done('现在是下午三点多。')},
+  execute:async()=>context});
+ assert.equal(r,'现在是下午三点多。');
+ assert.equal(observed.length,2);
+ assert.equal(observed[1].at(-1).role,'tool');
+ assert.equal(observed[1].at(-1).content,context);
+ assert.doesNotMatch(r,/currentTimestamp|messageLocalDay|Asia\/Shanghai|\{/);
+});
+test('runtime context before a real mutation does not leak even if a later step fails',async()=>{
+ let round=0;
+ const r=await runWechatAgentLoop({...args,
+  complete:async()=>round++===0?reply(call('time','get_runtime_context')):reply(call('save','create_milestone')),
+  execute:async c=>c.function.name==='get_runtime_context'?'{"currentTimestamp":"2026-10-13T07:21:28Z"}':{content:'记录日期缺乏原消息的明确依据，请补充日期。',halt:true}});
+ assert.equal(r,'记录日期缺乏原消息的明确依据，请补充日期。');
+ assert.doesNotMatch(r,/currentTimestamp/);
+});
+test('legacy no-tool boilerplate echoed by the model does not reach users',async()=>{
+ const r=await runWechatAgentLoop({...args,
+  complete:async()=>done('模型没有返回可执行的工具指令，未修改任何记录。请说明要查询、记录或修改的内容。'),
+  execute:async()=>{throw Error('unexpected')}});
+ assert.doesNotMatch(r,/没有返回可执行的工具指令/);
+ assert.match(r,/没有修改记录/);
+});

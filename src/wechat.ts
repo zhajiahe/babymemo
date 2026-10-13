@@ -6,7 +6,7 @@ import {WechatPhotoError,mediaItems,persistWeChatMedia,wechatMediaErrorCode} fro
 import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './wechat-memory.mjs';
-import {messageTime,dayInZone} from './wechat-policy.mjs';
+import {messageTime,dayInZone,explicitDay} from './wechat-policy.mjs';
 import {runWechatPlan,quickCommand,isCommittedMutationReply} from './wechat-orchestrator.mjs';
 import {isWechatHelpCommand,retryReadOnlyTool} from './wechat-tool-routing.mjs';
 import {runWechatAgentLoop} from './wechat-agent-loop.mjs';
@@ -94,11 +94,14 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
  if(!key)return '请先在网页设置中配置 OpenRouter Key，或在部署时设置 OPENROUTER_API_KEY Secret';
  const model=await setting(env,'openrouter_model')||DEFAULT_OPENROUTER_MODEL;
  const localDay=dayInZone(at,baby.time_zone||'Asia/Shanghai');
+ const diaryDay=context.milestoneGroundedText?explicitDay(context.milestoneGroundedText,at,baby.time_zone||'Asia/Shanghai'):null;
  const instruction='你是 BabyMemo 微信成长记录工具 Agent，不提供闲聊、医疗诊断或育儿分析。'+
   '消息发送时宝宝本地日期 '+localDay+'，当前宝宝 '+baby.name+'，宝宝时区 '+(baby.time_zone||'Asia/Shanghai')+'。'+
   '日记和里程碑是同一种成长事件，通过 create_milestone 保存睡眠、饮食、生活观察等日记；没有新的数据类型。'+
   '用户仅描述近况时，用自然简短的中文承接话题，必要时问是否记入日记；没有明确同意不许擅自保存。'+
   '用户说“记下来”等明确同意时，根据同一宝宝的近期用户原话，写一条完整日记/里程碑，不把助手上轮回复当事实。'+
+  '昨晚、昨夜、昨天指消息发送日的前一天；已给出消息本地日期，无需为推断这些相对日期重复调用 get_runtime_context。'+
+  (diaryDay?'这次日记上下文中的日期已从用户原话校验为 '+diaryDay+'；调用 create_milestone 时必须保持该日期，不要猜成当天。':'')+
   '没有工具调用也可以自然回复或澄清；不能说已经写入、保存、更新任何未执行的操作。'+
   '你可以先读后写；每次收到工具结果后根据真实结果决定继续调用工具还是结束。'+
   '用户明确要求的简单记录应直接执行，不要求固定中文表达；必要时可调用 get_runtime_context 获取当前日期和时区。用户说“大概”“约”等估计信息时写入 notes，不能误标为精确实测。'+

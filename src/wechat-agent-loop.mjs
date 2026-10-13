@@ -36,6 +36,10 @@ function render(results,finalText='',suffix=''){
  }
  if(suffix)return suffix;
  const text=String(finalText||'').trim();
+ // A pre-deploy no-tool response may still be replayed by an old journal or
+ // echoed by the model from earlier conversation history.
+ if(text.includes('模型没有返回可执行的工具指令'))
+  return '这次没有修改记录。你可以继续说刚才的情况，需要保存时直接说“记下来”。';
  if(claimsUnverifiedWrite(text))
   return '这次没有实际保存或修改记录。需要记入日记或里程碑时，可以直接说“记下来”。';
  return text.slice(0,1500)||'我在听。想让我把刚才的内容记入日记，可以说“记下来”。';
@@ -77,7 +81,9 @@ export async function runWechatAgentLoop({
    const result=typeof outcome==='string'?outcome:String(outcome?.content||'工具未返回结果');
    const halt=typeof outcome==='object'&&outcome?.halt===true;
    totalCalls++;
-   results.push(result);
+   // get_runtime_context is an internal observation, never user-facing text.
+   // The model may still use its complete JSON on the following ReAct round.
+   if(call.function.name!=='get_runtime_context')results.push(result);
    transcript.push({role:'tool',tool_call_id:call.id,content:result.slice(0,3000)});
    if(halt)return render(results);
   }
