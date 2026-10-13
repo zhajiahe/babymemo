@@ -21,15 +21,13 @@ test('tool registry provides bounded CRUD and recovery, no arbitrary SQL tool',(
  assert.ok(names.every(x=>!x.startsWith('execute_sql')));
  assert.match(wechatHelp,/删除/);
 });
-test('deleting requires user to explicitly request deletion and unique target',async()=>{
+test('deletion uses server-resolved unique target and a recoverable soft delete',async()=>{
  calls.length=0;
- let r=await runWechatTool(fake(),baby,'delete_growth',{id:'aaaaaaaa'},'x','查一下小好的体重');
- assert.match(r,/明确说“删除”/);assert.equal(calls.length,0);
- r=await runWechatTool(fake(),baby,'delete_growth',{day:'2026-10-01'},'x','删除小好的 10 月 1 日体重');
+ let r=await runWechatTool(fake(),baby,'delete_growth',{day:'2026-10-01'},'x','把这天的测量放回收站');
  assert.match(r,/有多条记录/);
- r=await runWechatTool(fake(),baby,'delete_growth',{id:'aaaaaaaa'},'x','删除小好的 aaaaaaaa 测量');
+ r=await runWechatTool(fake(),baby,'delete_growth',{id:'aaaaaaaa'},'x','把查到的第一条移到回收站');
  assert.match(r,/移入回收站/);
- assert.ok(calls.some(x=>x.sql.includes('UPDATE growth_records SET deleted_at')));
+ assert.ok(calls.some(x=>x.sql.includes('UPDATE growth_records SET deleted_at')&&x.params.includes('baby-one')));
 });
 test('update refuses absent selector and invalid measurement',async()=>{
  calls.length=0;
@@ -52,11 +50,13 @@ test('creation validates date and does not write invented measurements',async()=
  assert.equal(calls.filter(x=>x.sql.includes('INSERT')).length,0);
 });
 
-test('model cannot invent target record IDs or dates for a destructive command',async()=>{
+test('target must actually exist, be uniquely identified and belong to this baby',async()=>{
  calls.length=0;
- const invented=await runWechatTool(fake(),baby,'delete_growth',{id:'aaaaaaaa'},'x','删除小好的最新体重');
- assert.match(invented,/写明需要删除的日期或记录编号/);
- const wrongDay=await runWechatTool(fake(),baby,'delete_growth',{day:'2026-10-01'},'x','删除小好昨天的体重');
- assert.match(wrongDay,/写明需要删除的日期或记录编号/);
- assert.equal(calls.length,0);
+ const badId=await runWechatTool(fake(),baby,'delete_growth',{id:'cccccccc'},'x','删除第一条记录');
+ assert.match(badId,/找不到该编号/);
+ const shortId=await runWechatTool(fake(),baby,'delete_growth',{id:'abcd'},'x','删除第一条记录');
+ assert.match(shortId,/至少为前 8 位/);
+ const ambiguous=await runWechatTool(fake(),baby,'delete_growth',{day:'2026-10-01'},'x','删除这天记录');
+ assert.match(ambiguous,/有多条记录/);
+ assert.ok(!calls.some(x=>x.sql.includes('UPDATE growth_records SET deleted_at')));
 });
