@@ -62,10 +62,13 @@ export async function runWechatAgentLoop({
   if(assistant.tool_calls.length>limits.perRound || totalCalls+assistant.tool_calls.length>limits.tools)
    return render(results,'','本次操作达到工具调用上限，剩余步骤未执行。');
   for(const call of assistant.tool_calls){
-   const result=String(await execute(call,totalCalls,round));
+   const outcome=await execute(call,totalCalls,round);
+   const result=typeof outcome==='string'?outcome:String(outcome?.content||'工具未返回结果');
+   const halt=typeof outcome==='object'&&outcome?.halt===true;
    totalCalls++;
    results.push(result);
    transcript.push({role:'tool',tool_call_id:call.id,content:result.slice(0,3000)});
+   if(halt)return render(results);
   }
  }
  return render(results,'','本次操作达到模型决策轮数上限；如有后续操作，请继续发送消息。');
