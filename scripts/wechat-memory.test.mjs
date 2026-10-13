@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {getActiveThread,appendTurn,buildCommandContext,isClearContext,CONTEXT_TTL_MS} from '../src/wechat-memory.mjs';
+import {getActiveThread,appendTurn,buildCommandContext,isClearContext,recordQuery,setPending,CONTEXT_TTL_MS} from '../src/wechat-memory.mjs';
 test('scoped bounded memory with TTL and explicit reset',()=>{
  let thread=getActiveThread(null,'botA','userA',1000);
  for(let i=0;i<6;i++)thread=appendTurn(thread,'query '+i,'reply '+i,'baby1',1000+i);
@@ -14,10 +14,11 @@ test('scoped bounded memory with TTL and explicit reset',()=>{
 test('multi-turn first result reference resolves to previously listed ID',()=>{
  let thread=getActiveThread(null,'bot','user',1000);
  thread=appendTurn(thread,'查小好最近体重','小好的成长测量：\naaaaaaaa · 2026-10-01 · 10kg\nbbbbbbbb · 2026-09-30 · 9kg','baby',1000);
- const c=buildCommandContext('把第一条体重改为 10.2kg',thread);
+ recordQuery(thread,'baby','growth',['aaaaaaaa','bbbbbbbb'],1000);
+ const c=buildCommandContext('把第一条体重改为 10.2kg',thread,1500,'baby');
  assert.match(c.modelMessages.at(-1).content,/aaaaaaaa/);assert.match(c.groundedText,/记录编号 aaaaaaaa/);
- assert.doesNotMatch(buildCommandContext('删除第三条',thread).groundedText,/记录编号/);
- assert.doesNotMatch(buildCommandContext('删除别人的记录',thread).groundedText,/记录编号/);
+ assert.doesNotMatch(buildCommandContext('删除第三条',thread,1500,'baby').groundedText,/记录编号/);
+ assert.doesNotMatch(buildCommandContext('删除别人的记录',thread,1500,'baby').groundedText,/记录编号/);
 });
 test('clarification continuation uses actual previous user intent, not bot as authority',()=>{
  let thread=getActiveThread(null,'bot','user',1000);
@@ -27,4 +28,15 @@ test('clarification continuation uses actual previous user intent, not bot as au
  assert.match(next.modelMessages.at(-1).content,/上一轮待补充/);
  const unrelated=buildCommandContext('查询最近记录',thread);
  assert.doesNotMatch(unrelated.groundedText,/删除/);
+});
+
+test('structured query is scoped to baby and expires; pending task state survives turns',()=>{
+ let thread=getActiveThread(null,'bot','user',1000);
+ recordQuery(thread,'babyA','growth',['aaaaaaaa'],1000);
+ assert.doesNotMatch(buildCommandContext('改第一条',thread,1500,'babyB').groundedText,/记录编号/);
+ assert.match(buildCommandContext('改第一条',thread,1500,'babyA').groundedText,/aaaaaaaa/);
+ setPending(thread,'babyA','create_growth','记一下体重',{},1000);
+ thread=appendTurn(thread,'记一下体重','请提供数值','babyA',1000);
+ assert.equal(getActiveThread(thread,'bot','user',1500).pending.action,'create_growth');
+ assert.equal(getActiveThread(thread,'bot','user',1000+CONTEXT_TTL_MS+5).pending,null);
 });
