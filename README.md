@@ -93,12 +93,12 @@ npm run test:e2e
 
 尚未保存模型偏好时，默认使用 [`meta/muse-spark-1.3-contributor`](https://openrouter.ai/meta/muse-spark-1.3-contributor)。已经在 D1 保存过模型 ID 的实例不会被自动覆盖，可在「设置 → 微信操作引擎」调整。
 
-若要验证真实 OpenRouter 工具调用，前往 **GitHub Actions → Manual OpenRouter Live E2E → Run workflow**，选中 `main` 后主动运行。该测试只发送合成宝宝的只读查询、不读写真实 D1/R2、不会运行真实微信，也**不会由 PR、push、定时任务或自动部署触发**。需事先配置 GitHub Secret `OPENROUTER_API_KEY`，可能产生少量模型费用。
+若要验证真实 OpenRouter **强制只读工具调用接口契约**（不代表模型自主路由准确率），前往 **GitHub Actions → Manual OpenRouter Live E2E → Run workflow**，选中 `main` 后主动运行。该测试只发送合成宝宝的只读查询、不读写真实 D1/R2、不会运行真实微信，也**不会由 PR、push、定时任务或自动部署触发**。需事先配置 GitHub Secret `OPENROUTER_API_KEY`，可能产生少量模型费用。
 
 也可在安全的本地终端提供 OpenRouter Key，设置 `OPENROUTER_E2E_CONFIRM=YES` 后执行 `npm run test:openrouter:live`。该开关缺失时脚本直接拒绝执行。Contributor 模型的提示词和输出可能用于改进 Meta 产品，真实家庭隐私请谨慎处理。
 
 ## 微信 Harness 深度测试（手动触发）
 
-普通 PR / main CI 仅运行本地模拟的快速测试。耗时的合成场景回归和真实 OpenRouter 调用**不自动执行**，需前往 GitHub Actions → **Manual Harness Deep E2E** 主动选择 `offline` 或 `live`。其中 `live` 会调用可能计费的外部模型，需配置 GitHub Secret `OPENROUTER_API_KEY`；测试仅发送合成文本，不访问生产 D1/R2 或微信。也可在本地使用 `npm run test:harness:deep`，真实模型需主动设置 `OPENROUTER_E2E_CONFIRM=YES`、`HARNESS_LIVE_CONFIRM=YES` 后执行 `npm run test:harness:live`。
+普通 PR / main CI 仅运行本地模拟的快速测试。耗时的合成场景回归和真实 OpenRouter 调用**不自动执行**，需前往 GitHub Actions → **Manual Harness Deep E2E** 主动选择 `offline` 或 `live`。`offline` 默认运行 240 组离线场景；`live` 单独选择付费请求数（**默认 5 次，最多 60 次**）和模型。`live` 会调用可能计费的外部模型，需配置 GitHub Secret `OPENROUTER_API_KEY`；测试仅发送合成文本，不访问生产 D1/R2 或微信。也可在本地使用 `npm run test:harness:deep`，真实模型需主动设置 `OPENROUTER_E2E_CONFIRM=YES`、`HARNESS_LIVE_CONFIRM=YES` 后执行 `npm run test:harness:live`。
 
 详情见 [Harness 实施与限制](docs/wechat-harness-implementation.md)、[场景审查](docs/wechat-harness-review.md)和[自动化测试方案](docs/wechat-harness-test-plan.md)。

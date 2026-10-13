@@ -32,3 +32,14 @@ test('non-retryable 401/402 are returned immediately',async()=>{
   assert.equal(tries,1);
  }
 });
+
+test('explicit named tool choice reaches the provider without changing auto defaults',async()=>{
+ const tool={type:'function',function:{name:'list_growth',parameters:{type:'object',properties:{limit:{type:'integer'}}}}};
+ const requests=[];
+ const stub=async(_url,init)=>{requests.push(JSON.parse(init.body));return Response.json({choices:[{message:{tool_calls:[]}}]})};
+ await openRouterCompletion({...opts(stub,async()=>{}),tools:[tool]});
+ await openRouterCompletion({...opts(stub,async()=>{}),tools:[tool],tool_choice:{type:'function',function:{name:'list_growth'}}});
+ assert.equal(requests[0].tool_choice,'auto');
+ assert.deepEqual(requests[1].tool_choice,{type:'function',function:{name:'list_growth'}});
+ assert.equal(requests[1].tools.length,1);
+});

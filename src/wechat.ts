@@ -8,6 +8,7 @@ import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './wechat-memory.mjs';
 import {messageTime,dayInZone} from './wechat-policy.mjs';
 import {runWechatPlan,quickCommand} from './wechat-orchestrator.mjs';
+import {readOnlyFallbackTool} from './wechat-tool-routing.mjs';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
 const wireJSON=JSONBig({storeAsString:true,strict:true,protoAction:'error',constructorAction:'error'});
@@ -97,10 +98,27 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
  const response=await openRouterCompletion({key,model,
   messages:[{role:'system',content:instruction},...context.modelMessages],
   tools:wechatTools,max_tokens:1200});
- const calls=response?.choices?.[0]?.message?.tool_calls;
+ let calls=response?.choices?.[0]?.message?.tool_calls;
+ if((!Array.isArray(calls)||calls.length===0)&&!thread?.pending){
+  // Some reasoning models answer in free text despite tools=auto.
+  // Only retry an explicit READ query, with exactly one READ-ONLY tool allowed.
+  // Mutating commands are never forced, even when the model omits tool_calls.
+  const readOnly=readOnlyFallbackTool(command);
+  const selected=wechatTools.find(x=>x.function.name===readOnly);
+  if(selected&&readOnly){
+   const forced=await openRouterCompletion({key,model,
+    messages:[{role:'system',content:instruction+' 现在只允许调用指定的只读查询工具。'},...context.modelMessages],
+    tools:[selected],tool_choice:{type:'function',function:{name:readOnly}},
+    max_tokens:1200,maxAttempts:1});
+   const fallbackCalls=forced?.choices?.[0]?.message?.tool_calls;
+   // Never trust a model to honour a forced tool: verify the returned shape.
+   if(Array.isArray(fallbackCalls)&&fallbackCalls.length===1&&fallbackCalls[0]?.function?.name===readOnly)
+    calls=fallbackCalls;
+  }
+ }
  if(!Array.isArray(calls)||calls.length===0){
   if(thread?.pending)return '尚缺少明确的数值、单位或日期，请继续补充；发送“取消”可终止这次任务。';
-  return '没能确定具体操作。请补充宝宝、日期、数值或动作。\n\n'+wechatHelp;
+  return '模型没有返回可执行的工具指令，未修改任何记录。请补充宝宝、日期、数值或动作。\n\n'+wechatHelp;
  }
  return runWechatPlan(env,baby,calls,{messageId,text:command,groundedText:context.groundedText,at,thread,
   encryptReply:(value:string)=>encryptSecret(env,value),decryptReply:(value:string)=>decryptSecret(env,value)});

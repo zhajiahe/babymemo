@@ -7,8 +7,8 @@ export function retryAfterMs(value, now=Date.now()){
  const when=Date.parse(value);
  return Number.isFinite(when)?Math.max(0,when-now):null;
 }
-export async function openRouterCompletion({key,model,messages,tools,max_tokens=450,fetchImpl=fetch,sleep=ms=>new Promise(r=>setTimeout(r,ms)),maxAttempts=3,now=Date.now,random=Math.random}){
- const body=JSON.stringify({model,messages,...(tools?{tools,tool_choice:'auto'}:{}),temperature:0,max_tokens});
+export async function openRouterCompletion({key,model,messages,tools,max_tokens=450,tool_choice='auto',fetchImpl=fetch,sleep=ms=>new Promise(r=>setTimeout(r,ms)),maxAttempts=3,now=Date.now,random=Math.random}){
+ const body=JSON.stringify({model,messages,...(tools?{tools,tool_choice}:{}),temperature:0,max_tokens});
  const headers={'Content-Type':'application/json',Authorization:'Bearer '+key,
    'HTTP-Referer':'https://github.com/zhajiahe/babymemo','X-Title':'BabyMemo WeChat Operations'};
  let cumulativeWait=0;
