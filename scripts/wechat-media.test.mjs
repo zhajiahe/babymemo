@@ -29,8 +29,8 @@ function mockEnv({failIndexOnce=false}={}){
        async run(){
          if(sql.includes('INSERT OR IGNORE INTO media')){
            if(failing){failing=false;throw Error('D1_TEMPORARY_FAILURE')}
-           const [id,baby_id,day,title,object_key,mime,size,created_at,thumbnail_ready,source_message_id]=op.params;
-           if(!rows.has(source_message_id))rows.set(source_message_id,{id,baby_id,day,title,object_key,mime,size,created_at,thumbnail_ready,source_message_id});
+           const [id,baby_id,day,title,description,object_key,mime,size,created_at,thumbnail_ready,source_message_id]=op.params;
+           if(!rows.has(source_message_id))rows.set(source_message_id,{id,baby_id,day,title,description,object_key,mime,size,created_at,thumbnail_ready,source_message_id});
          }
          return {meta:{changes:1}};
        }
@@ -169,4 +169,16 @@ test('WeChat multipart failure waits for in-flight parts then aborts without com
  await assert.rejects(()=>storeEncryptedMedia(bucket,'private/test/broken',video,
    {fetchImpl:async()=>new Response(Buffer.concat([enc.update(original),enc.final()]))}),/R2_PART_FAILED/);
  assert.equal(active,0);assert.equal(aborted,1);assert.equal(completed,0);
+});
+
+test('WeChat image caption is retained independently as media description',async()=>{
+ const env=mockEnv();
+ const message={...raw,item_list:[item(),{type:1,text_item:{text:'天气晴朗，一家人去公园散步'}}]};
+ const reply=await persistWeChatPhotos(env,message,baby,'bot:caption-description',{fetchImpl:cdnFetch});
+ assert.match(reply,/已保存/);
+ assert.equal(env.rows.size,1);
+ const saved=[...env.rows.values()][0];
+ assert.equal(saved.description,'天气晴朗，一家人去公园散步');
+ assert.equal(saved.title,saved.description);
+ assert.equal(env.objects.size,1);
 });

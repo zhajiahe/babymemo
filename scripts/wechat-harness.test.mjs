@@ -20,6 +20,10 @@ test('tool registry provides bounded CRUD and recovery, no arbitrary SQL tool',(
  for(const name of ['list_babies','get_baby','update_baby','list_growth','create_growth','update_growth','delete_growth','list_milestones','create_milestone','update_milestone','delete_milestone','list_media','update_media','delete_media','list_trash','restore_trash'])assert.ok(names.includes(name),name);
  assert.ok(names.every(x=>!x.startsWith('execute_sql')));
  assert.match(wechatHelp,/删除/);
+ const mediaTool=wechatTools.find(x=>x.function.name==='update_media');
+ const recentTool=wechatTools.find(x=>x.function.name==='update_recent_media');
+ assert.ok('description' in mediaTool.function.parameters.properties);
+ assert.ok('description' in recentTool.function.parameters.properties);
 });
 test('deletion uses server-resolved unique target and a recoverable soft delete',async()=>{
  calls.length=0;
@@ -59,4 +63,33 @@ test('target must actually exist, be uniquely identified and belong to this baby
  const ambiguous=await runWechatTool(fake(),baby,'delete_growth',{day:'2026-10-01'},'x','删除这天记录');
  assert.match(ambiguous,/有多条记录/);
  assert.ok(!calls.some(x=>x.sql.includes('UPDATE growth_records SET deleted_at')));
+});
+
+test('WeChat media descriptions can be edited and cleared on the scoped target',async()=>{
+ const current={id:'aaaaaaaa-1111-2222-3333-444444444444',baby_id:'baby-one',day:'2026-10-01',description:'原来的描述',title:'synthetic.jpg',deleted_at:null};
+ const writes=[];
+ const env={DB:{prepare(sql){
+  let params=[];
+  return {bind(...p){params=p;return this},
+   async all(){
+    if(sql.includes('FROM media')&&sql.includes('id LIKE'))return {results:params[0]==='baby-one'?[{...current}]:[]};
+    return {results:[]};
+   },
+   async run(){
+    if(sql.startsWith('UPDATE media')){writes.push({sql,params});current.description=params[0]}
+    return {meta:{changes:1}};
+   }};
+ }}};
+ const message='把编号 aaaaaaaa 的照片描述改成第一次爬山';
+ const saved=await runWechatTool(env,baby,'update_media',{id:'aaaaaaaa',description:'第一次爬山'},'wechat-one',message);
+ assert.match(saved,/已更新相册内容/);
+ assert.equal(current.description,'第一次爬山');
+ assert.ok(writes[0].sql.includes('description=?'));
+ assert.ok(writes[0].sql.includes('baby_id=?'));
+ assert.ok(writes[0].params.includes('baby-one'));
+ const cleared=await runWechatTool(env,baby,'update_media',{id:'aaaaaaaa',description:''},'wechat-two','清空照片描述');
+ assert.match(cleared,/已更新相册内容/);
+ assert.equal(current.description,'');
+ assert.match(await runWechatTool(env,baby,'update_media',{id:'aaaaaaaa',description:'x'.repeat(1001)},'wechat-three','修改照片描述'),/不能超过 1000/);
+ assert.equal(writes.length,2);
 });

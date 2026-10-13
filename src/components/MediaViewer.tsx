@@ -7,13 +7,14 @@ export type MediaItem = {
   id: string;
   day: string;
   title: string;
+  description: string;
   mime: string;
   size: number;
   thumbnail_ready?: number;
   updated_at?: string;
   pending?: boolean;
 };
-type MediaEdit = { day: string;requestId?:string;expectedUpdatedAt?:string };
+type MediaEdit = { day: string;description: string;requestId?:string;expectedUpdatedAt?:string };
 type MediaReply = {updated_at?:string;id?:string;queued?:boolean};
 function mediaDraft(item:MediaItem){try{return JSON.parse(localStorage.getItem('babymemo-draft-media-'+item.id)||'null')||{}}catch{return {}}}
 
@@ -28,6 +29,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [day, setDay] = useState(()=>mediaDraft(item).day||item.day);
+  const [description,setDescription]=useState<string>(()=>mediaDraft(item).description??item.description??'');
   const [version,setVersion]=useState(()=>mediaDraft(item).version??item.updated_at??'');
   const [draftId,setDraftId]=useState(item.id);
   const [saving, setSaving] = useState(false);
@@ -41,10 +43,10 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
     return () => { if (dialog?.open) dialog.close(); };
   }, []);
   useEffect(() => {
-    const draft=mediaDraft(item);setDay(draft.day||item.day);setVersion(draft.version??item.updated_at??'');setRequestId(draft.requestId||crypto.randomUUID());setDraftId(item.id);
+    const draft=mediaDraft(item);setDay(draft.day||item.day);setDescription(draft.description??item.description??'');setVersion(draft.version??item.updated_at??'');setRequestId(draft.requestId||crypto.randomUUID());setDraftId(item.id);
     setError('');
   }, [item.id]);
-  useEffect(()=>{if(draftId!==item.id)return;try{localStorage.setItem('babymemo-draft-media-'+item.id,JSON.stringify({day,requestId,version}))}catch{/* The visible form remains usable. */}},[day,requestId,version,item.id,draftId]);
+  useEffect(()=>{if(draftId!==item.id)return;try{localStorage.setItem('babymemo-draft-media-'+item.id,JSON.stringify({day,description,requestId,version}))}catch{/* The visible form remains usable. */}},[day,description,requestId,version,item.id,draftId]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -52,7 +54,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
     setSaving(true);
     setError('');
     try {
-      const result=await onSave({day,requestId,expectedUpdatedAt:version});setVersion(result.queued?'pending:'+result.id:result.updated_at??version);
+      const result=await onSave({day,description,requestId,expectedUpdatedAt:version});setVersion(result.queued?'pending:'+result.id:result.updated_at??version);
       localStorage.removeItem('babymemo-draft-media-'+item.id);setRequestId(crypto.randomUUID());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存失败，请重试');
@@ -60,7 +62,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
       setSaving(false);
     }
   }
-  async function reviewVersion(){try{const current=await api<MediaItem>('/api/media/'+item.id);if(confirm('服务器拍摄日期：'+current.day+'。当前日期草稿仍保留；核对后允许再次保存？')){setVersion(current.updated_at||'');setRequestId(crypto.randomUUID());setError('')}}catch(e){setError(e instanceof Error?e.message:'读取失败')}}
+  async function reviewVersion(){try{const current=await api<MediaItem>('/api/media/'+item.id);if(confirm('服务器拍摄日期：'+current.day+'。服务器描述：'+(current.description||'（空）')+'。当前草稿仍保留；核对后允许再次保存？')){setVersion(current.updated_at||'');setRequestId(crypto.randomUUID());setError('')}}catch(e){setError(e instanceof Error?e.message:'读取失败')}}
 
   const src = '/api/media/' + encodeURIComponent(item.id) + '/content';
   const video = item.mime.startsWith('video/');
@@ -93,10 +95,11 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
         </div>
         <form className="media-viewer-edit" onSubmit={event => void save(event)}>
           <label className="field"><span>拍摄日期</span><input type="date" value={day} onChange={event => setDay(event.target.value)} required /></label>
+          <label className="field"><span>照片或视频描述</span><textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={1000} rows={3} placeholder="写下这段回忆…" /></label>
           <button type="submit" className="primary" disabled={saving}><Save size={16} />{saving ? '保存中…' : '保存信息'}</button>
         </form>
         {error && <p className="error" role="alert">{error}</p>}
-        {error&&navigator.onLine&&<button type="button" className="secondary" disabled={saving} onClick={()=>void reviewVersion()}>核对服务器版本（保留日期草稿）</button>}
+        {error&&navigator.onLine&&<button type="button" className="secondary" disabled={saving} onClick={()=>void reviewVersion()}>核对服务器版本（保留草稿）</button>}
       </div>
     </dialog>
   );

@@ -23,15 +23,15 @@ export const wechatTools=[
  tool('update_milestone','修改某条成长事件标题/描述/日期',{...selector,newDay:day,title:str,description:str}),
  tool('delete_milestone','把唯一一条成长事件移入 30 天回收站，必须有删除意图',selector),
  tool('list_media','列出相册里的照片和视频（仅元数据），支持日期筛选',{day,limit:{type:'integer',minimum:1,maximum:10}}),
- tool('update_media','修改相册内容的拍摄日期',{...selector,newDay:day}),
+ tool('update_media','修改指定照片或视频的拍摄日期及描述，description 可设为空字符串以清除',{...selector,newDay:day,description:str}),
  tool('delete_media','把一项相册内容移入 30 天回收站，必须有删除意图',selector),
  tool('list_trash','查看当前宝宝的回收站',{kind:{type:'string',enum:['growth','milestones','media']}}),
  tool('restore_trash','从回收站中恢复一项内容',{kind:{type:'string',enum:['growth','milestones','media']},...selector},['kind']),
  tool('search_records','按关键词和日期范围查询记录',{kind:{type:'string',enum:['growth','milestones','media']},startDay:day,endDay:day,keyword:str,limit:{type:'integer',minimum:1,maximum:10}},['kind']),
  tool('growth_summary','汇总区间内体重身高头围',{startDay:day,endDay:day},['startDay','endDay']),
- tool('update_recent_media','更正刚发送的一批照片或视频日期',{newDay:day},['newDay'])
+ tool('update_recent_media','修改刚发送的一批照片或视频的拍摄日期或描述',{newDay:day,description:str})
 ];
-export const wechatHelp='BabyMemo 微信操作\n可以直接发送：\n· 小好今天体重 10.5 kg，身高 80 cm\n· 查小好最近五次体重\n· 小好今天会走路了\n· 查小好的里程碑 / 相册\n· 把小好 10 月 1 日的体重改成 10.2 kg\n· 删除小好 10 月 1 日的成长记录\n· 查看小好的回收站 / 恢复编号 12345678\n· 直接发送照片或视频 → 自动存入私有相册（单个 50 MiB 上限）\n· 查询后说“把第一条改成……”可连续操作；发送“清除上下文”重置记忆（多宝宝请先设置默认收图宝宝）\n同一天有多条时，先查询记录并使用回复里的编号。删除后可在 30 天内恢复。支持绑定微信的私聊文字与照片。';
+export const wechatHelp='BabyMemo 微信操作\n可以直接发送：\n· 小好今天体重 10.5 kg，身高 80 cm\n· 查小好最近五次体重\n· 小好今天会走路了\n· 查小好的里程碑 / 相册\n· 把小好 10 月 1 日的体重改成 10.2 kg\n· 删除小好 10 月 1 日的成长记录\n· 查看小好的回收站 / 恢复编号 12345678\n· 直接发送照片或视频，可在附文写描述（单个 50 MiB 上限）\n· 把刚才那张照片描述改为“第一次去公园”\n· 查询后说“把第一条改成……”可连续操作；发送“清除上下文”重置记忆（多宝宝请先设置默认收图宝宝）\n同一天有多条时，先查询记录并使用回复里的编号。删除后可在 30 天内恢复。支持绑定微信的私聊文字与照片。';
 const validDate=x=>{
  if(typeof x!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(x))return false;
  const d=new Date(x+'T00:00:00Z');return Number.isFinite(d.valueOf())&&d.toISOString().slice(0,10)===x;
@@ -46,7 +46,7 @@ const dateText=(x)=>x.day;
 const maxLimit=(args)=>Number.isInteger(args.limit)?Math.min(10,Math.max(1,args.limit)):5;
 const listLine=(kind,r)=>{
  const bits=kind==='growth'?[r.weight!=null?'体重 '+r.weight+' kg':'',r.height!=null?'身高 '+r.height+' cm':'',r.head_circumference!=null?'头围 '+r.head_circumference+' cm':'',r.notes||'']:
- kind==='milestones'?[r.title||'',r.description||'']:[r.mime||''];
+ kind==='milestones'?[r.title||'',r.description||'']:[r.mime||'',r.description||''];
  return short(r.id)+' · '+r.day+' · '+bits.filter(Boolean).join('，');
 };
 async function findTarget(env,babyId,kind,args,deleted=false){
@@ -175,8 +175,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
      if(args.title!==undefined){const title=cleanText(args.title,120);if(!title||args.title.length>120)throw Error('事件标题不能为空或过长');changes.title=title}
      if(args.description!==undefined){if(typeof args.description!=='string'||args.description.length>3000)throw Error('事件描述不能超过 3000 字');changes.description=args.description}
     }else{
-     if(args.title!==undefined){const title=cleanText(args.title,200);if(!title)throw Error('媒体名称不能为空');changes.title=title}
-     
+     if(args.description!==undefined){if(typeof args.description!=='string'||args.description.length>1000)throw Error('媒体描述不能超过 1000 字');changes.description=args.description.trim()}
     }
     if(args.newDay!==undefined){if(!validDate(args.newDay))throw Error('新日期不正确');changes.day=args.newDay}
     return await update(env,kind,row,changes,{messageId,thread:options.thread,at});
@@ -208,7 +207,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    const kind=args.kind,table=tableForKind[kind];if(!table)return '请指定查询的记录类型';
    if(args.startDay&&!validDay(args.startDay)||args.endDay&&!validDay(args.endDay)||
      args.startDay&&args.endDay&&args.startDay>args.endDay)return '查询日期范围不合法';
-   const cols=kind==='growth'?'notes':kind==='milestones'?"title||' '||description":'title';
+   const cols=kind==='growth'?'notes':"title||' '||description";
    const clauses=['baby_id=?','deleted_at IS NULL'],values=[baby.id];
    if(args.startDay){clauses.push('day>=?');values.push(args.startDay)}
    if(args.endDay){clauses.push('day<=?');values.push(args.endDay)}
@@ -233,18 +232,25 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
   if(action==='update_recent_media'){
    const batch=options.thread?.lastMedia;
    if(!batch||batch.babyId!==baby.id||batch.expiresAt<=at||!Array.isArray(batch.ids))return '没有可确认的最近照片批次';
-   if(!validDay(args.newDay))return '请提供有效的新日期';
+   const changes={};
+   if(args.newDay!==undefined){if(!validDay(args.newDay))return '请提供有效的新日期';changes.day=args.newDay}
+   if(args.description!==undefined){
+    if(typeof args.description!=='string'||args.description.length>1000)return '媒体描述不能超过 1000 字';
+    changes.description=args.description.trim();
+   }
+   const names=Object.keys(changes);
+   if(!names.length)return '请说明要修改的新日期或描述';
    const statements=[],opIds=[];
    for(let i=0;i<Math.min(4,batch.ids.length);i++){
     const id=batch.ids[i];
     const previous=await env.DB.prepare('SELECT * FROM media WHERE id=? AND baby_id=? AND deleted_at IS NULL LIMIT 1').bind(id,baby.id).first();
     if(!previous)throw Error('最近照片批次包含无效或已删除记录，请重新查询');
     const opId=crypto.randomUUID();opIds.push(opId);
-    statements.push(env.DB.prepare('UPDATE media SET day=? WHERE id=? AND baby_id=? AND deleted_at IS NULL AND day=?')
-      .bind(args.newDay,id,baby.id,previous.day));
+    statements.push(env.DB.prepare('UPDATE media SET '+names.map(k=>k+'=?').join(',')+' WHERE id=? AND baby_id=? AND deleted_at IS NULL AND '+names.map(k=>k+' IS ?').join(' AND '))
+      .bind(...names.map(k=>changes[k]),id,baby.id,...names.map(k=>previous[k]??null)));
     statements.push(env.DB.prepare('INSERT OR IGNORE INTO wechat_operation_log(id,source_message_id,baby_id,kind,record_id,action,before_json,after_json,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE changes()>0')
       .bind(opId,messageId+':media:'+i,baby.id,'media',id,'update_recent_media',
-       JSON.stringify(operationSnapshot('media',previous)),JSON.stringify(snapshotChanges('media',previous,{day:args.newDay})),new Date().toISOString()));
+       JSON.stringify(operationSnapshot('media',previous)),JSON.stringify(snapshotChanges('media',previous,changes)),new Date().toISOString()));
    }
    const results=await env.DB.batch(statements);
    const changed=results.reduce((n,r,i)=>n+(i%2===0?(r.meta?.changes||0):0),0),committed=[];
@@ -254,7 +260,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
     if(log)committed.push(log.id);
    }
    if(options.thread&&committed.length)options.thread.lastOperation={babyId:baby.id,opIds:committed,expiresAt:at+1200000};
-   return '已更新最近 '+changed+'/'+opIds.length+' 项照片或视频日期。'+(changed<opIds.length?'部分记录同时发生变更，请重新查询核对。':'');
+   return '已更新最近 '+changed+'/'+opIds.length+' 项照片或视频信息。'+(changed<opIds.length?'部分记录同时发生变更，请重新查询核对。':'');
   }
   if(action==='restore_trash'){
    if(!tableForKind[args.kind])throw Error('请说明恢复的是测量、事件或相册');

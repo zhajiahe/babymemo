@@ -15,9 +15,10 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  const [showUploader,setShowUploader]=useState(false);
  const thumbnailTail=useRef<Promise<void>>(Promise.resolve());
  const [uploadDay,setUploadDay]=useState(today(baby.time_zone)),[autoDate,setAutoDate]=useState(true);
+ const [uploadDescription,setUploadDescription]=useState('');
  const [selected,setSelected]=useState<MediaItem|null>(null);
  useEffect(()=>{setSelected(null)},[baby.id]);
- type PendingUpload={id:string;day:string;title:string;mime:string;size:number;fingerprint:string;completedParts:number[];created_at:string};
+ type PendingUpload={id:string;day:string;title:string;description:string;mime:string;size:number;fingerprint:string;completedParts:number[];created_at:string};
  const [pending,setPending]=useState<PendingUpload[]>([]);
  async function refreshPending(){
   const response=await api<{items:PendingUpload[]}>('/api/upload/pending?babyId='+encodeURIComponent(baby.id));
@@ -53,6 +54,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  async function upload(files:File[]){
   if(!files.length||uploading)return;
   setUploading(true);
+  const description=uploadDescription.trim();
   const mobile=window.matchMedia('(pointer:coarse)').matches;
   const policy=transferConcurrency(mobile,files.length);
   let saved=0,failedFiles=0;
@@ -92,7 +94,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
      const fingerprint=await fingerprintFile(file);
      const day=autoDate?await bestEffortFileDay(file,uploadDay,baby.time_zone):uploadDay;
      const title=file.name.slice(0,120);
-     resumable={babyId:baby.id,day,title,mime,fingerprint};
+     resumable={babyId:baby.id,day,title,description,mime,fingerprint};
      if(!navigator.onLine){await queueMedia(file,resumable);notify('已将 '+file.name+' 保存到本机，联网后自动上传');return}
      const matching=queue.find(item=>!reserved.has(item.id)&&pickMatchingUpload([item],{title,size:file.size,mime,fingerprint}));
      if(matching)reserved.add(matching.id);
@@ -107,7 +109,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
        try{localStorage.setItem(key,id)}catch{/* Keep this attempt's ID in memory. */}
       }
       uploadId=id;
-      const headers={'Content-Type':mime,'x-baby-id':baby.id,'x-upload-day':day,'x-upload-title':encodeURIComponent(title)};
+      const headers={'Content-Type':mime,'x-baby-id':baby.id,'x-upload-day':day,'x-upload-title':encodeURIComponent(title),'x-upload-description':encodeURIComponent(description)};
       for(let attempt=0;attempt<3;attempt++){
        try{
         await api('/api/upload/direct/'+id,{method:'PUT',body:file,headers});
@@ -122,7 +124,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
       }
      }else{
       const session=matching||await post<{id:string;chunkSize:number}>('/api/upload/start',{
-       babyId:baby.id,day,title:file.name,mime,size:file.size,fingerprint
+       babyId:baby.id,day,title:file.name,description,mime,size:file.size,fingerprint
       });
       uploadId=session.id;
       const chunkSize=8388608,total=Math.ceil(file.size/chunkSize);
@@ -187,7 +189,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
   }finally{setUploading(false);setProgress('')}
  }
  async function remove(id:string){if(!confirm('将这项媒体移入回收站？30 天内可恢复。'))return;try{await api('/api/media/'+id,{method:'DELETE',body:JSON.stringify({babyId:baby.id})});if(selected?.id===id)setSelected(null);changed();notify('已移入回收站，可在设置中恢复')}catch(e){notify(e instanceof Error?e.message:'删除失败')}}
- async function saveMedia(value:{day:string;requestId?:string;expectedUpdatedAt?:string}){
+ async function saveMedia(value:{day:string;description:string;requestId?:string;expectedUpdatedAt?:string}){
   if(!selected)throw Error('请先选择照片或视频');
   const result=await api<{id:string;queued?:boolean;updated_at?:string}>('/api/media/'+selected.id,{method:'PATCH',body:JSON.stringify({...value,babyId:baby.id,expectedUpdatedAt:value.expectedUpdatedAt??selected.updated_at??''})});
   setSelected(current=>current?.id===selected.id?{...current,...value,updated_at:result.queued?'pending:'+result.id:result.updated_at,pending:result.queued}:current);
@@ -211,6 +213,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  {showUploader&&<Card className="upload-card"><div id="album-upload-panel" className="album-upload-panel"><CloudUpload size={30}/><h3>上传照片或视频</h3><p className="muted">可一次选择多张照片或视频。网络中断后重新选择原文件即可续传。</p>
   <div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用拍摄日期</label><label>默认日期 <input type="date" value={uploadDay} max={today(baby.time_zone)} onChange={e=>setUploadDay(e.target.value)}/></label></div>
   <p className="muted small">照片自带拍摄日期时会按原日期归档；缺少日期时使用默认日期。关闭自动日期即可手动指定。</p>
+  <label className="field album-upload-description"><span>描述（可选，本次选择的照片或视频共用）</span><textarea rows={2} maxLength={1000} value={uploadDescription} onChange={e=>setUploadDescription(e.target.value)} placeholder="例如：第一次去海边，笑得特别开心" /></label>
   <label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>
   {progress&&<p className="small" role="status">{progress}</p>}</div></Card>}
  {media.length?Array.from(new Set(media.map(item=>item.day.slice(0,7)))).map(month=>
@@ -218,6 +221,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
    <div key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+item.day+' 的'+(item.mime.startsWith('video/')?'视频':'照片')}>
     <span className="photo-frame">{item.mime.startsWith('image/')||item.thumbnail_ready?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt=""/>:<span className="video-placeholder" aria-hidden="true"><Camera size={32}/><span>视频 · 点击播放</span></span>}</span>
     <span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button>
+    {item.description&&<p className="photo-description" title={item.description}>{item.description}</p>}
    </div>)}</div></section>
  ):<div className="empty card"><p>还没有照片，上传第一张成长回忆吧。</p><button type="button" className="primary" onClick={()=>setShowUploader(true)}><Plus size={16}/> 添加照片或视频</button></div>}
  <Pager page={page} setPage={setPage} hasMore={hasMore}/>
