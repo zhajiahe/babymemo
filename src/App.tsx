@@ -111,19 +111,19 @@ export default function App(){
  if(!state||!baby)return <div className="loading-screen">家庭空间中暂无宝宝档案</div>;
  const titles:Record<Tab,string>={overview:'成长日记',growth:'成长记录',moments:'成长瞬间',album:'相册',settings:'设置'};
  return <div className="app"><Nav active={active} setActive={setActive} logout={logout} familyName={state.familyName||"家庭空间"}/><main className="workspace"><div className="topbar"><div className="crumb"><span className="space-name" aria-label="家庭空间名称" title={state.familyName||'家庭空间'}>{state.familyName||'家庭空间'}</span> <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
- <div className="page"><OfflineStatus changed={changed} notify={setToast}/><header className={"page-heading"+(active==="album"?" page-heading-album":"")}><div>{baby.avatar_key&&<img className="baby-portrait" src={'/api/babies/'+baby.id+'/avatar?v='+encodeURIComponent(baby.updated_at||'')} alt={baby.name+'的头像'}/>}<h1>{active==='overview'?baby.name:titles[active]}</h1>
+ <div className="page"><OfflineStatus changed={changed} notify={setToast}/><header className={"page-heading"+(active==="album"?" page-heading-album":"")}><div className={"page-heading-content"+(baby.avatar_key?" has-avatar":"")}>{baby.avatar_key&&<img className="baby-portrait" src={'/api/babies/'+baby.id+'/avatar?v='+encodeURIComponent(baby.updated_at||'')} alt={baby.name+'的头像'}/>}<h1>{active==='overview'?baby.name:titles[active]}</h1>
  <p className="muted">{active==='overview'
  ? ageLabel(baby.birthday,baby.birth_time,baby.time_zone)+' · 成长日记'
  : active==='album'?'照片与视频':baby.name+' · '+ageLabel(baby.birthday,baby.birth_time,baby.time_zone)}</p>
- </div></header>
+ </div>{active==="overview"&&<button className="home-quick-add" type="button" onClick={()=>setActive("moments")}><Plus size={16}/> 记录瞬间</button>}</header>
  {active==='overview'&&<div className="home-feed">
   <section className="home-memories" aria-label="最近照片">
    <div className="section-title home-section-title"><h2>最近的照片</h2><button type="button" className="text-btn" onClick={()=>setActive('album')}>查看相册 <ChevronRight size={16}/></button></div>
    {media.length>0?<><button type="button" className="home-photo-cover" onClick={()=>setActive('album')} aria-label="打开家庭相册查看最近照片">
-    {(media[0].mime.startsWith('image/')||media[0].thumbnail_ready)?<img src={'/api/media/'+encodeURIComponent(media[0].id)+'/thumbnail'} alt="" decoding="async"/>:<span className="home-video-placeholder"><Camera size={27}/>打开最近的视频</span>}
+    {(media[0].mime.startsWith('image/')||media[0].thumbnail_ready)?<><img src={'/api/media/'+encodeURIComponent(media[0].id)+'/thumbnail'} alt="" decoding="async"/>{media[0].mime.startsWith('video/')&&<span className="home-video-badge">播放视频</span>}</>:<span className="home-video-placeholder"><Camera size={27}/>最近的视频</span>}
    </button>
    {media.length>1&&<div className="home-photo-strip">{media.slice(1,5).map(item=><button key={item.id} type="button" className="home-photo-thumb" onClick={()=>setActive('album')} aria-label={'查看 '+item.day+' 的媒体'}>
-    {(item.mime.startsWith('image/')||item.thumbnail_ready)?<img src={'/api/media/'+encodeURIComponent(item.id)+'/thumbnail'} loading="lazy" alt=""/>:<Camera size={22}/>}
+    {(item.mime.startsWith('image/')||item.thumbnail_ready)?<><img src={'/api/media/'+encodeURIComponent(item.id)+'/thumbnail'} loading="lazy" alt=""/>{item.mime.startsWith('video/')&&<span className="home-thumb-video">▶</span>}</>:<Camera size={22}/>}
    </button>)}</div>}</>:<div className="home-empty-photos"><Camera size={26}/><p>还没有照片</p><button className="secondary" type="button" onClick={()=>setActive('album')}>添加第一张照片</button></div>}
   </section>
   <section className="home-measurements" aria-label="成长曲线"><div className="section-title home-section-title"><h2>成长记录</h2><button type="button" className="text-btn" onClick={()=>setActive('growth')}>查看记录 <ChevronRight size={16}/></button></div><GrowthChart items={growthHistory} limited={historyLimited}/></section>

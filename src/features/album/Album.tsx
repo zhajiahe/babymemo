@@ -7,7 +7,7 @@ import {createAlbumThumbnail,createVideoThumbnail,fingerprintFile} from '../../m
 import {pickMatchingUpload,remainingPartNumbers} from '../../upload-plan.mjs';
 import {mapBounded,transferConcurrency,canDirectUpload} from '../../media-transfer.mjs';
 import {bestEffortFileDay} from '../../media-date.mjs';
-import {CloudUpload,Camera,Trash2,Plus} from 'lucide-react';
+import {CloudUpload,Camera,Trash2,Plus,Play} from 'lucide-react';
 import {api,post,today,ApiFailure,type BabyInfo} from '../../lib/client';
 
 export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage,filters,onFilters}:{baby:BabyInfo;media:MediaItem[];mediaEdited:(id:string,value:Partial<MediaItem>)=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void;filters:RecordFilters;onFilters:(value:RecordFilters)=>void}){
@@ -219,7 +219,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  {media.length?Array.from(new Set(media.map(item=>item.day.slice(0,7)))).map(month=>
   <section className="photo-month" key={month}><h3>{month.replace('-', ' 年 ')} 月</h3><div className="photo-grid">{media.filter(item=>item.day.startsWith(month)).map(item=>
    <div key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+item.day+' 的'+(item.mime.startsWith('video/')?'视频':'照片')}>
-    <span className="photo-frame">{item.mime.startsWith('image/')||item.thumbnail_ready?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt=""/>:<span className="video-placeholder" aria-hidden="true"><Camera size={32}/><span>视频 · 点击播放</span></span>}</span>
+    <span className="photo-frame">{item.mime.startsWith('image/')||item.thumbnail_ready?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt=""/>:<span className="video-placeholder" aria-hidden="true"><Camera size={26}/><span>视频</span></span>}{item.mime.startsWith('video/')&&<span className="video-play-badge" aria-hidden="true"><Play size={18} fill="currentColor"/></span>}</span>
     <span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button>
     {item.description&&<p className="photo-description" title={item.description}>{item.description}</p>}
    </div>)}</div></section>
