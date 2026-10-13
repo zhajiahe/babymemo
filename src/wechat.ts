@@ -157,6 +157,15 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
     ],max_tokens:360,maxAttempts:1
    });
   },
+  loadFinalAnswer:async()=>{
+   const row=await env.DB.prepare('SELECT assistant_cipher FROM wechat_agent_rounds WHERE message_id=? AND round_index=?')
+    .bind(messageId,100).first<{assistant_cipher:string}>();
+   return row?JSON.parse(await decryptSecret(env,row.assistant_cipher)):null;
+  },
+  saveFinalAnswer:async(answer:string)=>{
+   await env.DB.prepare('INSERT INTO wechat_agent_rounds(message_id,round_index,assistant_cipher,created_at) VALUES(?,?,?,?)')
+    .bind(messageId,100,await encryptSecret(env,JSON.stringify(answer)),new Date().toISOString()).run();
+  },
   loadDecision:async(round:number)=>{
    const record=await env.DB.prepare('SELECT assistant_cipher FROM wechat_agent_rounds WHERE message_id=? AND round_index=?')
     .bind(messageId,round).first<{assistant_cipher:string}>();

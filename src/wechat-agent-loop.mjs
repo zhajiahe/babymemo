@@ -69,6 +69,7 @@ function render(results,finalText='',suffix='',committedKinds=new Set(),failedWr
 }
 export async function runWechatAgentLoop({
  messages,tools,complete,execute,finalize=null,validateFinal=null,fallbackReply=null,loadDecision=async()=>null,saveDecision=async()=>{},
+ loadFinalAnswer=async()=>null,saveFinalAnswer=async()=>{},
  now=Date.now,limits=DEFAULT_AGENT_LIMITS
 }){
  const transcript=[...messages],results=[],observations=[],committedKinds=new Set();
@@ -79,19 +80,29 @@ export async function runWechatAgentLoop({
  const finalResult=(content='',suffix='')=>render(results,content,suffix,committedKinds,failedWrite);
  const safeFallback=()=>typeof fallbackReply==='function'?fallbackReply({observations,committedKinds,failedWrite}):null;
  async function finishAfterTools(reason,suffix=''){
-  if(!suffix&&observations.length&&typeof finalize==='function'&&now()-started<limits.deadlineMs){
+  if(suffix)return finalResult('',suffix);
+  // Final prose is a business-visible, deterministic part of a message.
+  // Cache it independently of ReAct tool decisions so retries never pay for
+  // another non-tool completion or send a different answer for the same ID.
+  if(observations.length){
+   const cached=await loadFinalAnswer();
+   if(typeof cached==='string'&&cached)return cached;
+  }
+  if(observations.length&&typeof finalize==='function'&&now()-started<limits.deadlineMs){
    try{
     const response=await finalize({messages:transcript,observations,reason,committedKinds,failedWrite});
     const final=assistantMessage(response?.choices?.[0]?.message);
-    if(!final.tool_calls.length&&replyIsValid(final.content))
-     return finalResult(final.content);
+    if(!final.tool_calls.length&&replyIsValid(final.content)){
+     const answer=finalResult(final.content);
+     await saveFinalAnswer(answer);
+     return answer;
+    }
    }catch{/* Never hide a committed write or fabricate a result. */}
   }
-  if(!suffix){
-   const factual=safeFallback();
-   if(factual)return factual;
-  }
-  return finalResult('',suffix);
+  const factual=safeFallback();
+  const answer=factual||finalResult('',suffix);
+  if(observations.length)await saveFinalAnswer(answer);
+  return answer;
  }
  let totalCalls=0;
  for(let round=0;round<limits.rounds;round++){

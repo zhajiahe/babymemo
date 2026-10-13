@@ -257,3 +257,26 @@ test('a tool-free explanation cannot fabricate write success after an invalid re
  assert.equal(summary,1);
  assert.equal(out,'小好 的档案：生日 2025-05-30'); // real facts, not fake write success
 });
+
+test('a completed tool observation has a stable cached AI final across message replay',async()=>{
+ const decisionJournal=new Map(),finalJournal=new Map(),executions=[],modelRounds=[],summaries=[];
+ const opts={...args,
+  complete:async({round})=>{
+   modelRounds.push(round);
+   return round===0?reply(call('b','get_baby')):done('操作已完成');
+  },
+  execute:async c=>{executions.push(c.function.name);return '小好 的档案：生日 2025-05-30'},
+  loadDecision:async r=>decisionJournal.get(r)||null,
+  saveDecision:async(r,v)=>{decisionJournal.set(r,v)},
+  loadFinalAnswer:async()=>finalJournal.get('reply')||null,
+  saveFinalAnswer:async answer=>{if(finalJournal.has('reply'))throw Error('duplicated final journal');finalJournal.set('reply',answer)},
+  validateFinal:({content})=>content.includes('501 天'),
+  finalize:async()=>{summaries.push(1);return done('小好从出生到今天已经 501 天啦。')}
+ };
+ const first=await runWechatAgentLoop(opts),second=await runWechatAgentLoop(opts);
+ assert.equal(first,second);
+ assert.deepEqual(modelRounds,[0,1]);
+ assert.equal(summaries.length,1);
+ assert.deepEqual(executions,['get_baby','get_baby']); // D1 tool journal idempotency tested in Worker
+ assert.equal(finalJournal.get('reply'),first);
+});

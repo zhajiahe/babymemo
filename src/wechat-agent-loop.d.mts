@@ -6,6 +6,8 @@ export interface AgentLoopOptions {
  finalize?:(options:{messages:any[];observations:Array<{name:string;content:string}>;reason:string;committedKinds:Set<string>;failedWrite:boolean})=>Promise<any>;
  validateFinal?:(options:{content:string;observations:Array<{name:string;content:string}>;committedKinds:Set<string>;failedWrite:boolean})=>boolean;
  fallbackReply?:(options:{observations:Array<{name:string;content:string}>;committedKinds:Set<string>;failedWrite:boolean})=>string|null;
+ loadFinalAnswer?:()=>Promise<string|null>;
+ saveFinalAnswer?:(answer:string)=>Promise<void>;
  loadDecision?:(round:number)=>Promise<AgentDecision|null>;
  saveDecision?:(round:number,assistant:AgentDecision)=>Promise<void>;
  now?:()=>number;
