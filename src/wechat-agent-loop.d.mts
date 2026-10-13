@@ -4,8 +4,6 @@ export interface AgentLoopOptions {
  complete:(options:{messages:any[];tools:any[];round:number})=>Promise<any>;
  execute:(call:AgentDecision['tool_calls'][number],stepOffset:number,round:number)=>Promise<string|{content:string;halt?:boolean;committed?:boolean}>|string|{content:string;halt?:boolean;committed?:boolean};
  finalize?:(options:{messages:any[];observations:Array<{name:string;content:string}>;reason:string;committedKinds:Set<string>;failedWrite:boolean})=>Promise<any>;
- validateFinal?:(options:{content:string;observations:Array<{name:string;content:string}>;committedKinds:Set<string>;failedWrite:boolean})=>boolean;
- fallbackReply?:(options:{observations:Array<{name:string;content:string}>;committedKinds:Set<string>;failedWrite:boolean})=>string|null;
  loadFinalAnswer?:()=>Promise<string|null>;
  saveFinalAnswer?:(answer:string)=>Promise<void>;
  loadDecision?:(round:number)=>Promise<AgentDecision|null>;

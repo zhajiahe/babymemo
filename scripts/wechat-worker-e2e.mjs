@@ -43,7 +43,7 @@ try{
  async function run(payload){const r=await fetch(base,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(45000)});assert.equal(r.status,200);return r.json()}
  let ready=false;for(let i=0;i<120;i++){if(worker.exitCode!==null)throw Error('WORKER_EXITED: '+log);try{await run({mode:'crypto',emptyIV:true});ready=true;break}catch{}await delay(250)}if(!ready)throw Error('WORKER_NOT_READY: '+log);
  await step('Worker AES-ECB accepts empty IV and decrypts exact bytes',async()=>{const r=await run({mode:'crypto',emptyIV:true});assert.equal(r.ok,true);assert.equal(r.sha,sha(jpeg))});
- await step('greeting capability question returns menu without model calls or writes',async()=>{const r=await run({mode:'text',id:'greeting-help',text:'你好，你可以做什么',responses:[noTools]});assert.match(r.reply,/BabyMemo 微信操作/);assert.equal(r.models,0);assert.equal(r.growth.length,0);assert.equal(r.media.length,0)});
+ await step('the model answers capability questions without an intent router',async()=>{const r=await run({mode:'text',id:'greeting-help',text:'你好，你可以做什么',responses:[natural('你好！我能帮你记录成长日记、查找相册和测量记录。')]});assert.match(r.reply,/成长日记/);assert.equal(r.models,1);assert.equal(r.growth.length,0);assert.equal(r.media.length,0)});
  await step('missing model tools refuses writes',async()=>{const r=await run({mode:'text',id:'missing-tools',text:'测试宝宝今天体重 10.5kg',responses:[noTools]});assert.equal(r.reply,'synthetic no-tool response');assert.equal(r.growth.length,0)});
  await step('model tool -> policy -> local D1 write; replay does not duplicate',async()=>{const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});const payload={mode:'text',id:'create-weight',text:'测试宝宝今天体重 10.5kg',responses:[tool('create_growth',{day,weight:10.5})]};let r=await run(payload);assert.match(r.reply,/记录|保存/);assert.equal(r.growth.length,1);assert.equal(r.growth[0].weight,10.5);r=await run(payload);assert.equal(r.growth.length,1);savedWeightRecordId=r.growth[0].id;assert.equal(r.models,0);assert.deepEqual(r.rounds.map(x=>x.round_index),[0,1,31])});
  await step('ChatGPT-style: age question becomes a natural answer based on the verified profile tool',async()=>{
@@ -53,7 +53,8 @@ try{
   assert.equal(r.models,2);
   assert.equal(r.reply,'测试宝宝现在两岁九个月啦，生日是2024年1月1日。');
   assert.match(r.modelMessages[1].at(-1).content,/生日 2024-01-01/);
-  assert.match(r.modelMessages[0][0].content,/根据生日和消息本地日期计算年龄/);
+  assert.match(r.modelMessages[1].at(-1).content,/截至消息当天年龄/);
+  assert.match(r.modelMessages[0][0].content,/涉及家庭数据时先查工具/);
   assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
  });
  await step('real age query: empty/generic first final triggers tool-free synthesis, not the complete profile',async()=>{
@@ -70,33 +71,26 @@ try{
   assert.match(r.modelMessages[1].at(-1).content,/生日 2024-01-01/);
   assert.doesNotMatch(r.reply,/档案|生日|过敏|备注/);
  });
- await step('real age query: how many days always produces grounded days even when two model finals are bad',async()=>{
+ await step('profile tool provides factual age and day counts without specialized age prompts',async()=>{
   const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
   const days=Math.round((Date.parse(today+'T00:00:00Z')-Date.parse('2024-01-01T00:00:00Z'))/86400000);
-  const r=await run({mode:'text',id:'ai-days-profile-fallback',text:'测试宝宝多少天了',
-   responses:[tool('get_baby',{}),
-    natural('测试宝宝 的档案：生日 2024-01-01，过敏和注意事项：无'),
-    natural('操作已完成')
-   ]});
+  const answer='测试宝宝从出生到今天已经 '+days+' 天啦。';
+  const r=await run({mode:'text',id:'ai-days-model-first',text:'测试宝宝多少天了',
+   responses:[tool('get_baby',{}),natural(answer)]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,2);
+  assert.equal(r.reply,answer);
+  assert.match(r.modelMessages[1].at(-1).content,new RegExp('出生'+days+'天'));
+  assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
+ });
+ await step('failed model final and failed retry never expose an entire private baby profile',async()=>{
+  const r=await run({mode:'text',id:'ai-age-invalid-twice',text:'测试宝宝多大了',
+   responses:[tool('get_baby',{}),natural('测试宝宝 的档案：生日 2024-01-01，过敏和注意事项：无'),natural('操作已完成')]});
   assert.equal(r.error,undefined);
   assert.equal(r.models,3);
   assert.deepEqual(r.modelHasTools,[true,true,false]);
-  assert.equal(r.reply,'测试宝宝从出生到今天已经 '+days+' 天啦。');
-  assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
- });
- await step('real age query: plausible but wrong model age is rejected in favor of server birthday arithmetic',async()=>{
-  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
-  const year=Number(today.slice(0,4)),month=Number(today.slice(5,7)),date=Number(today.slice(8,10));
-  const ageYears=year-2024-(month<1?1:0);
-  const r=await run({mode:'text',id:'ai-age-wrong-final',text:'测试宝宝多大了',
-   responses:[tool('get_baby',{}),
-    natural('测试宝宝现在 99 岁 9 个月啦。'),
-    natural('还是 99 岁，已经长大了。')
-   ]});
-  assert.equal(r.error,undefined);
-  assert.equal(r.models,3);
-  assert.match(r.reply,new RegExp('测试宝宝现在 '+ageYears+' 岁'));
-  assert.doesNotMatch(r.reply,/99 岁|档案：/);
+  assert.match(r.reply,/暂时没能整理成可靠的回答/);
+  assert.doesNotMatch(r.reply,/档案|过敏和注意事项|2024-01-01/);
  });
  await step('ChatGPT-style: verified milestone write has a concise AI final, not its DB receipt',async()=>{
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
@@ -112,7 +106,16 @@ try{
   assert.equal(r.milestones.filter(m=>m.source_message_id==='ai-milestone-final:step:0').length,1);
   assert.match(r.modelMessages[1].at(-1).content,/已保存成长事件/);
  });
- await step('read-only retry returns real D1 results after no-tool response',async()=>{const r=await run({mode:'text',id:'query-weight',text:'查询测试宝宝最近五条体重记录',responses:[noTools,tool('list_growth',{limit:5})]});assert.equal(r.models,4);assert.match(r.reply,/10\.5/);assert.equal(r.growth.length,1)});
+ await step('model independently chooses a read tool and answers with the actual observation',async()=>{
+  const r=await run({mode:'text',id:'query-weight',text:'查询测试宝宝最近五条体重记录',
+   responses:[tool('list_growth',{limit:5}),natural('最近的体重记录里，最新是 10.5 公斤。')]});
+  assert.equal(r.models,2);assert.match(r.reply,/10\.5/);assert.equal(r.growth.length,1);
+ });
+ await step('conversational no-tool response is accepted without fabricating database writes',async()=>{
+  const r=await run({mode:'text',id:'read-model-no-tool',text:'查询测试宝宝最近五条体重记录',
+   responses:[natural('想看最近五次体重，还是指定一天的记录？')]});
+  assert.equal(r.models,1);assert.match(r.reply,/最近五次体重/);assert.equal(r.growth.length,1);
+ });
  await step('ReAct read -> write uses a real queried ID and tool observations',async()=>{
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
   const r=await run({mode:'text',id:'react-correct',text:'把测试宝宝今天的体重更正为 10.2kg',
@@ -165,7 +168,7 @@ try{
   assert.equal(savedDiary[0].day,yesterday);
   assert.match(r.replies[1],/已保存成长事件/);
   assert.doesNotMatch(r.replies.join(' '),/currentTimestamp|messageTimestamp|timeZone|messageLocalDay|\{"current/);
-  assert.match(r.modelMessages[1][0].content,new RegExp(yesterday)); // date in trusted instruction
+  assert.match(r.modelMessages[1][0].content,/当地日期：/); // model resolves 昨晚 from date and history
   assert.equal(r.modelMessages[2].at(-1).role,'tool');
   assert.match(r.modelMessages[2].at(-1).content,/currentTimestamp/); // only the model sees JSON
  });
@@ -202,7 +205,7 @@ try{
   const finalRequest=r.modelMessages[3];
   assert.deepEqual(finalRequest.filter(x=>x.role==='user').slice(0,3).map(x=>x.content),messages.slice(0,3));
   assert.match(finalRequest.at(-1).content,/create_milestone/);
-  assert.match(finalRequest[0].content,/日记和里程碑是同一种成长事件/);
+  assert.match(finalRequest[0].content,/日记和里程碑共用/);
   assert.equal(r.modelMessages[4].at(-1).role,'tool');
   assert.equal(r.messages.filter(m=>m.message_id.startsWith('synthetic-bot:diary-turn-')&&m.state==='done').length,4);
  });
@@ -228,7 +231,7 @@ try{
   assert.equal(r.messages.some(x=>x.message_id==='synthetic-bot:not-authorized'),false);
  });
  await step('same-batch text and a later D1 query finish while a CDN stream remains blocked',async()=>{
-  const r=await run({mode:'alarm',holdMedia:true,messages:[raw('slow-media'),textFrom('same-batch-help','synthetic-user','synthetic-bot','你好，你可以做什么')],followupMessages:[textFrom('query-while-saving','synthetic-user','synthetic-bot','查询测试宝宝最近五条体重记录')],responses:[tool('list_growth',{limit:5})],encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});
+  const r=await run({mode:'alarm',holdMedia:true,messages:[raw('slow-media'),textFrom('same-batch-help','synthetic-user','synthetic-bot','你好，你可以做什么')],followupMessages:[textFrom('query-while-saving','synthetic-user','synthetic-bot','查询测试宝宝最近五条体重记录')],responses:[natural('你好，我可以帮你管理家庭成长记录。'),tool('list_growth',{limit:5}),natural('查到了，最近的体重是 10.2 公斤。')],encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});
   assert.equal(r.error,undefined);assert.equal(r.status.textWhileSaving.beforeDownloads,0);assert.ok(r.status.textWhileSaving.elapsedMs<3000);assert.ok(r.status.textWhileSaving.replies.some(x=>/10\.2/.test(x)));assert.ok(r.status.textWhileSaving.replies.some(x=>/正在保存/.test(x)));assert.equal(r.media.length,6);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.status.media.pending,0);
  });
  await step('reset during a slow save suppresses stale caption writes and replies',async()=>{
