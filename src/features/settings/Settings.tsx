@@ -11,16 +11,17 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  const [name,setName]=useState(baby.name),[birthday,setBirthday]=useState(baby.birthday),[birthTime,setBirthTime]=useState(baby.birth_time||''),[allergies,setAllergies]=useState(baby.allergies);
  const [showNewBaby,setShowNewBaby]=useState(false),[creatingBaby,setCreatingBaby]=useState(false),[createError,setCreateError]=useState('');
  const [newBaby,setNewBaby]=useState({name:'',birthday:'',birthTime:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
- const [qr,setQr]=useState(''),[qrImage,setQrImage]=useState(''),[status,setStatus]=useState(''),[verifyCode,setVerifyCode]=useState(''),[botStatus,setBotStatus]=useState<any>(null);
+ const [qr,setQr]=useState(''),[pairingId,setPairingId]=useState(''),[qrImage,setQrImage]=useState(''),[status,setStatus]=useState(''),[verifyCode,setVerifyCode]=useState(''),[botStatus,setBotStatus]=useState<any>(null);
+ const [memberName,setMemberName]=useState(''),[memberBusy,setMemberBusy]=useState('');
  const [password,setPassword]=useState({currentPassword:'',newPassword:'',confirmPassword:''}),[passwordBusy,setPasswordBusy]=useState(false);
  const [trash,setTrash]=useState<{growth:{id:string;baby_id:string;day:string;deleted_at:string}[];milestones:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[];media:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[]}|null>(null);
  const [trashBusy,setTrashBusy]=useState(false);
  useEffect(()=>{setName(baby.name);setBirthday(baby.birthday);setBirthTime(baby.birth_time||'');setAllergies(baby.allergies)},[baby.id,baby.name,baby.birthday,baby.birth_time,baby.allergies]);
  useEffect(()=>{if(qr)void import('qrcode').then(({default:QRCode})=>QRCode.toDataURL(qr,{width:220,margin:2,errorCorrectionLevel:'M'})).then(setQrImage).catch(()=>notify('二维码渲染失败'))},[qr]);
  useEffect(()=>{if(!qr||status==='confirmed'||status==='expired')return;let cancelled=false;let timeout:ReturnType<typeof setTimeout>;
-  const poll=async()=>{try{const r=await post<{status:string}>('/api/settings/wechat/qr/status',{verifyCode});if(cancelled)return;setStatus(r.status);if(r.status==='confirmed'){setQr('');setQrImage('');changed();notify('微信绑定成功，请手动启用 Bot');return;}}catch(e){if(!cancelled)setStatus('连接重试中');}if(!cancelled)timeout=setTimeout(poll,2000)};
+  const poll=async()=>{try{const r=await post<{status:string}>('/api/settings/wechat/qr/status',{pairingId,verifyCode});if(cancelled)return;setStatus(r.status);if(r.status==='confirmed'){setQr('');setQrImage('');setPairingId('');setVerifyCode('');changed();notify('微信成员绑定成功，可在列表中启用');return;}}catch(e){if(!cancelled)setStatus('连接重试中');}if(!cancelled)timeout=setTimeout(poll,2000)};
   timeout=setTimeout(poll,500);return()=>{cancelled=true;clearTimeout(timeout)};
- },[qr,verifyCode,status==='confirmed',status==='expired']);
+ },[qr,pairingId,verifyCode,status==='confirmed',status==='expired']);
  async function saveOpenrouter(e:FormEvent){e.preventDefault();setSaving(true);try{await post('/api/settings/openrouter',{model,...(!state.openrouter.managedByDeployment&&apiKey?{apiKey}:{})});setApiKey('');changed();notify('微信指令模型配置已保存')}catch(e){notify(String(e))}finally{setSaving(false)}}
  async function saveBaby(e:FormEvent){e.preventDefault();try{await api('/api/babies/'+baby.id,{method:'PATCH',body:JSON.stringify({name,birthday,birthTime,allergies,notes:baby.notes})});changed();notify('宝宝资料已更新')}catch(e){notify(String(e))}}
  async function addBaby(e:FormEvent){
@@ -45,16 +46,40 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   try{await post('/api/settings/password',{currentPassword:password.currentPassword,newPassword:password.newPassword});setPassword({currentPassword:'',newPassword:'',confirmPassword:''});window.location.reload()}
   catch(e){notify(e instanceof Error?e.message:'修改密码失败')}finally{setPasswordBusy(false)}
  }
- async function pair(){try{setStatus('正在获取二维码…');const r=await post<{qrContent:string}>('/api/settings/wechat/qr',{});setQr(r.qrContent);setStatus('wait')}catch(e){notify(String(e))}}
+ async function pair(){
+  if(!memberName.trim()){notify('请先填写要绑定的家庭成员称呼');return}
+  try{
+   setStatus('正在获取二维码…');
+   const r=await post<{qrContent:string;pairingId:string}>('/api/settings/wechat/qr',{label:memberName.trim()});
+   setPairingId(r.pairingId);setQr(r.qrContent);setStatus('wait');setVerifyCode('');
+  }catch(e){notify(String(e))}
+ }
  async function savePhotoBaby(){
   if(photoBabyBusy)return;setPhotoBabyBusy(true);
   try{await post('/api/settings/wechat/default-baby',{babyId:photoBaby});changed();notify(photoBaby?'已设置微信照片的默认宝宝':'已清除微信媒体默认宝宝')}
   catch(e){notify(e instanceof Error?e.message:'无法保存默认宝宝')}
   finally{setPhotoBabyBusy(false)}
  }
- async function toggleBot(action:'start'|'pause'){try{await post('/api/settings/wechat/'+action,{});changed();notify(action==='start'?'微信 Bot 已启用':'微信 Bot 已暂停')}catch(e){notify(String(e))}}
+ async function toggleBot(id:string,action:'start'|'pause'){
+  if(memberBusy)return;setMemberBusy(id);
+  try{await post('/api/settings/wechat/connections/'+encodeURIComponent(id)+'/'+action,{});changed();notify(action==='start'?'该微信 Bot 已启用':'该微信 Bot 已暂停')}
+  catch(e){notify(String(e))}finally{setMemberBusy('')}
+ }
+ async function removeMember(id:string,label:string){
+  if(memberBusy||!window.confirm('移除“'+label+'”的微信连接？该微信将无法再操作家庭数据，已保存的成长记录和照片不会删除。'))return;
+  setMemberBusy(id);
+  try{await api('/api/settings/wechat/connections/'+encodeURIComponent(id),{method:'DELETE'});changed();setBotStatus(null);notify('已移除微信成员：'+label)}
+  catch(e){notify(String(e))}finally{setMemberBusy('')}
+ }
+ async function renameMember(id:string,label:string){
+  const next=window.prompt('修改成员称呼',label)?.trim();
+  if(!next||next===label||memberBusy)return;
+  setMemberBusy(id);
+  try{await api('/api/settings/wechat/connections/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({label:next})});changed();notify('成员称呼已更新')}
+  catch(e){notify(String(e))}finally{setMemberBusy('')}
+ }
  async function test(){try{await post('/api/settings/openrouter/test',{});notify('模型连接测试成功')}catch(e){notify(String(e))}}
- async function inspect(){try{setBotStatus(await api('/api/settings/wechat/status'))}catch(e){notify(String(e))}}
+ async function inspect(id:string){try{setBotStatus({id,...await api('/api/settings/wechat/connections/'+encodeURIComponent(id)+'/status')})}catch(e){notify(String(e))}}
  return <div className="settings-grid"><Card><div className="section-title"><h3>宝宝资料</h3><Baby size={20}/></div><div className="settings-baby-switch"><Field label="当前查看的宝宝"><select aria-label="选择宝宝" value={baby.id} onChange={e=>onBabySelected(e.target.value)}>{state.babies.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><p className="muted small">仅在设置中切换宝宝，其他页面自动展示所选宝宝的记录。</p></div><form className="stack" onSubmit={saveBaby}><Field label="宝宝昵称"><input value={name} required onChange={e=>setName(e.target.value)}/></Field><div className="two"><Field label="出生日期"><input type="date" value={birthday} required onChange={e=>setBirthday(e.target.value)}/></Field><Field label="出生时间（可后补）"><input type="time" value={birthTime} onChange={e=>setBirthTime(e.target.value)}/></Field></div><Field label="过敏与注意事项"><textarea rows={3} value={allergies} onChange={e=>setAllergies(e.target.value)}/></Field><Primary>保存资料 <Check size={16}/></Primary></form>
  <div className="baby-create-section"><div className="section-title"><div><h3>家庭成员 · 宝宝</h3><p className="muted small">空间：{state.familyName||'家庭空间'} · 当前家庭有 {state.babies.length} 位宝宝，可切换查看各自的照片与成长记录。</p></div></div>
  {!showNewBaby?<button type="button" className="secondary full" onClick={()=>setShowNewBaby(true)} aria-expanded={false}><Plus size={16}/>新增宝宝</button>:<form className="stack baby-create-form" onSubmit={addBaby}>
