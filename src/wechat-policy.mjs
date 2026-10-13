@@ -92,6 +92,7 @@ export function guardAction(action,args,text,baby,at=Date.now()){
  if(action==='update_baby'){
   if(args.birthday&&explicitDay(text,at,baby?.time_zone||'Asia/Shanghai')!==args.birthday)return '出生日期缺乏原文依据，未修改。';
   if(args.allergies&&!String(text).includes(String(args.allergies).trim()))return '过敏信息缺乏原文依据，未修改。';
+  if(args.name&&!String(text).includes(String(args.name).trim()))return '宝宝姓名缺乏原文依据，未修改。';
  }
  if((action==='update_milestone'||action==='update_media')&&args?.newDay&&args.day===args.newDay)
   return '请区分要修改的原日期和新日期，未修改。';
