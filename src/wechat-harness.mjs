@@ -194,9 +194,17 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
     if(!groundedTarget(args,originalText,baby))return '请在消息中写明需要删除的日期或记录编号，避免误删';
     const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
     const row=await findTarget(env,baby.id,kind,args);
-    const changed=await env.DB.prepare('UPDATE '+tableForKind[kind]+' SET deleted_at=? WHERE id=? AND baby_id=? AND deleted_at IS NULL')
-     .bind(new Date().toISOString(),row.id,baby.id).run();
-    return changed.meta.changes?'已将 '+labelForKind[kind]+'（'+short(row.id)+'）移入回收站，30 天内可恢复。':'未删除：记录已发生变化';
+    const deletedAt=new Date().toISOString();
+    const stmt=env.DB.prepare('UPDATE '+tableForKind[kind]+' SET deleted_at=? WHERE id=? AND baby_id=? AND deleted_at IS NULL')
+     .bind(deletedAt,row.id,baby.id);
+    if(typeof env.DB.batch!=='function'){
+     const changed=await stmt.run();
+     return changed.meta.changes?'已将 '+labelForKind[kind]+'（编号 '+short(row.id)+'）移入回收站，30 天内可恢复。':'未删除：记录已发生变化';
+    }
+    const opId=await auditChange(env,{sourceId:messageId,babyId:baby.id,kind,recordId:row.id,action:'delete',
+     before:operationSnapshot(kind,row),after:snapshotChanges(kind,row,{deleted_at:deletedAt}),statement:stmt});
+    if(opId&&options.thread)options.thread.lastOperation={babyId:baby.id,opId,expiresAt:at+1200000};
+    return opId?'已将 '+labelForKind[kind]+'（编号 '+short(row.id)+'）移入回收站，30 天内可恢复。':'未删除：记录已发生变化';
    }
   }
   if(action==='list_trash'){
@@ -261,8 +269,14 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    if(!groundedTarget(args,originalText,baby))return '请在消息中写明恢复记录的日期或编号';
    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const row=await findTarget(env,baby.id,args.kind,args,true);
-   const change=await env.DB.prepare('UPDATE '+tableForKind[args.kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL').bind(row.id,baby.id).run();
-   return change.meta.changes?'已恢复 '+labelForKind[args.kind]+'（'+short(row.id)+'）。':'该记录无法恢复';
+   const stmt=env.DB.prepare('UPDATE '+tableForKind[args.kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL').bind(row.id,baby.id);
+   if(typeof env.DB.batch!=='function'){
+    const changed=await stmt.run();return changed.meta.changes?'已恢复 '+labelForKind[args.kind]+'（编号 '+short(row.id)+'）。':'该记录无法恢复';
+   }
+   const opId=await auditChange(env,{sourceId:messageId,babyId:baby.id,kind:args.kind,recordId:row.id,action:'restore',
+    before:operationSnapshot(args.kind,row),after:snapshotChanges(args.kind,row,{deleted_at:null}),statement:stmt});
+   if(opId&&options.thread)options.thread.lastOperation={babyId:baby.id,opId,expiresAt:at+1200000};
+   return opId?'已恢复 '+labelForKind[args.kind]+'（编号 '+short(row.id)+'）。':'该记录无法恢复';
   }
   return wechatHelp;
  }catch(err){
