@@ -1,6 +1,6 @@
 // A no-tool response from a reasoning model should not block an obvious read-only
 // WeChat query. Never force a mutating tool or guess record identifiers.
-const WRITE_INTENT=/删除|删掉|移除|撤销|修改|更正|更改|更新|改成|改为|改一下|设为|标记|新增|添加|补充|记录|保存|恢复|还原|创建|设置|收藏/;
+const WRITE_INTENT=/删除|删掉|移除|撤销|修改|更正|更改|更新|改成|改为|改一下|设为|标记|新增|添加|补充|记下|记入|帮我记|保存|恢复|还原|创建|设置|收藏/;
 const QUERY_START=/^(?:请|帮我|给我)?\s*(?:查|查询|查一下|查看|看看|列出|找一下|找找|找出|给我看)/;
 export function readOnlyFallbackTool(text){
  const t=String(text||'').trim();
