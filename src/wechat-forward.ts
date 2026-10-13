@@ -44,8 +44,8 @@ function xmlValue(source:string,tag:string):string{
 /** Only parse bounded embedded recordinfo XML, not arbitrary XML or URLs. */
 function extractRecordXml(input:string):{lines:string[];missingMedia:number}|null{
  if(input.length>MAX_XML||!/<(?:recordinfo|recorditem|datalist|dataitem)\b/i.test(input))return null;
- const record=/<recorditem(?:\\s[^>]*)?>([\\s\\S]*?)<\\/recorditem>/i.exec(input)?.[1];
- const content=(record||input).replace(/^<!\\[CDATA\\[|\\]\\]>$/g,'');
+ const record=/<recorditem(?:\s[^>]*)?>([\s\S]*?)<\/recorditem>/i.exec(input)?.[1];
+ const content=(record||input).replace(/^<!\[CDATA\[|\]\]>$/g,'');
  const blocks=[...content.matchAll(/<dataitem\b[^>]*>([\s\S]*?)<\/dataitem>/gi)].slice(0,MAX_ITEMS);
  if(!blocks.length)return null;
  const lines:string[]=[];
