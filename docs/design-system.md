@@ -32,7 +32,7 @@
 - `src/features/album/Album.tsx` 保持分页和照片日期分组；只移动视觉控制，不改变上传/断点续传或元数据 API。
 - `src/features/growth/RecordView.tsx` 优先呈现曲线、历史时间线，随后是新增表单。
 - `src/components/MediaViewer.tsx` 承载移入回收站、下载和日期修改，保留原生 `dialog` 焦点管理。
-- `public/brand/baby-journal-source.png` 为唯一品牌源图（透明背景、宝宝与蓝色日记本）；`scripts/build-brand-assets.mjs` 在开发、单元测试和构建前生成 favicon、wordmark、Apple touch 图标及标准/maskable PWA 图标，杜绝图标版本不一致。图标允许原插画中的渐变，页面不增加大面积渐变装饰。
+- `public/brand/icon-source.svg` 为唯一可编辑矢量品牌母版（蓝色渐变、宝宝与成长日记）；图标主体刻意保持在 maskable 安全区域；`scripts/build-brand-assets.mjs` 在开发、单元测试和构建前生成 favicon、wordmark、Apple touch 图标及标准/maskable PWA 图标，杜绝图标版本不一致。图标允许原插画中的渐变，页面不增加大面积渐变装饰。
 
 ## 质量与上线检查
 

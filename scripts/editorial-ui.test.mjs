@@ -37,8 +37,10 @@ test('favicon and all PWA assets decode with expected PNG headers and dimensions
  const ico=bytes('public/favicon.ico');
  assert.equal(ico.readUInt16LE(2),1);
  assert.ok(ico.readUInt16LE(4)>=2);
- assert.match(text('public/brand/mark.svg'),/data:image\/png;base64/);
- assert.match(text('public/favicon.svg'),/data:image\/png;base64/);
+ assert.equal(text('public/brand/mark.svg'),text('public/brand/icon-source.svg'));
+ assert.equal(text('public/favicon.svg'),text('public/brand/icon-source.svg'));
+ assert.match(text('public/brand/mark.svg'),/id="baby"/);
+ assert.match(text('public/brand/mark.svg'),/id="journal"/);
 });
 
 test('family name and Settings-only baby switch remain available on mobile',()=>{
