@@ -10,7 +10,7 @@ export function mediaSizeBand(size){
 }
 export function mediaTiming({channel,stage,size,startedAt,status='ok',now=()=>performance.now(),emit=console.info}){
  const channelName=['web','wechat'].includes(channel)?channel:'unknown';
- const stageName=['direct','part','finish','cdn','r2','thumbnail','index','total'].includes(stage)?stage:'unknown';
+ const stageName=['direct','part','finish','cdn','r2','thumbnail','index','total','client'].includes(stage)?stage:'unknown';
  const record={level:'info',event:'MEDIA_TRANSFER_TIMING',channel:channelName,stage:stageName,
   status:status==='ok'?'ok':'error',sizeBand:mediaSizeBand(size),
   durationMs:Math.min(600000,Math.max(0,Math.round(now()-startedAt)))};
