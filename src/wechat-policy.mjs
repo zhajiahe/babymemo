@@ -28,7 +28,7 @@ export function explicitDay(text,now,tz){
  }
  // Numeric dotted dates require an explicit day suffix to avoid treating
  // measurements such as 13.7kg as "13 July".
- const dotted=text.match(/(?:^|[^\\d])(\\d{1,2})\\s*[./]\\s*(\\d{1,2})\\s*(?:日|号)/);
+ const dotted=text.match(/(?:^|[^\d])(\d{1,2})\s*[./]\s*(\d{1,2})\s*(?:日|号)/);
  if(dotted){
   const year=dayInZone(now,tz).slice(0,4),day=year+'-'+dotted[1].padStart(2,'0')+'-'+dotted[2].padStart(2,'0');
   return validDay(day)?day:null;
