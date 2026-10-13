@@ -152,7 +152,7 @@ export class WechatSession {
   async fetch(request:Request):Promise<Response>{
     const path=new URL(request.url).pathname;
     if(path==='/status'){
-      const id=await this.ctx.storage.get<string>('connectionId')||'legacy';
+      const id=new URL(request.url).searchParams.get('connectionId')||await this.ctx.storage.get<string>('connectionId')||'legacy';
       const connection=await getWechatConnection(this.env,id);
       return Response.json({connectionId:id,enabled:connection?.enabled===1,connected:!!connection,lastPoll:await this.ctx.storage.get('lastPoll')||null,
         lastError:await this.ctx.storage.get('lastError')||null,lastMessage:await this.ctx.storage.get('lastMessage')||null,
@@ -174,7 +174,7 @@ export class WechatSession {
     }
     if(path==='/reset'){
       await this.ctx.storage.deleteAlarm();
-      await Promise.all(['cursor','lastPoll','lastError','lastMessage','conversation'].map(key=>this.ctx.storage.delete(key)));
+      await Promise.all(['cursor','lastPoll','lastError','lastMessage','lastProcessing','conversation'].map(key=>this.ctx.storage.delete(key)));
       return Response.json({ok:true});
     }
     return new Response('Not found',{status:404});
