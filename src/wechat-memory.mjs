@@ -31,6 +31,12 @@ export function recordQuery(thread,babyId,kind,ids,now=Date.now(),sourceMessageI
 export function setPending(thread,babyId,action,text,args={},now=Date.now()){
  thread.pending={babyId,action,text:bounded(text,650),args:copy(args)||{},expiresAt:now+CONTEXT_TTL_MS};
 }
+// This is deliberately a narrow *authorisation* trigger, not an intent parser:
+// models interpret observations; only an explicit user request may reuse their
+// previous words as write-grounding for ONE milestone/diary entry.
+export function isMilestoneSaveFollowup(text){
+ return /^(?:(?:好的?[，,]?|那就|就|帮我|给我|请|把(?:这段|这些|这个|刚才说的|前面说的|上面说的))\s*)?(?:记下来|记下(?:来|吧)?|记录(?:下来|一下)?|保存(?:下来|一下)?|存下来|写进(?:日记|里程碑)|记(?:到|入)(?:日记|里程碑))(?:吧|呀|哦|啦|。|！|!|\s)*$/.test(String(text||'').trim());
+}
 export function buildCommandContext(text,thread,now=Date.now(),babyId=thread.babyId){
  const turns=(thread.turns||[]).filter(t=>t.babyId===babyId),last=turns.at(-1),messages=[];
  for(const turn of turns){
@@ -38,6 +44,17 @@ export function buildCommandContext(text,thread,now=Date.now(),babyId=thread.bab
   messages.push({role:'assistant',content:bounded(turn.reply,1200)});
  }
  let executableText=text,modelText=text;
+ // A follow-up "记下来" can refer to preceding observations. Do not trust
+ // assistant replies as source material or authorise any other write tool.
+ // Include only recent, same-baby observations, and respect the conversation TTL.
+ const noteSave=isMilestoneSaveFollowup(text);
+ const observations=noteSave?turns.slice(-3).map(t=>t.user.trim()).filter(s=>s.length>=4
+  && !/^(?:查|查询|查看|删除|删掉|修改|更正|恢复|撤销|帮助|你能|请问|为什么)/.test(s)
+  && !/[？?]\s*$/.test(s)):[];
+ const milestoneGroundedText=observations.length?observations.join('\n')+'\n'+text:null;
+ if(milestoneGroundedText){
+  modelText='[用户本轮明确要求将上面最近描述的观察保存为一条日记/里程碑。请只合并用户的原始叙述，不把助手回复当作事实，调用一次 create_milestone；无明确日期或事实时先询问，不要猜测。]\n'+modelText;
+ }
  const ordinal=text.match(/第\s*([一二三四五六七八九十1-9]|10)\s*(?:条|项|个|张|段)/);
  const ordinals={'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10};
  const query=thread.lastQuery&&thread.lastQuery.babyId===babyId&&thread.lastQuery.expiresAt>now?thread.lastQuery:null;
@@ -62,5 +79,5 @@ export function buildCommandContext(text,thread,now=Date.now(),babyId=thread.bab
    executableText=last.user+'\n'+executableText;
   }
  }
- return {modelMessages:[...messages,{role:'user',content:modelText}],groundedText:executableText,referencedId:ref};
+ return {modelMessages:[...messages,{role:'user',content:modelText}],groundedText:executableText,milestoneGroundedText,referencedId:ref};
 }

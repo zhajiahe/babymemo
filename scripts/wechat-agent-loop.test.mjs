@@ -63,7 +63,7 @@ test('tool batches above per-turn limit are refused before write',async()=>{
 });
 test('a hallucinated success message without a tool never counts as a write',async()=>{
  const r=await runWechatAgentLoop({...args,complete:async()=>done('已保存宝宝记录'),execute:async()=>{throw Error('should not call')}});
- assert.match(r,/未修改数据/);
+ assert.match(r,/没有实际保存或修改/);
 });
 test('time cap cannot dispatch a write after timeout',async()=>{
  let clock=0,writes=0;
@@ -88,4 +88,23 @@ test('rejected mutating tool halts remaining calls and future rounds',async()=>{
   execute:async()=>{executed++;return {content:'目标不唯一，未删除',halt:true}}});
  assert.equal(executed,1);assert.equal(completions,1);
  assert.match(r,/未删除/);
+});
+
+test('natural no-tool response is preserved without making any database changes',async()=>{
+ let writes=0;
+ const text='小好昨晚睡得不太安稳。要不要我把这段情况记入日记？';
+ const result=await runWechatAgentLoop({...args,complete:async()=>done(text),execute:async()=>{writes++}});
+ assert.equal(result,text);
+ assert.equal(writes,0);
+});
+test('no-tool claim of a completed milestone write is blocked even with a preamble',async()=>{
+ for(const fake of ['好啦，我已经帮你记下来了。','已经保存到里程碑了。','这条记录保存成功。']){
+  const result=await runWechatAgentLoop({...args,complete:async()=>done(fake),execute:async()=>{throw Error('unexpected write')}});
+  assert.match(result,/没有实际保存或修改/);
+  assert.doesNotMatch(result,/帮你记下来了|保存成功/);
+ }
+});
+test('no-tool clarification is not replaced by a mandatory tool instruction',async()=>{
+ const result=await runWechatAgentLoop({...args,complete:async()=>done('想把这段记录在昨天还是今天？'),execute:async()=>{throw Error('unexpected')}});
+ assert.equal(result,'想把这段记录在昨天还是今天？');
 });

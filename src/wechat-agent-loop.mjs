@@ -21,6 +21,12 @@ function assistantMessage(raw){
  const content=typeof raw.content==='string'?raw.content.slice(0,2000):null;
  return {role:'assistant',content,tool_calls:safe};
 }
+// Free-form replies are welcome, but never evidence that a database write
+// happened. Catch the common "我已经帮你记下来了" forms even when not at start.
+export function claimsUnverifiedWrite(text){
+ const s=String(text||'').trim();
+ return /(?:已(?:经)?|成功)\s*(?:(?:为你|帮你|替你|把(?:这条|这些|刚才)?|将(?:这条|这些)?|给你)\s*)?(?:保存|记录|记下|写入|新增|添加|更新|修改|删除|恢复|存入)|(?:保存|记录|记下|写入|添加|更新|修改|删除|恢复)(?:成功|完成|好了|好啦)/.test(s);
+}
 function render(results,finalText='',suffix=''){
  // Database/tool output is authoritative. A model's free-form text must not
  // claim that a write succeeded without a corresponding committed tool result.
@@ -30,9 +36,9 @@ function render(results,finalText='',suffix=''){
  }
  if(suffix)return suffix;
  const text=String(finalText||'').trim();
- if(/^(?:已保存|已更新|已删除|已恢复|已经记录|已添加)/.test(text))
-  return '模型没有执行任何工具，未修改数据。请重新描述要执行的操作。';
- return text.slice(0,1500)||'未执行任何操作，请说明要记录、查询或修改的内容。';
+ if(claimsUnverifiedWrite(text))
+  return '这次没有实际保存或修改记录。需要记入日记或里程碑时，可以直接说“记下来”。';
+ return text.slice(0,1500)||'我在听。想让我把刚才的内容记入日记，可以说“记下来”。';
 }
 export async function runWechatAgentLoop({
  messages,tools,complete,execute,loadDecision=async()=>null,saveDecision=async()=>{},

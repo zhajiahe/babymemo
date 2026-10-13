@@ -89,13 +89,17 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
  if(thread?.pendingMedia?.babyId===baby.id&&/刚才|刚发|这些|这张|这段|最近/.test(command)&&/照片|视频|图片/.test(command))return '刚发送的照片或视频仍在保存，请收到保存结果后再操作。其他成长记录可以继续发送。';
  const fast=await quickCommand(env,baby,command,thread,at);
  if(fast!==null)return fast;
- const context=thread?buildCommandContext(command,thread,at,baby.id):{modelMessages:[{role:'user',content:command}],groundedText:command};
+ const context=thread?buildCommandContext(command,thread,at,baby.id):{modelMessages:[{role:'user',content:command}],groundedText:command,milestoneGroundedText:null};
  const key=await resolveOpenRouterKey(env);
  if(!key)return '请先在网页设置中配置 OpenRouter Key，或在部署时设置 OPENROUTER_API_KEY Secret';
  const model=await setting(env,'openrouter_model')||DEFAULT_OPENROUTER_MODEL;
  const localDay=dayInZone(at,baby.time_zone||'Asia/Shanghai');
  const instruction='你是 BabyMemo 微信成长记录工具 Agent，不提供闲聊、医疗诊断或育儿分析。'+
   '消息发送时宝宝本地日期 '+localDay+'，当前宝宝 '+baby.name+'，宝宝时区 '+(baby.time_zone||'Asia/Shanghai')+'。'+
+  '日记和里程碑是同一种成长事件，通过 create_milestone 保存睡眠、饮食、生活观察等日记；没有新的数据类型。'+
+  '用户仅描述近况时，用自然简短的中文承接话题，必要时问是否记入日记；没有明确同意不许擅自保存。'+
+  '用户说“记下来”等明确同意时，根据同一宝宝的近期用户原话，写一条完整日记/里程碑，不把助手上轮回复当事实。'+
+  '没有工具调用也可以自然回复或澄清；不能说已经写入、保存、更新任何未执行的操作。'+
   '你可以先读后写；每次收到工具结果后根据真实结果决定继续调用工具还是结束。'+
   '用户明确要求的简单记录应直接执行，不要求固定中文表达；必要时可调用 get_runtime_context 获取当前日期和时区。用户说“大概”“约”等估计信息时写入 notes，不能误标为精确实测。'+
   '只能调用白名单工具，不得输出 SQL 或编造宝宝、记录编号、数值、日期。'+
@@ -114,8 +118,6 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
    });
    if(fallbackCalls)return {choices:[{message:{role:'assistant',content:null,tool_calls:fallbackCalls}}]};
   }
-  if(round===0&&(!Array.isArray(first?.tool_calls)||first.tool_calls.length===0))
-   return {choices:[{message:{role:'assistant',content:'模型没有返回可执行的工具指令，未修改任何记录。请说明要查询、记录或修改的内容。',tool_calls:[]}}]};
   return response;
  };
  return runWechatAgentLoop({
@@ -131,7 +133,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
   },
   execute:async(call:any,stepOffset:number)=>{
    const content=await runWechatPlan(env,baby,[call],{
-    messageId,text:command,groundedText:context.groundedText,at,thread,stepOffset,
+    messageId,text:command,groundedText:call.function.name==='create_milestone'&&context.milestoneGroundedText?context.milestoneGroundedText:context.groundedText,at,thread,stepOffset,
     encryptReply:(value:string)=>encryptSecret(env,value),
     decryptReply:(value:string)=>decryptSecret(env,value)
    });

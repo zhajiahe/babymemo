@@ -43,7 +43,7 @@ try{
  let ready=false;for(let i=0;i<120;i++){if(worker.exitCode!==null)throw Error('WORKER_EXITED: '+log);try{await run({mode:'crypto',emptyIV:true});ready=true;break}catch{}await delay(250)}if(!ready)throw Error('WORKER_NOT_READY: '+log);
  await step('Worker AES-ECB accepts empty IV and decrypts exact bytes',async()=>{const r=await run({mode:'crypto',emptyIV:true});assert.equal(r.ok,true);assert.equal(r.sha,sha(jpeg))});
  await step('greeting capability question returns menu without model calls or writes',async()=>{const r=await run({mode:'text',id:'greeting-help',text:'你好，你可以做什么',responses:[noTools]});assert.match(r.reply,/BabyMemo 微信操作/);assert.equal(r.models,0);assert.equal(r.growth.length,0);assert.equal(r.media.length,0)});
- await step('missing model tools refuses writes',async()=>{const r=await run({mode:'text',id:'missing-tools',text:'测试宝宝今天体重 10.5kg',responses:[noTools]});assert.match(r.reply,/模型没有返回可执行的工具指令/);assert.equal(r.growth.length,0)});
+ await step('missing model tools refuses writes',async()=>{const r=await run({mode:'text',id:'missing-tools',text:'测试宝宝今天体重 10.5kg',responses:[noTools]});assert.equal(r.reply,'synthetic no-tool response');assert.equal(r.growth.length,0)});
  await step('model tool -> policy -> local D1 write; replay does not duplicate',async()=>{const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});const payload={mode:'text',id:'create-weight',text:'测试宝宝今天体重 10.5kg',responses:[tool('create_growth',{day,weight:10.5})]};let r=await run(payload);assert.match(r.reply,/记录|保存/);assert.equal(r.growth.length,1);assert.equal(r.growth[0].weight,10.5);r=await run(payload);assert.equal(r.growth.length,1);savedWeightRecordId=r.growth[0].id;assert.equal(r.models,0);assert.equal(r.rounds.length,2)});
  await step('read-only retry returns real D1 results after no-tool response',async()=>{const r=await run({mode:'text',id:'query-weight',text:'查询测试宝宝最近五条体重记录',responses:[noTools,tool('list_growth',{limit:5})]});assert.equal(r.models,3);assert.match(r.reply,/10\.5/);assert.equal(r.growth.length,1)});
  await step('ReAct read -> write uses a real queried ID and tool observations',async()=>{
@@ -70,6 +70,41 @@ try{
   assert.match(r.reply,/localDay/);assert.equal(r.growth.length,2);
  });
  await step('negated delete cannot mutate local D1',async()=>{const r=await run({mode:'text',id:'negated-delete',text:'不要删除测试宝宝今天的体重',responses:[tool('delete_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})})]});assert.equal(r.growth.length,2);assert.doesNotMatch(r.reply,/已删除/)});
+ await step('four consecutive WeChat messages naturally respond, then save one consolidated diary milestone',async()=>{
+  const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const yesterday=new Date(Date.parse(day+'T12:00:00Z')-86400000).toISOString().slice(0,10);
+  const messages=['测试宝宝昨晚半小时一醒','中间连续睡了三个小时','后来又半小时一醒','记下来'];
+  const natural=content=>({choices:[{message:{content,tool_calls:[]},finish_reason:'stop'}]});
+  const r=await run({
+   mode:'alarm',
+   alarms:4,
+   pollBatches:messages.map((text,i)=>[textFrom('diary-turn-'+i,'synthetic-user','synthetic-bot',text)]),
+   responses:[
+    natural('听起来昨晚睡得很不安稳。想让我帮你记到日记里吗？'),
+    natural('明白，中间有连续三个小时的睡眠。'),
+    natural('后来又恢复了半小时一醒，确实是一段反复的夜醒。'),
+    tool('create_milestone',{day:yesterday,title:'昨晚睡眠观察',description:'昨晚半小时一醒，中间连续睡了三个小时，随后又半小时一醒。'}),
+    stop
+   ]
+  });
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,5);
+  assert.equal(r.replies.length,4);
+  assert.match(r.replies[0],/想让我帮你记到日记里吗/);
+  assert.match(r.replies[1],/连续三个小时/);
+  assert.match(r.replies[2],/又恢复了半小时一醒/);
+  assert.match(r.replies[3],/已保存成长事件/);
+  assert.equal(r.milestones.length,1);
+  assert.equal(r.milestones[0].baby_id,'synthetic-baby');
+  assert.equal(r.milestones[0].day,yesterday);
+  assert.match(r.milestones[0].description,/半小时一醒.*三个小时.*半小时一醒/);
+  const finalRequest=r.modelMessages[3];
+  assert.deepEqual(finalRequest.filter(x=>x.role==='user').slice(0,3).map(x=>x.content),messages.slice(0,3));
+  assert.match(finalRequest.at(-1).content,/create_milestone/);
+  assert.match(finalRequest[0].content,/日记和里程碑是同一种成长事件/);
+  assert.equal(r.modelMessages[4].at(-1).role,'tool');
+  assert.equal(r.messages.filter(m=>m.message_id.startsWith('synthetic-bot:diary-turn-')&&m.state==='done').length,4);
+ });
  await step('iLink photo -> durable acceptance -> AES -> local R2/D1 -> final reply; duplicate ignored',async()=>{const r=await run({mode:'alarm',messages:[raw('photo-ok')],alarms:2,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 张照片/);assert.equal(r.media.length,1);assert.equal(r.downloads,1);assert.equal(r.sent,2);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:photo-ok').state,'done')});
  await step('9 MiB encrypted video streams through real R2 multipart',async()=>{const bytes=Buffer.alloc(9*1024*1024,1);bytes.writeUInt32BE(24,0);bytes.write('ftypisom',4);const r=await run({mode:'alarm',messages:[raw('video-ok',5)],encryptedBase64:encrypt(bytes),expectedSHA256:sha(bytes)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 段视频/);assert.equal(r.media.length,2);assert.equal(r.originalMatches,true);assert.equal(r.media.find(x=>x.mime==='video/mp4').size,bytes.length)});
  await step('R2 commit survives failed D1 indexing; retry avoids CDN download',async()=>{const r=await run({mode:'alarm',messages:[raw('index-retry')],alarms:2,failIndexOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,3);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:index-retry').photo_attempts,1)});
