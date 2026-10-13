@@ -28,7 +28,7 @@ function pendingActionFromText(text){
  if(/(?:记录|记一下|记下|记个).{0,12}(?:里程碑|成长瞬间|成长事件)/.test(text))return 'create_milestone';
  return null;
 }
-export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=text,at=Date.now(),thread=null,encryptReply=async x=>x,decryptReply=async x=>x}){
+export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=text,at=Date.now(),thread=null,stepOffset=0,encryptReply=async x=>x,decryptReply=async x=>x}){
  if(!Array.isArray(calls)||!calls.length)return '没有需要执行的工具';
  if(calls.length>4)return '一次最多处理 4 项操作，请分开发送';
  const names=new Set(wechatTools.map(t=>t.function.name)),results=[];
@@ -36,7 +36,7 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   const call=calls[i];
   if(call?.type!=='function'||!names.has(call.function?.name)||typeof call.function.arguments!=='string')
    return [...results,'出现不受支持的工具操作，剩余操作未执行。'].join('\n');
-  const action=call.function.name,kind=KINDS[action]||null,sourceId=messageId+':step:'+i;
+  const action=call.function.name,kind=KINDS[action]||null,sourceId=messageId+':step:'+(stepOffset+i);
   let args;try{args=JSON.parse(call.function.arguments)}catch{return [...results,'模型参数不是合法 JSON，后续操作未执行。'].join('\n')}
   if(!args||typeof args!=='object'||Array.isArray(args))return [...results,'模型参数格式不正确，后续操作未执行。'].join('\n');
   // Claims and results are always scoped by the server-selected baby, not a model babyId.
