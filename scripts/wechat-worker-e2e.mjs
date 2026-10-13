@@ -22,8 +22,10 @@ let worker,log='',passed=0;
 const env={...process.env,XDG_CONFIG_HOME:join(dir,'config'),WRANGLER_SEND_METRICS:'false',CI:'true',BROWSER:'none'};
 const encrypt=bytes=>{const c=createCipheriv('aes-128-ecb',key,null);return Buffer.concat([c.update(bytes),c.final()]).toString('base64')};
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
-const tool=(name,args)=>({choices:[{message:{tool_calls:[{id:'synthetic-call',type:'function',function:{name,arguments:JSON.stringify(args)}}]},finish_reason:'tool_calls'}]});
+const tool=(name,args)=>({choices:[{message:{tool_calls:[{id:'synthetic-'+name,type:'function',function:{name,arguments:JSON.stringify(args)}}]},finish_reason:'tool_calls'}]});
 const noTools={choices:[{message:{content:'synthetic no-tool response'},finish_reason:'stop'}]};
+const stop={choices:[{message:{content:'操作已完成',tool_calls:[]},finish_reason:'stop'}]};
+let savedWeightRecordId='';
 const raw=(id,type=2)=>({message_id:id,from_user_id:'synthetic-user',to_user_id:'synthetic-bot',message_type:1,message_state:2,context_token:'synthetic-context',create_time_ms:Date.now(),item_list:[type===2?{type:2,image_item:{media:{encrypt_query_param:'synthetic',aes_key:key.toString('base64')}}}:{type:5,video_item:{media:{encrypt_query_param:'synthetic',aes_key:key.toString('base64')}}}]});
 const textFrom=(id,from,to,text)=>({message_id:id,from_user_id:from,to_user_id:to,message_type:1,message_state:2,context_token:'synthetic-context',create_time_ms:Date.now(),item_list:[{type:1,text_item:{text}}]});
 async function step(title,run){await run();passed++;console.log('PASS '+title)}
@@ -40,8 +42,31 @@ try{
  await step('Worker AES-ECB accepts empty IV and decrypts exact bytes',async()=>{const r=await run({mode:'crypto',emptyIV:true});assert.equal(r.ok,true);assert.equal(r.sha,sha(jpeg))});
  await step('greeting capability question returns menu without model calls or writes',async()=>{const r=await run({mode:'text',id:'greeting-help',text:'你好，你可以做什么',responses:[noTools]});assert.match(r.reply,/BabyMemo 微信操作/);assert.equal(r.models,0);assert.equal(r.growth.length,0);assert.equal(r.media.length,0)});
  await step('missing model tools refuses writes',async()=>{const r=await run({mode:'text',id:'missing-tools',text:'测试宝宝今天体重 10.5kg',responses:[noTools]});assert.match(r.reply,/模型没有返回可执行的工具指令/);assert.equal(r.growth.length,0)});
- await step('model tool -> policy -> local D1 write; replay does not duplicate',async()=>{const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});const payload={mode:'text',id:'create-weight',text:'测试宝宝今天体重 10.5kg',responses:[tool('create_growth',{day,weight:10.5})]};let r=await run(payload);assert.match(r.reply,/记录|保存/);assert.equal(r.growth.length,1);assert.equal(r.growth[0].weight,10.5);r=await run(payload);assert.equal(r.growth.length,1)});
- await step('read-only retry returns real D1 results after no-tool response',async()=>{const r=await run({mode:'text',id:'query-weight',text:'查询测试宝宝最近五条体重记录',responses:[noTools,tool('list_growth',{limit:5})]});assert.equal(r.models,2);assert.match(r.reply,/10\.5/);assert.equal(r.growth.length,1)});
+ await step('model tool -> policy -> local D1 write; replay does not duplicate',async()=>{const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});const payload={mode:'text',id:'create-weight',text:'测试宝宝今天体重 10.5kg',responses:[tool('create_growth',{day,weight:10.5})]};let r=await run(payload);assert.match(r.reply,/记录|保存/);assert.equal(r.growth.length,1);assert.equal(r.growth[0].weight,10.5);r=await run(payload);assert.equal(r.growth.length,1);savedWeightRecordId=r.growth[0].id;assert.equal(r.models,0);assert.equal(r.rounds.length,2)});
+ await step('read-only retry returns real D1 results after no-tool response',async()=>{const r=await run({mode:'text',id:'query-weight',text:'查询测试宝宝最近五条体重记录',responses:[noTools,tool('list_growth',{limit:5})]});assert.equal(r.models,3);assert.match(r.reply,/10\.5/);assert.equal(r.growth.length,1)});
+ await step('ReAct read -> write uses a real queried ID and tool observations',async()=>{
+  const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const r=await run({mode:'text',id:'react-correct',text:'把测试宝宝今天的体重更正为 10.2kg',
+   responses:[tool('list_growth',{day}),tool('update_growth',{id:savedWeightRecordId.slice(0,8),weight:10.2}),stop]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.growth.length,1);assert.equal(r.growth[0].weight,10.2);
+  assert.equal(r.models,3);assert.equal(r.rounds.length,3);
+  assert.equal(r.modelMessages[1].at(-1).role,'tool');
+  assert.equal(r.modelMessages[2].at(-1).role,'tool');
+  assert.match(r.reply,/已更新/);
+ });
+ await step('ReAct accepts colloquial 10.1号 date and approximate values',async()=>{
+  const r=await run({mode:'text',id:'react-colloquial',text:'10.1号测试宝宝大概13.7kg',
+   responses:[tool('create_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,4)+'-10-01',weight:13.7,notes:'估计值'}),stop]});
+  assert.equal(r.error,undefined);assert.match(r.reply,/已保存/);
+  assert.ok(r.growth.some(g=>g.weight===13.7&&g.day.endsWith('-10-01')));
+ });
+ await step('runtime context comes from Worker clock rather than model guesses',async()=>{
+  const r=await run({mode:'text',id:'react-clock',text:'查询当前时间',
+   responses:[tool('get_runtime_context',{}),stop]});
+  assert.equal(r.error,undefined);assert.match(r.reply,/Asia\\/Shanghai/);
+  assert.match(r.reply,/localDay/);assert.equal(r.growth.length,2);
+ });
  await step('negated delete cannot mutate local D1',async()=>{const r=await run({mode:'text',id:'negated-delete',text:'不要删除测试宝宝今天的体重',responses:[tool('delete_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})})]});assert.equal(r.growth.length,1);assert.doesNotMatch(r.reply,/已删除/)});
  await step('iLink photo -> AES -> local R2/D1 -> reply; duplicate ignored',async()=>{const r=await run({mode:'alarm',messages:[raw('photo-ok')],alarms:2,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 张照片/);assert.equal(r.media.length,1);assert.equal(r.downloads,1);assert.equal(r.sent,1);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:photo-ok').state,'done')});
  await step('9 MiB encrypted video streams through real R2 multipart',async()=>{const bytes=Buffer.alloc(9*1024*1024,1);bytes.writeUInt32BE(24,0);bytes.write('ftypisom',4);const r=await run({mode:'alarm',messages:[raw('video-ok',5)],encryptedBase64:encrypt(bytes),expectedSHA256:sha(bytes)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 段视频/);assert.equal(r.media.length,2);assert.equal(r.originalMatches,true);assert.equal(r.media.find(x=>x.mime==='video/mp4').size,bytes.length)});
