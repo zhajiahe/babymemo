@@ -1,0 +1,60 @@
+name: Manual Harness Deep E2E
+
+# Long and paid evaluations are forbidden on PR, push, cron and deployment.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "offline: local synthetic data; live: billable OpenRouter"
+        type: choice
+        options: [offline, live]
+        default: offline
+      cases:
+        description: "Offline >=240, live <=60"
+        type: choice
+        options: ["16", "240", "1200"]
+        default: "240"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: babymemo-manual-harness
+  cancel-in-progress: false
+
+jobs:
+  offline:
+    if: inputs.mode == 'offline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Deterministic harness deep evaluation
+        env:
+          HARNESS_CASES: ${{ inputs.cases }}
+        run: node scripts/harness-deep-e2e.mjs
+
+  live:
+    if: inputs.mode == 'live'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Paid synthetic OpenRouter contract checks, explicit manual only
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_E2E_CONFIRM: 'YES'
+          HARNESS_LIVE_CONFIRM: 'YES'
+          HARNESS_LIVE_CASES: ${{ inputs.cases }}
+        run: node scripts/harness-live-e2e.mjs

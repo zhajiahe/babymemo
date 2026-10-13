@@ -22,7 +22,7 @@ BabyMemo 是小型、隐私优先的家庭成长记录服务。核心体验是�
 | 初始化 / 登录 | `src/auth.ts`、`src/worker.ts`、`docs/DEPLOY.md` |
 | D1 / 成长记录 | `migrations/`、`src/worker.ts`、`src/types.ts` |
 | 相册上传 / 视频 | `src/features/album/Album.tsx`、`src/media-upload.ts`、`src/worker.ts` 的 `/api/upload/*`、`/api/media/*` 与 R2 binding |
-| 微信操作 Harness | `src/wechat-harness.mjs` 工具白名单与 D1 执行、`src/wechat.ts` 绑定/路由/轮询、`src/worker.ts` 配置 API |
+| 微信操作 Harness | `src/wechat-harness.mjs` 工具白名单与 D1 执行、`src/wechat.ts` 绑定/路由/轮询、`src/worker.ts` 配置 API；未来改造先看 `docs/wechat-harness-review.md` 和 `docs/wechat-harness-test-plan.md` |
 | 部署 / Cloudflare | `docs/agent-deploy.md`、`docs/github-action-deploy.md`、`.github/workflows/deploy.yml`、`wrangler.jsonc` |
 | 新旧系统迁移 | `docs/MIGRATION.md`；只做规划和核验，除非另获明确执行授权 |
 
@@ -126,7 +126,7 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 ## 微信工具安全边界
 
 - 禁止重新新增网页 AI 助手或 `/api/chat` 作为主入口；OpenRouter 只生成工具名称及参数，真实读写必须通过白名单 Harness。
-- 每条指令最多执行一个操作。变更必须显式指明目标宝宝和记录日期或编号；目标不唯一、记录已删除、缺少修改或删除意图应拒绝执行。
+- 每条消息最多可规划 **4 个经用户明确授权**的白名单工具步骤；按步骤执行、写入结果持久化后才处理下一步，任何拒绝和失败都应停止后续步骤并告知已完成内容。修改/删除必须明确目标宝宝和记录日期或编号；目标不唯一、记录已删除、含否定/条件指令、缺少修改或删除意图时拒绝执行。新增/修改均须通过原文日期与数值单位来源验证。
 - 模型无 SQL、R2 密钥、管理员会话等工具权限。消息来自绑定微信的单聊账户；不可跨宝宝写入。不返回私有媒体的匿名链接。
 - 微信删除均应采用 30 天回收站；更新与删除应使用精确记录 ID，移动端网络重试不允许重复新增。
 

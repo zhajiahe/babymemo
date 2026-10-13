@@ -11,7 +11,7 @@ BabyMemo 是部署在 Cloudflare 上的私密家庭成长记录应用，以相�
 - **私密相册**：上传照片和视频、按月浏览、编辑拍摄日期、下载原件。使用私有 R2 存储与登录鉴权；图片缩略图是可选派生文件。
 - **断点续传**：网页单文件上限 200 MB，8 MiB 分片；中断后须重新选取原文件，才能尝试恢复未完成的分片。
 - **微信操作**：绑定微信 iLink Bot 后，可通过文字调用受限增删改查工具，也可直接发照片和视频到相册；微信单文件上限 50 MiB，每条消息最多 4 项。
-- **短期上下文**：微信操作保留有限轮次的上下文，便于引用此前查询结果。**不提供网页 AI 对话或医学诊断助手。**
+- **微信 Harness**：最多 4 个受限工具步骤；最近查询引用、待补充任务、口语化纠错与最近操作撤销；支持日期区间搜索、测量汇总、最近照片日期更正和照片/里程碑关联。所有写操作仍经过 D1 校验，不提供网页 AI 对话或医学诊断助手。
 
 技术栈：React 19、TypeScript、Vite、Hono、Cloudflare Workers、D1、R2、Durable Objects。
 
@@ -76,6 +76,8 @@ npm run test:e2e
 | Agent 的生产权限边界 | [Agent 部署 Runbook](docs/agent-deploy.md) |
 | 代码组织、变更质量、错误处理 | [工程规范](ENGINEERING.md) 与 [AGENTS.md](AGENTS.md) |
 | 自动化范围、真机验收缺口 | [QA 回归矩阵](docs/qa-regression-matrix.md) |
+| 微信 Harness 的真实场景缺陷与演进 | [Harness 场景审查](docs/wechat-harness-review.md) |
+| 微信 Harness 自动化测试设计 | [Harness 测试计划](docs/wechat-harness-test-plan.md) |
 | 私有 D1/R2 备份与恢复 | [备份与恢复](docs/BACKUP.md) |
 | 一次性旧照片缩略图维护 | [媒体维护](docs/MEDIA_MAINTENANCE.md) |
 | 旧 MyBaby 数据映射及限制 | [迁移计划](docs/MIGRATION.md) |
@@ -94,3 +96,9 @@ npm run test:e2e
 若要验证真实 OpenRouter 工具调用，前往 **GitHub Actions → Manual OpenRouter Live E2E → Run workflow**，选中 `main` 后主动运行。该测试只发送合成宝宝的只读查询、不读写真实 D1/R2、不会运行真实微信，也**不会由 PR、push、定时任务或自动部署触发**。需事先配置 GitHub Secret `OPENROUTER_API_KEY`，可能产生少量模型费用。
 
 也可在安全的本地终端提供 OpenRouter Key，设置 `OPENROUTER_E2E_CONFIRM=YES` 后执行 `npm run test:openrouter:live`。该开关缺失时脚本直接拒绝执行。Contributor 模型的提示词和输出可能用于改进 Meta 产品，真实家庭隐私请谨慎处理。
+
+## 微信 Harness 深度测试（手动触发）
+
+普通 PR / main CI 仅运行本地模拟的快速测试。耗时的合成场景回归和真实 OpenRouter 调用**不自动执行**，需前往 GitHub Actions → **Manual Harness Deep E2E** 主动选择 `offline` 或 `live`。其中 `live` 会调用可能计费的外部模型，需配置 GitHub Secret `OPENROUTER_API_KEY`；测试仅发送合成文本，不访问生产 D1/R2 或微信。也可在本地使用 `npm run test:harness:deep`，真实模型需主动设置 `OPENROUTER_E2E_CONFIRM=YES`、`HARNESS_LIVE_CONFIRM=YES` 后执行 `npm run test:harness:live`。
+
+详情见 [Harness 实施与限制](docs/wechat-harness-implementation.md)、[场景审查](docs/wechat-harness-review.md)和[自动化测试方案](docs/wechat-harness-test-plan.md)。

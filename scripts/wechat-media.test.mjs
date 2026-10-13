@@ -92,3 +92,19 @@ test('reject invalid decrypted payload and resource exhaustion',async()=>{
  assert.equal(photoRecordId('abc'),photoRecordId('abc'));
  assert.notEqual(photoRecordId('abc'),photoRecordId('xyz'));
 });
+
+test('two media streams run concurrently but preserve independent durable IDs',async()=>{
+ const env=mockEnv(),original=env.MEDIA.put.bind(env.MEDIA);
+ let active=0,peak=0;
+ env.MEDIA.put=async(...args)=>{
+  active++;peak=Math.max(peak,active);
+  await new Promise(resolve=>setTimeout(resolve,8));
+  try{return await original(...args)}finally{active--}
+ };
+ const two={...raw,item_list:[item(),item()]};
+ const reply=await persistWeChatPhotos(env,two,baby,'bot:parallel2',{fetchImpl:cdnFetch});
+ assert.match(reply,/2 张照片/);
+ assert.equal(peak,2);
+ assert.equal(env.rows.size,2);
+ assert.equal(new Set([...env.rows.values()].map(x=>x.object_key)).size,2);
+});

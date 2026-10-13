@@ -184,11 +184,11 @@ export async function persistWeChatMedia(env,raw,baby,messageId,options={}){
  if(!items.length)return null;
  if(items.length>MAX_ITEMS)bad('单条消息最多保存 4 项媒体，请分批发送');
  const result=[];
- for(let i=0;i<items.length;i++){
+ async function persistItem(i){
   const kind=items[i].type===5?'video':'image';
   const sourceId=messageId+':'+kind+':'+i,id=photoRecordId(sourceId);
   const existing=await env.DB.prepare('SELECT id,deleted_at FROM media WHERE source_message_id=?').bind(sourceId).first();
-  if(existing){result.push({id:existing.id,kind,already:true});continue}
+  if(existing)return {id:existing.id,kind,already:true};
   const objectKey='private/'+baby.id+'/'+id;
   const old=await env.MEDIA.head(objectKey);
   let size=old?.size||0,mime=old?.httpMetadata?.contentType;
@@ -218,7 +218,15 @@ export async function persistWeChatMedia(env,raw,baby,messageId,options={}){
    .bind(id,baby.id,day,title,objectKey,mime,size,new Date().toISOString(),thumbReady,sourceId).run();
   const indexed=await env.DB.prepare('SELECT id FROM media WHERE source_message_id=?').bind(sourceId).first();
   if(!indexed)throw Error('WECHAT_MEDIA_INDEX_FAILED');
-  result.push({id:indexed.id,kind,already:false});
+  return {id:indexed.id,kind,already:false};
+ }
+ // At most two parallel decrypt+R2 streams; preserve source order and await all
+ // in-flight uploads before surfacing a failure to the idempotent retry path.
+ for(let i=0;i<items.length;i+=2){
+  const outcome=await Promise.allSettled(items.slice(i,i+2).map((_,j)=>persistItem(i+j)));
+  let failure=null;
+  for(const o of outcome){if(o.status==='fulfilled')result.push(o.value);else failure??=o.reason}
+  if(failure)throw failure;
  }
  const fresh=result.filter(x=>!x.already),dupes=result.length-fresh.length;
  if(!fresh.length)return '这些照片或视频已经保存过，无需重复导入。';
