@@ -24,6 +24,7 @@ export default {async fetch(request:Request,env:any){
  await env.DB.prepare('INSERT OR IGNORE INTO babies(id,name,birthday,gender,time_zone,created_at) VALUES(?,?,?,?,?,?)').bind(baby.id,baby.name,baby.birthday,'girl',baby.time_zone,new Date().toISOString()).run();
  let models=0,downloads=0;const sent:any[]=[],modelMessages:any[]=[];const contexts=new Map<string,{session:WechatSession;store:Map<string,any>}>();
  let inbound=input.messages||[],releaseMedia:any,mediaStarted:any;
+ let pollIndex=0;
  const mediaGate=new Promise<void>(resolve=>releaseMedia=resolve),beganMedia=new Promise<void>(resolve=>mediaStarted=resolve);
  env.BOT={idFromName:(name:string)=>name,get:(id:string)=>{
   if(!contexts.has(id)){const store=new Map<string,any>(Object.entries(id==='wechat-media:legacy'?input.mediaStorage||{}:{}));contexts.set(id,{store,session:new WechatSession(fakeContext(store) as any,env)})}
@@ -37,6 +38,7 @@ export default {async fetch(request:Request,env:any){
   if(u.includes('/ilink/bot/getupdates')){
    const auth=init?.headers?.Authorization;
    const second=auth==='Bearer synthetic-token-2';
+   if(input.pollBatches){const index=pollIndex++;return Response.json({ret:0,msgs:input.pollBatches[index]||[],get_updates_buf:'cursor-'+(index+1)});}
    return Response.json({ret:0,msgs:second?(input.messagesB||[]):(input.messagesA||inbound),get_updates_buf:second?'cursor-two':'cursor-one'});
   }
   if(u.includes('/ilink/bot/sendmessage')){const body=JSON.parse(init.body);sent.push(body);if(body.msg.client_id.startsWith('media-')){finalSendAttempts++;if(input.failFinalSendOnce&&finalSendAttempts===1)return new Response('',{status:503})}if(input.failSendOnce&&sent.length===1)return new Response('',{status:503});return Response.json({ret:0})}
@@ -101,10 +103,11 @@ export default {async fetch(request:Request,env:any){
   }
   const growth=await env.DB.prepare('SELECT id,baby_id,day,weight,height,source_message_id FROM growth_records').all();
   const media=await env.DB.prepare('SELECT id,baby_id,day,size,mime,source_message_id FROM media').all();
+  const milestones=await env.DB.prepare('SELECT id,baby_id,day,title,description,source_message_id FROM milestones').all();
   const messages=await env.DB.prepare('SELECT message_id,state,photo_attempts FROM wechat_messages').all();
   const rounds=input.id?await env.DB.prepare('SELECT round_index FROM wechat_agent_rounds WHERE message_id=? ORDER BY round_index').bind(input.id).all():{results:[]};
   let originalMatches=null;if(media.results.length){const row=media.results.at(-1);const obj=await env.MEDIA.get('private/'+row.baby_id+'/'+row.id);if(obj){const bytes=Buffer.from(await obj.arrayBuffer());originalMatches=input.expectedSHA256?createHash('sha256').update(bytes).digest('hex')===input.expectedSHA256:bytes.equals(Buffer.from(input.expectedPlain||jpeg));}}
   const mediaStorage=Object.fromEntries(contexts.get('wechat-media:legacy')?.store||[]);
-  return Response.json({reply,models,modelMessages,rounds:rounds.results,downloads,sent:sent.length,sentTo:sent.map(x=>x.msg.to_user_id),clientIds:sent.map(x=>x.msg.client_id),finalClientIds:sent.filter(x=>x.msg.client_id.startsWith('media-')).map(x=>x.msg.client_id),status,mediaStorage,growth:growth.results,media:media.results,messages:messages.results,originalMatches});
+  return Response.json({reply,models,modelMessages,rounds:rounds.results,downloads,milestones:milestones.results,replies:sent.map(x=>x.msg.item_list[0]?.text_item?.text),sent:sent.length,sentTo:sent.map(x=>x.msg.to_user_id),clientIds:sent.map(x=>x.msg.client_id),finalClientIds:sent.filter(x=>x.msg.client_id.startsWith('media-')).map(x=>x.msg.client_id),status,mediaStorage,growth:growth.results,media:media.results,messages:messages.results,originalMatches});
  }catch(e:any){return Response.json({error:e.message,models})}finally{globalThis.fetch=actualFetch;env.DB=originalDB}
 }};

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {getActiveThread,appendTurn,buildCommandContext,isClearContext,recordQuery,setPending,CONTEXT_TTL_MS} from '../src/wechat-memory.mjs';
+import {getActiveThread,appendTurn,buildCommandContext,isClearContext,recordQuery,setPending,isMilestoneSaveFollowup,CONTEXT_TTL_MS} from '../src/wechat-memory.mjs';
 test('scoped bounded memory with TTL and explicit reset',()=>{
  let thread=getActiveThread(null,'botA','userA',1000);
  for(let i=0;i<6;i++)thread=appendTurn(thread,'query '+i,'reply '+i,'baby1',1000+i);
@@ -39,4 +39,27 @@ test('structured query is scoped to baby and expires; pending task state survive
  thread=appendTurn(thread,'记一下体重','请提供数值','babyA',1000);
  assert.equal(getActiveThread(thread,'bot','user',1500).pending.action,'create_growth');
  assert.equal(getActiveThread(thread,'bot','user',1000+CONTEXT_TTL_MS+5).pending,null);
+});
+
+test('explicit follow-up consolidates three user observations into one grounded milestone',()=>{
+ const at=Date.parse('2026-10-13T15:00:00+08:00');
+ let thread=getActiveThread(null,'bot','user',at);
+ thread=appendTurn(thread,'小好昨晚总醒','听起来昨晚很辛苦，需要我帮你记录吗？','baby-a',at);
+ thread=appendTurn(thread,'中间睡了三个小时','明白，中间连续睡了三个小时。','baby-a',at+1000);
+ thread=appendTurn(thread,'后面又半小时一醒','这样听起来确实频繁。','baby-a',at+2000);
+ assert.equal(isMilestoneSaveFollowup('记下来'),true);
+ assert.equal(isMilestoneSaveFollowup('不要记下来'),false);
+ const ctx=buildCommandContext('记下来',thread,at+3000,'baby-a');
+ assert.match(ctx.milestoneGroundedText,/小好昨晚总醒[\s\S]*中间睡了三个小时[\s\S]*后面又半小时一醒[\s\S]*记下来/);
+ assert.doesNotMatch(ctx.milestoneGroundedText,/听起来|明白/);
+ assert.equal(ctx.groundedText,'记下来'); // only the milestone tool gets enriched grounding
+ assert.match(ctx.modelMessages.at(-1).content,/create_milestone/);
+});
+test('diary follow-up never borrows another baby, an expired session or casual non-consent',()=>{
+ const at=Date.parse('2026-10-13T15:00:00+08:00');
+ let thread=getActiveThread(null,'bot','user',at);
+ thread=appendTurn(thread,'宝宝A昨晚生病了','需要我记录吗？','baby-a',at);
+ assert.equal(buildCommandContext('记下来',thread,at+1,'baby-b').milestoneGroundedText,null);
+ assert.equal(buildCommandContext('不要记下来',thread,at+1,'baby-a').milestoneGroundedText,null);
+ assert.equal(buildCommandContext('记下来',getActiveThread(thread,'bot','user',at+CONTEXT_TTL_MS+1),at+CONTEXT_TTL_MS+1,'baby-a').milestoneGroundedText,null);
 });

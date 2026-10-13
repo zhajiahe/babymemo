@@ -23,7 +23,7 @@ export function explicitDay(text,now,tz){
  if(typeof text!=='string')return null;
  const exact=text.match(/(?:^|[^\d])((?:19|20)\d{2})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/);
  if(exact){const day=[exact[1],exact[2].padStart(2,'0'),exact[3].padStart(2,'0')].join('-');return validDay(day)?day:null}
- for(const [mark,offset] of [['前天',-2],['昨天',-1],['昨日',-1],['今天',0],['今日',0]]){
+ for(const [mark,offset] of [['前天',-2],['昨天',-1],['昨日',-1],['昨晚',-1],['昨夜',-1],['今天',0],['今日',0]]){
   if(text.includes(mark))return relativeDay(offset,now,tz);
  }
  // Numeric dotted dates require an explicit day suffix to avoid treating
