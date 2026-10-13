@@ -70,7 +70,7 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   const detail=await context.request.get(base+'/api/media/'+mediaId,{headers:requestHeaders});const previous=await detail.json();
   const external=await context.request.patch(base+'/api/media/'+mediaId,{headers:requestHeaders,data:{babyId,day:'2023-07-09',expectedUpdatedAt:previous.updated_at}});assert.equal(external.status(),200);
   await dialog.getByRole('button',{name:'保存信息',exact:true}).click();await dialog.getByText('记录已被其他设备修改。请重新载入后核对并编辑。',{exact:true}).waitFor();
-  assert.equal(await dialog.getByLabel('拍摄日期',{exact:true}).inputValue(),'2023-07-07');page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'核对服务器版本（保留日期草稿）',exact:true}).click();await dialog.getByRole('button',{name:'核对服务器版本（保留日期草稿）',exact:true}).waitFor({state:'hidden'});
+  assert.equal(await dialog.getByLabel('拍摄日期',{exact:true}).inputValue(),'2023-07-07');page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'核对服务器版本（保留草稿）',exact:true}).click();await dialog.getByRole('button',{name:'核对服务器版本（保留草稿）',exact:true}).waitFor({state:'hidden'});
   await dialog.getByRole('button',{name:'保存信息',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.media-viewer-header strong')?.textContent==='2023-07-07');
   await dialog.getByLabel('拍摄日期',{exact:true}).fill('2023-07-08');await dialog.getByRole('button',{name:'保存信息',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.media-viewer-header strong')?.textContent==='2023-07-08');await dialog.getByRole('button',{name:'关闭预览',exact:true}).click();
  });
