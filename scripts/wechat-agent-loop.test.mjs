@@ -80,3 +80,12 @@ test('duplicate tool-call ids are invalid and never executed',async()=>{
 test('default budgets remain small enough for a Cloudflare alarm run',()=> {
  assert.ok(DEFAULT_AGENT_LIMITS.rounds<=4);assert.ok(DEFAULT_AGENT_LIMITS.tools<=8);
 });
+
+test('rejected mutating tool halts remaining calls and future rounds',async()=>{
+ let executed=0,completions=0;
+ const r=await runWechatAgentLoop({...args,
+  complete:async()=>{completions++;return reply(call('first','delete_growth'),call('second','create_growth'))},
+  execute:async()=>{executed++;return {content:'目标不唯一，未删除',halt:true}}});
+ assert.equal(executed,1);assert.equal(completions,1);
+ assert.match(r,/未删除/);
+});
