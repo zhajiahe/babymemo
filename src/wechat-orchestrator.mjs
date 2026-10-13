@@ -177,7 +177,7 @@ export async function quickCommand(env,baby,text,thread,at=Date.now()){
   if(reply.startsWith('已撤销'))thread.lastOperation=null;
   return reply;
  }
- if(thread&&!thread.pending&&pendingActionFromText(text)&&!/\d+(?:\.\d+)?\s*(?:kg|公斤|斤|cm|厘米|g|克)/i.test(text)){
+ if(thread&&!thread.pending&&pendingActionFromText(text)==='create_growth'&&!/\d+(?:\.\d+)?\s*(?:kg|公斤|斤|cm|厘米|g|克)/i.test(text)){
   setPending(thread,baby.id,pendingActionFromText(text),text,{},at);
   return '需要补充具体数值、单位和日期。你可以继续发“10.5 公斤，昨天”。';
  }

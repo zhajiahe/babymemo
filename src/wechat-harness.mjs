@@ -5,8 +5,9 @@ const day={type:'string',description:'真实公历日期 YYYY-MM-DD'};
 const number=(unit,max)=>({type:'number',description:unit+'（必须是用户明确给出的数值）',exclusiveMinimum:0,maximum:max});
 const selector={id:{type:'string',description:'查询结果中的记录编号，至少前 8 位'},day:{type:'string',description:'唯一匹配记录的日期 YYYY-MM-DD；同日多条时需要记录编号'}};
 const tool=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
-import {guardAction,validDay,explicitDay,dayInZone} from './wechat-policy.mjs';
+import {guardAction,validDay,explicitDay,dayInZone,newDayGrounded,groundingOfDate} from './wechat-policy.mjs';
 import {ageOnDay} from './wechat-answer.mjs';
+import {retentionCutoff} from './media-retention.mjs';
 import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
 export const wechatTools=[
  tool('get_runtime_context','读取消息发出时的可信时间、宝宝时区和目标宝宝；只有需要消歧时才调用'),
@@ -49,23 +50,7 @@ const listLine=(kind,r)=>{
  return short(r.id)+' · '+r.day+' · '+bits.filter(Boolean).join('，');
 };
 function groundedTarget(args,text,baby,at=Date.now()){
- if(typeof text!=='string')return false;
- if(args.id!==undefined)return typeof args.id==='string'&&text.toLowerCase().includes(args.id.slice(0,8).toLowerCase());
- if(!validDate(args.day))return false;
- const [year,month,day]=args.day.split('-').map(Number);
- const full=new RegExp(year+'\\s*[-/年.]\\s*0?'+month+'\\s*[-/月.]\\s*0?'+day+'\\s*日?');
- const partial=new RegExp('(?:^|\\D)0?'+month+'\\s*月\\s*0?'+day+'\\s*日?');
- if(full.test(text)||partial.test(text)||text.includes(args.day))return true;
- const tz=baby.time_zone||'Asia/Shanghai';
- let current;
- current=dayInZone(at,tz)
- const dt=new Date(current+'T00:00:00Z');
- for(const [expression,offset] of [['今天',0],['今日',0],['昨天',-1],['昨日',-1],['前天',-2]]){
-  if(!text.includes(expression))continue;
-  const date=new Date(dt.getTime()+offset*86400000).toISOString().slice(0,10);
-  if(date===args.day)return true;
- }
- return false;
+ return groundingOfDate(args,text,baby.time_zone||'Asia/Shanghai',at);
 }
 async function findTarget(env,babyId,kind,args,deleted=false){
  const table=tableForKind[kind];
@@ -130,7 +115,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
     messageLocalTime:parts,timeZone:zone,targetBaby:baby?.name||null});
   }
   if(action==='list_babies'){
-   const r=await env.DB.prepare('SELECT name,birthday FROM babies ORDER BY created_at LIMIT 30').all();
+   const r=await env.DB.prepare('SELECT name,birthday FROM babies WHERE archived_at IS NULL ORDER BY created_at LIMIT 30').all();
    return '家庭宝宝：\n'+r.results.map(x=>x.name+'（'+x.birthday+'）').join('\n');
   }
   if(!baby)return '请先在 BabyMemo 中建立宝宝档案';
@@ -174,6 +159,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    return '已保存 '+baby.name+' 的成长测量：'+(found?listLine('growth',found):args.day+'（'+short(id)+'）');
   }
   if(action==='create_milestone'){
+   const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    if(!validDate(args.day))throw Error('请给出有效日期');
    const title=cleanText(args.title,120);
    if(!title||typeof args.title!=='string'||args.title.length>120)throw Error('请提供 120 字以内的事件标题');
@@ -186,7 +172,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
   }
   for(const kind of ['growth','milestones','media']){
    if(action==='update_'+(kind==='milestones'?'milestone':kind)){
-    if(!/修改|更正|更改|更新|改成|改为|改一下|设为|标记/.test(originalText))return '请明确说明修改操作';
+    if(!/修改|更正|更改|更新|改成|改为|改到|改至|改一下|设为|标记/.test(originalText))return '请明确说明修改操作';
     if(args.id===undefined&&args.day===undefined)return '请指定记录日期或编号，避免改错记录';
     if(!groundedTarget(args,originalText,baby,at))return '请在消息中明确指出要修改的日期或记录编号，避免改错记录';
     const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
@@ -259,7 +245,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    const batch=options.thread?.lastMedia;
    if(!batch||batch.babyId!==baby.id||batch.expiresAt<=at||!Array.isArray(batch.ids))return '没有可确认的最近照片批次';
    if(!/照片|图片|视频|这几张|刚才/.test(originalText)||!validDay(args.newDay)||
-      explicitDay(originalText,at,baby.time_zone)!==args.newDay)return '请明确指定刚发送的照片和新日期';
+      !newDayGrounded(args.newDay,originalText,at,baby.time_zone))return '请明确指定刚发送的照片和新日期';
    const statements=[],opIds=[];
    for(let i=0;i<Math.min(4,batch.ids.length);i++){
     const id=batch.ids[i];
@@ -288,7 +274,9 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    if(!groundedTarget(args,originalText,baby,at))return '请在消息中写明恢复记录的日期或编号';
    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const row=await findTarget(env,baby.id,args.kind,args,true);
-   const stmt=env.DB.prepare('UPDATE '+tableForKind[args.kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL').bind(row.id,baby.id);
+   if(row.deleted_at<retentionCutoff()||args.kind==='media'&&row.purge_token)return '恢复期限已过或文件正在清理，未恢复';
+   const stmt=env.DB.prepare('UPDATE '+tableForKind[args.kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL AND deleted_at>=?'+(args.kind==='media'?' AND purge_token IS NULL':''))
+    .bind(row.id,baby.id,retentionCutoff());
    if(typeof env.DB.batch!=='function'){
     const changed=await stmt.run();return changed.meta.changes?'已恢复 '+labelForKind[args.kind]+'（编号 '+short(row.id)+'）。':'该记录无法恢复';
    }

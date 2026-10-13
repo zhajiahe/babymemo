@@ -1,0 +1,9 @@
+export const OFFLINE_DATABASE:string;
+export const PRIVATE_MEDIA_CACHE:string;
+export function openDeviceDatabase():Promise<IDBDatabase>;
+export function deviceRead<T=any>(store:string,id:string):Promise<T|undefined>;
+export function deviceList<T=any>(store:string):Promise<T[]>;
+export function deviceWrite(store:string,value:unknown):Promise<void>;
+export function deviceRemove(store:string,id:string):Promise<void>;
+export function deviceClear(stores?:string[]):Promise<void>;
+export function projectMutation(resource:any,job:any):any;

@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
-import type { Env, Owner } from './types';
+import type { Env, Owner,ApplicationEnv } from './types';
 import {validCalendarDay,validTimeZone} from './validation';
 import { constantEqual, passwordHash, randomHex, SESSION_LIFETIME_MS, SESSION_MAX_AGE_SECONDS, SESSION_RENEW_AFTER_MS, sessionExpiry, signSession } from './crypto';
-type Ctx=Context<{Bindings:Env}>;
+type Ctx=Context<ApplicationEnv>;
 export async function owner(env:Env):Promise<Owner|null> {
   return (await env.DB.prepare('SELECT * FROM owner WHERE id=1').first<Owner>())??null;
 }

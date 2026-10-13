@@ -74,7 +74,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
  const command=text.trim();
  if(!command)return wechatHelp;
  if(/^(?:帮助|菜单|help)$/i.test(command))return wechatHelp;
- const babies=await env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all<Baby>();
+ const babies=await env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes FROM babies WHERE archived_at IS NULL ORDER BY created_at').all<Baby>();
  if(!babies.results.length)return '请先在 BabyMemo 中添加宝宝资料';
  if(/^(宝宝列表|列出宝宝|有哪些宝宝|查看所有宝宝)[？?]?$/i.test(command))
   return runWechatTool(env,null,'list_babies',{},messageId,command);
@@ -141,7 +141,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
 // The photo itself has no baby name. Use the caption when present, otherwise
 // an explicitly configured default baby; never silently choose first of many.
 async function resolveWechatMediaBaby(env:Env,raw:Json,thread:any=null,targetBabyId?:string):Promise<Baby|string>{
-  const babies=await env.DB.prepare('SELECT id,name,birthday,time_zone FROM babies ORDER BY created_at').all<Baby>();
+  const babies=await env.DB.prepare('SELECT id,name,birthday,time_zone FROM babies WHERE archived_at IS NULL ORDER BY created_at').all<Baby>();
   if(!babies.results.length)return '请先在 BabyMemo 网页创建宝宝档案，再发送照片。';
   if(targetBabyId)return babies.results.find(b=>b.id===targetBabyId)||'目标宝宝已不存在，照片或视频未保存。';
   const caption=wechatMessageText(raw);

@@ -60,8 +60,8 @@ async function backup(dir){
   const media=query(SOURCE_DB,'SELECT id,object_key,thumbnail_ready'+thumbField+' FROM media');
   let keys=media.flatMap(row=>[row.object_key,...(row.thumbnail_object_key?[row.thumbnail_object_key]:row.thumbnail_ready?['private/thumbnails/'+row.id+'.jpg']:[])]);
   const babyFields=query(SOURCE_DB,'PRAGMA table_info(babies)').map(x=>x.name);
-  if(babyFields.includes('avatar_object_key')){
-    keys.push(...query(SOURCE_DB,'SELECT avatar_object_key FROM babies WHERE avatar_object_key IS NOT NULL').map(x=>x.avatar_object_key));
+  for(const column of ['avatar_key','avatar_object_key'])if(babyFields.includes(column)){
+    keys.push(...query(SOURCE_DB,'SELECT '+column+' AS object_key FROM babies WHERE '+column+" IS NOT NULL AND "+column+"<>''").map(x=>x.object_key));
   }
   keys=[...new Set(keys)];
   const objects=[];

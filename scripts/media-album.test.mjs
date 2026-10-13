@@ -23,7 +23,7 @@ test('media metadata route is behind authentication and checks input', () => {
   assert.match(worker, /app\.patch\('\/api\/media\/:id'/);
   assert.match(worker, /typeof v\.title!=='string'/);
   assert.match(worker, /!dayOk\(v\.day\)/);
-  assert.match(worker, /UPDATE media SET title=\?,day=\? WHERE id=\?/);
+  assert.match(worker, /UPDATE media SET title=\?,day=\?,updated_at=\? WHERE id=\?/);
   assert.match(worker, /mediaDownloadHeader\(row\.title,row\.mime\)/);
   assert.match(worker, /c\.req\.query\('download'\)==='1'/);
 });
@@ -34,7 +34,7 @@ test('album preview uses native modal and private same-origin media URLs', () =>
   assert.match(viewer, /dialog\.showModal\(\)/);
   assert.match(viewer, /onClose=\{onClose\}/);
   assert.match(viewer, /src \+ '\?download=1'/);
-  assert.match(viewer, /onSave\(\{ day \}\)/);
+  assert.match(viewer, /onSave\(\{day,requestId,expectedUpdatedAt:version\}\)/);
   assert.doesNotMatch(viewer, /<span>名称<\/span>/);
   assert.doesNotMatch(app, /thumbnail-backfill/);
 });

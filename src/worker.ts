@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { Env, Baby } from './types';
+import type { Env, Baby,ApplicationEnv } from './types';
 import {validCalendarDay,validTimeZone} from './validation';
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import { applySession, authenticated, clearSession, login, owner, sameOrigin, setup } from './auth';
@@ -12,9 +12,13 @@ import { finalizeUpload, FinalizeMismatchError } from './upload-finalize.mjs';
 import { cleanupExpiredUploads } from './upload-cleanup.mjs';
 import {mediaTiming} from './media-timing.mjs';
 import {canDirectUpload} from './media-transfer.mjs';
+import {webManagement} from './web-management';
+import {familySnapshot,completeFamilyExport,familyExportManifest} from './family-export';
+import {previousMutation,commitMutation} from './web-mutations';
+import {purgeDeletedMedia,retentionCutoff} from './media-retention.mjs';
 export { WechatSession } from './wechat';
 
-const app = new Hono<{Bindings:Env}>();
+const app = new Hono<ApplicationEnv>();
 const fail = (c: any, status:number, error:string) => c.json({error},status);
 const json = async (req: Request, limit=16_384):Promise<any> => {
   if(Number(req.headers.get('content-length'))>limit)throw Error('BODY_TOO_LARGE');
@@ -29,8 +33,8 @@ const now=()=>new Date().toISOString();
 const allowedMime=(s:string)=>/^(image\/(jpeg|png|webp|heic|heif|gif)|video\/(mp4|quicktime|webm))$/.test(s);
 const thumbKey=(id:string)=>'private/thumbnails/'+id+'.jpg';
 const uploadFingerprintOk=(s:unknown):s is string=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
-async function babyExists(env:Env,id:string):Promise<boolean>{return !!await env.DB.prepare('SELECT id FROM babies WHERE id=?').bind(id).first();}
-async function currentBaby(env:Env):Promise<Baby|null>{return (await env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes FROM babies ORDER BY created_at LIMIT 1').first<Baby>())??null;}
+async function babyExists(env:Env,id:string):Promise<boolean>{return !!await env.DB.prepare('SELECT id FROM babies WHERE id=? AND archived_at IS NULL').bind(id).first();}
+async function currentBaby(env:Env):Promise<Baby|null>{return (await env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes,avatar_key,updated_at FROM babies WHERE archived_at IS NULL ORDER BY created_at LIMIT 1').first<Baby>())??null;}
 app.use('/api/*',async(c,next)=>{
   c.header('Cache-Control','private, no-store');
   c.header('X-Content-Type-Options','nosniff');
@@ -38,6 +42,9 @@ app.use('/api/*',async(c,next)=>{
   if(['POST','PATCH','PUT','DELETE'].includes(c.req.method)&&!sameOrigin(c))return fail(c,403,'ORIGIN_REJECTED');
   const path=c.req.path;
   if(!['/api/health','/api/bootstrap/status','/api/bootstrap','/api/login'].includes(path)&&!await authenticated(c))return fail(c,401,'LOGIN_REQUIRED');
+  if(['POST','PATCH','DELETE'].includes(c.req.method)){
+   try{const previous=await previousMutation(c);if(previous)return c.json(previous)}catch(e){return fail(c,409,e instanceof Error?e.message:'REQUEST_ID_CONFLICT')}
+  }
   await next();
 });
 app.get('/api/health',async c=>{
@@ -70,7 +77,7 @@ app.post('/api/logout',c=>{clearSession(c);return c.json({ok:true});});
 app.get('/api/state',async c=>{
   const [user,babies,growth,milestones,media,byBaby]=await Promise.all([
     owner(c.env),
-    c.env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all(),
+    c.env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes,avatar_key,updated_at FROM babies WHERE archived_at IS NULL ORDER BY created_at').all(),
     c.env.DB.prepare('SELECT count(*) AS count FROM growth_records WHERE deleted_at IS NULL').first<{count:number}>(),
     c.env.DB.prepare('SELECT count(*) AS count FROM milestones WHERE deleted_at IS NULL').first<{count:number}>(),
     c.env.DB.prepare('SELECT count(*) AS count FROM media WHERE deleted_at IS NULL').first<{count:number}>(),
@@ -92,26 +99,41 @@ app.get('/api/state',async c=>{
 app.post('/api/babies',async c=>{
   try {
     const v=await json(c.req.raw);if(typeof v.name!=='string'||!v.name.trim()||v.name.length>80||!dayOk(v.birthday)||!validBirthTime(v.birthTime??'')||!validTimeZone(v.timeZone||'Asia/Shanghai')||!['boy','girl','other'].includes(v.gender))return fail(c,400,'INVALID_BABY');
-    const id=crypto.randomUUID();
-    await c.env.DB.prepare('INSERT INTO babies(id,name,birthday,birth_time,gender,time_zone,allergies,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,v.name.trim(),v.birthday,v.birthTime??'',v.gender,String(v.timeZone||'Asia/Shanghai'),String(v.allergies||'').slice(0,2000),'',now()).run();
-    return c.json({id},201);
+    const id=v.requestId||crypto.randomUUID();
+    if(!/^[a-f0-9-]{36}$/i.test(id))return fail(c,400,'INVALID_REQUEST_ID');
+    await commitMutation(c,c.env.DB.prepare('INSERT INTO babies(id,name,birthday,birth_time,gender,time_zone,allergies,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,v.name.trim(),v.birthday,v.birthTime??'',v.gender,String(v.timeZone||'Asia/Shanghai'),String(v.allergies||'').slice(0,2000),String(v.notes||'').slice(0,4000),now()),{id,updated_at:''});
+    return c.json({id,updated_at:''},201);
   }catch{return fail(c,400,'INVALID_INPUT');}
 });
 app.patch('/api/babies/:id',async c=>{
-  const id=c.req.param('id');try{
-    const v=await json(c.req.raw);
-    if(typeof v.name!=='string'||!v.name.trim()||v.name.length>80||!dayOk(v.birthday)||v.birthTime!==undefined&&!validBirthTime(v.birthTime))return fail(c,400,'INVALID_BABY');
-    const r=await c.env.DB.prepare('UPDATE babies SET name=?,birthday=?,birth_time=COALESCE(?,birth_time),allergies=?,notes=? WHERE id=?').bind(v.name.trim(),v.birthday,v.birthTime??null,String(v.allergies||'').slice(0,2000),String(v.notes||'').slice(0,4000),id).run();
-    return r.meta.changes?c.json({ok:true}):fail(c,404,'NOT_FOUND');
-  }catch{return fail(c,400,'INVALID_INPUT');}
+ const id=c.req.param('id');try{
+  const v=await json(c.req.raw);
+  if(typeof v.name!=='string'||!v.name.trim()||v.name.length>80||!dayOk(v.birthday)||v.birthTime!==undefined&&!validBirthTime(v.birthTime)||v.gender!==undefined&&!['boy','girl','other'].includes(v.gender)||v.timeZone!==undefined&&!validTimeZone(v.timeZone)||v.expectedUpdatedAt!==undefined&&typeof v.expectedUpdatedAt!=='string')return fail(c,400,'INVALID_BABY');
+  const existing=await c.env.DB.prepare('SELECT * FROM babies WHERE id=? AND archived_at IS NULL').bind(id).first<Baby>();
+  if(!existing)return fail(c,404,'NOT_FOUND');
+  const version=crypto.randomUUID();
+  const result=await commitMutation(c,c.env.DB.prepare('UPDATE babies SET name=?,birthday=?,birth_time=?,gender=?,time_zone=?,allergies=?,notes=?,updated_at=? WHERE id=? AND archived_at IS NULL AND updated_at=?')
+   .bind(v.name.trim(),v.birthday,v.birthTime??existing.birth_time,v.gender??existing.gender,v.timeZone??existing.time_zone,String(v.allergies??existing.allergies).slice(0,2000),String(v.notes??existing.notes).slice(0,4000),version,id,v.expectedUpdatedAt??existing.updated_at),{ok:true,updated_at:version});
+  return result?c.json({ok:true,updated_at:version}):fail(c,409,'EDIT_CONFLICT');
+ }catch{return fail(c,400,'INVALID_INPUT')}
 });
 app.get('/api/records/:kind',async c=>{
   const kind=c.req.param('kind');const table=kind==='growth'?'growth_records':kind==='milestones'?'milestones':null;
   if(!table)return fail(c,404,'NOT_FOUND');
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const page=Math.min(1000,Math.max(0,Number.parseInt(c.req.query('page')||'0',10)||0));
-  const r=await c.env.DB.prepare('SELECT * FROM '+table+' WHERE baby_id=? AND deleted_at IS NULL ORDER BY day DESC,created_at DESC LIMIT 40 OFFSET ?').bind(babyId,page*40).all();
-  return c.json({items:r.results,page,hasMore:r.results.length===40});
+  const q=(c.req.query('q')||'').trim(),start=c.req.query('startDay')||'',end=c.req.query('endDay')||'';
+  if(q.length>80||start&&!dayOk(start)||end&&!dayOk(end)||start&&end&&start>end)return fail(c,400,'INVALID_SEARCH');
+  const clauses=['baby_id=?','deleted_at IS NULL'],values:(string|number)[]=[babyId];
+  if(start){clauses.push('day>=?');values.push(start)}if(end){clauses.push('day<=?');values.push(end)}
+  if(q){clauses.push((kind==='growth'?'notes':"title||' '||description")+' LIKE ?');values.push('%'+q+'%')}
+  const r=await c.env.DB.prepare('SELECT * FROM '+table+' WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC LIMIT 40 OFFSET ?').bind(...values,page*40).all();
+  const items=r.results as Record<string,unknown>[];
+  if(kind==='milestones'&&items.length){
+   const linked=await c.env.DB.prepare('SELECT mm.milestone_id,m.id,m.day,m.title,m.mime,m.size,m.thumbnail_ready,m.updated_at FROM milestone_media mm JOIN media m ON m.id=mm.media_id WHERE mm.milestone_id IN ('+items.map(()=>'?').join(',')+') AND m.baby_id=? AND m.deleted_at IS NULL').bind(...items.map(x=>String(x.id)),babyId).all<Record<string,unknown>>();
+   for(const item of items)item.media=linked.results.filter(x=>x.milestone_id===item.id);
+  }
+  return c.json({items,page,hasMore:items.length===40});
 });
 app.get('/api/growth/history',async c=>{
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
@@ -130,37 +152,39 @@ app.post('/api/records/:kind',async c=>{
       const previous=await c.env.DB.prepare('SELECT id,baby_id FROM '+table+' WHERE client_request_id=?').bind(requestId).first<{id:string;baby_id:string}>();
       if(previous)return previous.baby_id===v.babyId?c.json({id:previous.id,alreadyExists:true}):fail(c,409,'REQUEST_ID_CONFLICT');
     }
-    const id=crypto.randomUUID(),date=now();
+    const id=requestId||crypto.randomUUID(),date=now();
     if(kind==='growth'){
       if(!validNum(v.weight,0.1,150)||!validNum(v.height,10,250)||!validNum(v.headCircumference,10,100)||[v.weight,v.height,v.headCircumference].every(x=>x===undefined||x===null))return fail(c,400,'INVALID_MEASUREMENTS');
-      await c.env.DB.prepare('INSERT OR IGNORE INTO growth_records(id,baby_id,day,weight,height,head_circumference,notes,created_at,client_request_id) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,v.day,v.weight??null,v.height??null,v.headCircumference??null,String(v.notes||'').slice(0,1500),date,requestId).run();
+      await commitMutation(c,c.env.DB.prepare('INSERT OR IGNORE INTO growth_records(id,baby_id,day,weight,height,head_circumference,notes,created_at,client_request_id) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,v.day,v.weight??null,v.height??null,v.headCircumference??null,String(v.notes||'').slice(0,1500),date,requestId),{id,updated_at:''});
     }else{
       if(typeof v.title!=='string'||!v.title.trim()||v.title.length>120)return fail(c,400,'INVALID_TITLE');
-      await c.env.DB.prepare('INSERT OR IGNORE INTO milestones(id,baby_id,day,title,description,created_at,client_request_id) VALUES(?,?,?,?,?,?,?)').bind(id,v.babyId,v.day,v.title.trim(),String(v.description||'').slice(0,3000),date,requestId).run();
+      await commitMutation(c,c.env.DB.prepare('INSERT OR IGNORE INTO milestones(id,baby_id,day,title,description,created_at,client_request_id) VALUES(?,?,?,?,?,?,?)').bind(id,v.babyId,v.day,v.title.trim(),String(v.description||'').slice(0,3000),date,requestId),{id,updated_at:''});
     }
     if(requestId){
       const saved=await c.env.DB.prepare('SELECT id,baby_id FROM '+table+' WHERE client_request_id=?').bind(requestId).first<{id:string;baby_id:string}>();
       if(!saved)return fail(c,409,'RECORD_NOT_SAVED');
       if(saved.id!==id)return saved.baby_id===v.babyId?c.json({id:saved.id,alreadyExists:true}):fail(c,409,'REQUEST_ID_CONFLICT');
     }
-    return c.json({id},201);
+    return c.json({id,updated_at:''},201);
   }catch{return fail(c,400,'INVALID_INPUT');}
 });
 app.delete('/api/records/:kind/:id',async c=>{
   const table=c.req.param('kind')==='growth'?'growth_records':c.req.param('kind')==='milestones'?'milestones':null;
   if(!table)return fail(c,404,'NOT_FOUND');
-  await c.env.DB.prepare('UPDATE '+table+' SET deleted_at=? WHERE id=? AND deleted_at IS NULL').bind(now(),c.req.param('id')).run();
+  const changes=await commitMutation(c,c.env.DB.prepare('UPDATE '+table+' SET deleted_at=? WHERE id=? AND deleted_at IS NULL').bind(now(),c.req.param('id')));
+  if(!changes)return fail(c,404,'NOT_FOUND');
   return c.json({ok:true});
 });
 app.get('/api/media',async c=>{
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const page=Math.min(1000,Math.max(0,Number.parseInt(c.req.query('page')||'0',10)||0));
-  const query=(c.req.query('q')||'').trim();
-  if(query.length>80)return fail(c,400,'SEARCH_TOO_LONG');
-   const sql='SELECT id,baby_id,day,title,mime,size,thumbnail_ready,created_at FROM media WHERE baby_id=? AND deleted_at IS NULL'+
-    (query?' AND title LIKE ?':'')+' ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?';
-  const bindings=query?[babyId,'%'+query+'%',page*36]:[babyId,page*36];
-  const rows=await c.env.DB.prepare(sql).bind(...bindings).all();
+  const query=(c.req.query('q')||'').trim(),start=c.req.query('startDay')||'',end=c.req.query('endDay')||'',type=c.req.query('type')||'';
+  if(query.length>80||start&&!dayOk(start)||end&&!dayOk(end)||start&&end&&start>end||type&&!['image','video'].includes(type))return fail(c,400,'INVALID_SEARCH');
+  const clauses=['baby_id=?','deleted_at IS NULL'],bindings:(string|number)[]=[babyId];
+  if(query){clauses.push('title LIKE ?');bindings.push('%'+query+'%')}
+  if(start){clauses.push('day>=?');bindings.push(start)}if(end){clauses.push('day<=?');bindings.push(end)}
+  if(type){clauses.push('mime LIKE ?');bindings.push(type+'/%')}
+  const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,thumbnail_ready,created_at,updated_at FROM media WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?').bind(...bindings,page*36).all();
   return c.json({items:rows.results,hasMore:rows.results.length===36});
 });
 // Enumerate missing private derivatives in bounded batches across the *entire*
@@ -259,9 +283,15 @@ app.post('/api/upload/start',async c=>{
   try{
     const v=await json(c.req.raw);
     if(typeof v.babyId!=='string'||!await babyExists(c.env,v.babyId)||!dayOk(v.day)||typeof v.mime!=='string'||!allowedMime(v.mime)||!Number.isSafeInteger(v.size)||v.size<1||v.size>209715200||v.fingerprint!==undefined&&!uploadFingerprintOk(v.fingerprint))return fail(c,400,'INVALID_MEDIA');
-    const id=crypto.randomUUID(),key='private/'+v.babyId+'/'+id;
+    const id=v.requestId||crypto.randomUUID(),key='private/'+v.babyId+'/'+id;
+    if(!/^[a-f0-9-]{36}$/i.test(id))return fail(c,400,'INVALID_REQUEST_ID');
+    const recorded=await c.env.DB.prepare('SELECT baby_id,size,mime FROM media WHERE id=?').bind(id).first<{baby_id:string;size:number;mime:string}>();
+    if(recorded)return recorded.baby_id===v.babyId&&recorded.size===v.size&&recorded.mime===v.mime?c.json({id,completed:true}):fail(c,409,'UPLOAD_ID_CONFLICT');
+    const pending=await c.env.DB.prepare('SELECT baby_id,size,mime,fingerprint FROM media_uploads WHERE id=?').bind(id).first<{baby_id:string;size:number;mime:string;fingerprint:string}>();
+    if(pending)return pending.baby_id===v.babyId&&pending.size===v.size&&pending.mime===v.mime&&pending.fingerprint===(v.fingerprint||'')?c.json({id,chunkSize:8388608}):fail(c,409,'UPLOAD_ID_CONFLICT');
     const handle=await c.env.MEDIA.createMultipartUpload(key,{httpMetadata:{contentType:v.mime}});
-    await c.env.DB.prepare('INSERT INTO media_uploads(id,baby_id,object_key,upload_id,day,title,mime,size,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,key,handle.uploadId,v.day,String(v.title||'').slice(0,120),v.mime,v.size,v.fingerprint||'',now(),now()).run();
+    try{await c.env.DB.prepare('INSERT INTO media_uploads(id,baby_id,object_key,upload_id,day,title,mime,size,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(id,v.babyId,key,handle.uploadId,v.day,String(v.title||'').slice(0,120),v.mime,v.size,v.fingerprint||'',now(),now()).run()}
+    catch(e){await handle.abort().catch(()=>{});throw e}
     return c.json({id,chunkSize:8388608},201);
   }catch{return fail(c,400,'UPLOAD_START_FAILED');}
 });
@@ -382,14 +412,17 @@ app.patch('/api/media/:id',async c=>{
   if(!value||typeof value!=='object')return fail(c,400,'INVALID_MEDIA_METADATA');
   const v=value as Record<string,unknown>;
   if(!dayOk(v.day)||(v.title!==undefined&&(typeof v.title!=='string'||!v.title.trim()||v.title.trim().length>120)))return fail(c,400,'INVALID_MEDIA_METADATA');
-  const record=await c.env.DB.prepare('SELECT id FROM media WHERE id=? AND deleted_at IS NULL').bind(c.req.param('id')).first();
-  if(!record)return fail(c,404,'NOT_FOUND');
+  const record=await c.env.DB.prepare('SELECT id,baby_id,updated_at FROM media WHERE id=? AND deleted_at IS NULL AND purge_token IS NULL').bind(c.req.param('id')).first<{id:string;baby_id:string;updated_at:string}>();
+  if(!record||v.babyId!==undefined&&v.babyId!==record.baby_id)return fail(c,404,'NOT_FOUND');
+  const version=crypto.randomUUID();
   if(v.title!==undefined){
-    await c.env.DB.prepare('UPDATE media SET title=?,day=? WHERE id=? AND deleted_at IS NULL').bind(v.title.trim(),v.day,c.req.param('id')).run();
+    const changes=await commitMutation(c,c.env.DB.prepare('UPDATE media SET title=?,day=?,updated_at=? WHERE id=? AND deleted_at IS NULL AND updated_at=?').bind(v.title.trim(),v.day,version,c.req.param('id'),v.expectedUpdatedAt??record.updated_at),{ok:true,updated_at:version});
+    if(!changes)return fail(c,409,'EDIT_CONFLICT');
   }else{
-    await c.env.DB.prepare('UPDATE media SET day=? WHERE id=? AND deleted_at IS NULL').bind(v.day,c.req.param('id')).run();
+    const changes=await commitMutation(c,c.env.DB.prepare('UPDATE media SET day=?,updated_at=? WHERE id=? AND deleted_at IS NULL AND updated_at=?').bind(v.day,version,c.req.param('id'),v.expectedUpdatedAt??record.updated_at),{ok:true,updated_at:version});
+    if(!changes)return fail(c,409,'EDIT_CONFLICT');
   }
-  return c.json({ok:true});
+  return c.json({ok:true,updated_at:version});
 });
 app.get('/api/media/:id/content',async c=>{
   const row=await c.env.DB.prepare('SELECT object_key,mime,title FROM media WHERE id=? AND deleted_at IS NULL').bind(c.req.param('id')).first<{object_key:string;mime:string;title:string}>();
@@ -417,8 +450,8 @@ app.get('/api/media/:id/content',async c=>{
   return new Response(obj.body,{headers});
 });
 app.delete('/api/media/:id',async c=>{
-  const result=await c.env.DB.prepare('UPDATE media SET deleted_at=? WHERE id=? AND deleted_at IS NULL').bind(now(),c.req.param('id')).run();
-  return result.meta.changes?c.json({ok:true,undoable:true}):fail(c,404,'NOT_FOUND');
+  const result=await commitMutation(c,c.env.DB.prepare('UPDATE media SET deleted_at=? WHERE id=? AND deleted_at IS NULL AND purge_token IS NULL').bind(now(),c.req.param('id')));
+  return result?c.json({ok:true,undoable:true}):fail(c,404,'NOT_FOUND');
 });
 // Recoverable deletion: content remains private and is purged after 30 days.
 const trashTables:{[kind:string]:string}={growth:'growth_records',milestones:'milestones',media:'media'};
@@ -432,18 +465,23 @@ app.get('/api/trash',async c=>{
 });
 app.post('/api/trash/:kind/:id/restore',async c=>{
   const table=trashTables[c.req.param('kind')];if(!table)return fail(c,404,'NOT_FOUND');
-  const result=await c.env.DB.prepare('UPDATE '+table+' SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL').bind(c.req.param('id')).run();
-  return result.meta.changes?c.json({ok:true}):fail(c,404,'NOT_FOUND');
+  const result=await commitMutation(c,c.env.DB.prepare('UPDATE '+table+' SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL AND deleted_at>=?'+(table==='media'?' AND purge_token IS NULL':'')).bind(c.req.param('id'),retentionCutoff()));
+  return result?c.json({ok:true}):fail(c,409,'RESTORE_EXPIRED_OR_UNAVAILABLE');
 });
-app.get('/api/export/records',async c=>{
-  const [babies,growth,milestones,media]=await Promise.all([
-    c.env.DB.prepare('SELECT id,name,birthday,gender,time_zone,allergies,notes,created_at FROM babies').all(),
-    c.env.DB.prepare('SELECT * FROM growth_records').all(),
-    c.env.DB.prepare('SELECT * FROM milestones').all(),
-    c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,created_at,deleted_at,favorite FROM media').all()
-  ]);
-  return c.json({schema:'babymemo-family-export-v1',exportedAt:now(),babies:babies.results,growth:growth.results,milestones:milestones.results,media:media.results,
-    note:'Metadata export only. Original media require authenticated downloads or operator R2 backup; this file alone is not a full disaster-recovery backup.'});
+app.get('/api/export/records',async c=>c.json({...await familySnapshot(c.env),note:'Metadata only. Use /api/export/full for originals, avatars and existing thumbnails.'}));
+app.get('/api/export/manifest',async c=>c.json(await familyExportManifest(c.env)));
+app.get('/api/export/file',async c=>{
+ const id=c.req.query('id'),kind=c.req.query('kind');if(!id||!['avatar','original','thumbnail'].includes(kind||''))return fail(c,400,'INVALID_EXPORT_FILE');
+ let key:string|undefined;
+ if(kind==='avatar'){const baby=await c.env.DB.prepare('SELECT avatar_key FROM babies WHERE id=?').bind(id).first<{avatar_key:string}>();key=baby?.avatar_key}
+ else{const media=await c.env.DB.prepare('SELECT object_key,thumbnail_ready FROM media WHERE id=? AND purge_token IS NULL').bind(id).first<{object_key:string;thumbnail_ready:number}>();if(media)key=kind==='original'?media.object_key:media.thumbnail_ready?thumbKey(id):undefined}
+ if(!key)return fail(c,404,'EXPORT_OBJECT_UNAVAILABLE');
+ const object=await c.env.MEDIA.get(key);if(!object)return fail(c,404,'EXPORT_OBJECT_UNAVAILABLE');
+ return new Response(object.body,{headers:{'Content-Type':object.httpMetadata?.contentType||'application/octet-stream','Content-Length':String(object.size),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
+});
+app.get('/api/export/full',async c=>{
+ try{return new Response(await completeFamilyExport(c.env),{headers:{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="babymemo-family-'+now().slice(0,10)+'.zip"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}})}
+ catch{return fail(c,409,'EXPORT_OBJECT_UNAVAILABLE')}
 });
 app.post('/api/settings/password',async c=>{
   try{
@@ -578,6 +616,7 @@ app.post('/api/settings/wechat/default-baby',async c=>{
     return c.json({ok:true,defaultBabyId:v.babyId});
   }catch{return fail(c,400,'INVALID_BABY')}
 });
+app.route('/api',webManagement);
 app.onError((e,c)=>{
   console.error(JSON.stringify({level:'error',code:'UNHANDLED_REQUEST',path:c.req.path})); 
   return fail(c,500,'INTERNAL_ERROR');
@@ -605,11 +644,7 @@ export default {
 // Deletion is reversible for 30 days. Only tombstoned originals may be physically removed.
 async function purgeDeleted(env:Env):Promise<void>{
   const cutoff=new Date(Date.now()-30*86400000).toISOString();
-  const expired=await env.DB.prepare('SELECT id,object_key FROM media WHERE deleted_at IS NOT NULL AND deleted_at<? ORDER BY deleted_at LIMIT 30').bind(cutoff).all<{id:string;object_key:string}>();
-  for(const row of expired.results){
-    await env.MEDIA.delete([row.object_key,thumbKey(row.id)]);
-    await env.DB.prepare('DELETE FROM media WHERE id=? AND deleted_at<?').bind(row.id,cutoff).run();
-  }
+  await purgeDeletedMedia(env);
   for(const table of ['growth_records','milestones']){
     await env.DB.prepare('DELETE FROM '+table+' WHERE deleted_at IS NOT NULL AND deleted_at<?').bind(cutoff).run();
   }

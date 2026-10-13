@@ -34,14 +34,19 @@ test('server endpoints preserve private access and original media',()=>{
  assert.match(worker,/R2|c\.env\.MEDIA\.put/);
  assert.match(worker,/UPDATE media SET deleted_at/);
  assert.match(worker,/async function purgeDeleted/);
- assert.match(worker,/env\.MEDIA\.delete\(\[row\.object_key,thumbKey\(row\.id\)\]\)/);
+ assert.match(worker,/await purgeDeletedMedia\(env\)/);
+ const retention=readFileSync(new URL('../src/media-retention.mjs',import.meta.url),'utf8');
+ assert.match(retention,/UPDATE media SET purge_token=COALESCE/);
+ assert.match(retention,/env\.MEDIA\.delete\(\[claimed\.object_key/);
+ assert.match(retention,/DELETE FROM media WHERE id=\? AND purge_token=\?/);
  assert.match(worker,/app\.get\('\/api\/media\/:id\/content'/);
  assert.match(migration,/ALTER TABLE media_uploads ADD COLUMN fingerprint/);
 });
 test('frontend reselects files and does not automatically cancel recoverable sessions',()=>{
  assert.match(ui,/pickMatchingUpload\(\[item\]/);
  assert.match(ui,/!reserved\.has\(item\.id\)/);
- assert.match(ui,/const queue=await refreshPending\(\)/);
+ assert.match(ui,/const queue=navigator\.onLine\?await refreshPending\(\):\[\]/);
+ assert.match(ui,/queueMedia\(file,resumable/);
  assert.match(ui,/remainingPartNumbers\(total/);
  assert.match(ui,/重新选择同一文件/);
  assert.match(ui,/async function discard\(id:string\)/);

@@ -114,10 +114,21 @@ export function newDayGrounded(newDay,text,at,tz){
 }
 export function guardAction(action,args,text,baby,at=Date.now()){
  if(!MUTATING_ACTIONS.has(action))return null;
+ // Queries are not write permission, even if they repeat a date and value.
+ const clauses=String(text||'').split(/[，,。；;\n]|(?:然后|并且|并|再)/);
+ const readOnly=/(?:查询|查看|查一下|看看|列出|有没有|是否|多少|几次|哪天|什么时间|如何|怎么|能否|能不能|[？?])/.test(text);
+ const explicitWrite=clauses.some(s=>!/(?:查询|查看|有没有|是否|多少|几次|哪天|如何|怎么|能否|能不能|[？?])/.test(s)&&!/^\s*(?:(?:请|帮我|先)\s*)*(?:查|查看|看看|列出|如何|怎么|能否|能不能|可不可以)/.test(s)&&!/(?:有没有|是否|能否|能不能|如何|怎么|可以|不要|别|不需要).{0,16}(?:记录|保存|新增|添加|删除|修改)/.test(s)&&
+  /(?:^(?:请|帮我)?\s*记录|帮我记|记一下|记下|记下来|记录一下|记录[:：]|新增|添加|保存|创建|删除|删掉|修改|更正|更改|更新|改成|改为|改到|改至|恢复|还原|设为)/.test(s.trim()));
+ if(readOnly&&!explicitWrite)return '这是一条查询消息，未授权修改记录。';
  if(isNegativeOrConditional(text,action))return '这句话包含否定或条件操作，尚未修改任何数据。请明确说明需要执行的动作。';
  if((action==='create_growth'||action==='create_milestone')&&args?.day){
   const target=explicitDay(text,at,baby?.time_zone||'Asia/Shanghai');
-  if(target!==args.day)return '记录日期缺乏原消息的明确依据，请补充“今天、昨天”或具体日期。';
+  const dated=String(text).split(/[，,。；;\n]|(?=前天|昨天|昨日|昨晚|今天|今日)/).map(part=>({part,day:explicitDay(part,at,baby?.time_zone||'Asia/Shanghai')})).filter(x=>x.day);
+  const multiple=new Set(dated.map(x=>x.day)).size>1;
+  const supported=action==='create_growth'&&multiple
+   ? ['weight','height','headCircumference'].filter(key=>args[key]!==undefined).every(key=>dated.some(x=>x.day===args.day&&measurementGrounded({[key]:args[key]},x.part)))
+   :target===args.day;
+  if(!supported)return '记录日期缺乏原消息的明确依据，请补充“今天、昨天”或具体日期。';
  }
  if((action==='create_growth'||action==='update_growth')&&!measurementGrounded(args,text))
   return '测量数值或单位与原消息不一致，请明确单位和数值后再记录。';
