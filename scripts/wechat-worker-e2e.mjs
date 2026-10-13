@@ -110,7 +110,7 @@ try{
   assert.equal(r.reply,'测试宝宝现在两岁九个月啦，生日是2024年1月1日。');
   assert.match(r.modelMessages[1].at(-1).content,/生日 2024-01-01/);
   assert.match(r.modelMessages[1].at(-1).content,/截至消息当天年龄/);
-  assert.match(r.modelMessages[0][0].content,/涉及家庭数据时先查工具/);
+  assert.match(r.modelMessages[0][0].content,/对话历史自主理解/);
   assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
  });
  await step('real age query: empty/generic first final triggers tool-free synthesis, not the complete profile',async()=>{
