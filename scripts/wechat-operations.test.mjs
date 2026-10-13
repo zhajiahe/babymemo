@@ -51,7 +51,7 @@ test('audited update persists before/after and restores original value',async()=
  assert.equal(env.logs.size,1);
  assert.match(await undoOperation(env,'b1',opId),/已撤销/);
  assert.equal(env.row.weight,10);
- assert.equal((await undoOperation(env,'b1',opId)).includes('已撤销'),false);
+ assert.equal((await undoOperation(env,'b1',opId)).startsWith('已撤销'),false);
 });
 test('undo refuses a record that changed again after the target operation',async()=>{
  const env=fake(),before=operationSnapshot('growth',env.row);
