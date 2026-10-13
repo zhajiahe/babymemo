@@ -26,6 +26,13 @@ export function explicitDay(text,now,tz){
  for(const [mark,offset] of [['前天',-2],['昨天',-1],['昨日',-1],['今天',0],['今日',0]]){
   if(text.includes(mark))return relativeDay(offset,now,tz);
  }
+ // Numeric dotted dates require an explicit day suffix to avoid treating
+ // measurements such as 13.7kg as "13 July".
+ const dotted=text.match(/(?:^|[^\\d])(\\d{1,2})\\s*[./]\\s*(\\d{1,2})\\s*(?:日|号)/);
+ if(dotted){
+  const year=dayInZone(now,tz).slice(0,4),day=year+'-'+dotted[1].padStart(2,'0')+'-'+dotted[2].padStart(2,'0');
+  return validDay(day)?day:null;
+ }
  const short=text.match(/(?:^|[^\d])(\d{1,2})\s*月\s*(\d{1,2})\s*日?/);
  if(short){const year=dayInZone(now,tz).slice(0,4),day=year+'-'+short[1].padStart(2,'0')+'-'+short[2].padStart(2,'0');return validDay(day)?day:null}
  return null;
