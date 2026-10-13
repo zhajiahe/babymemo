@@ -18,7 +18,7 @@ const extension=(mime:string)=>({'image/jpeg':'jpg','image/png':'png','image/web
 export async function familyExportManifest(env:Env){
  const snapshot=await familySnapshot(env),files:{id:string;kind:'avatar'|'original'|'thumbnail';path:string;size?:number}[]=[];
  for(const baby of snapshot.babies)if(baby.avatar_key)files.push({id:String(baby.id),kind:'avatar',path:'avatars/'+String(baby.id)+'.jpg'});
- for(const media of snapshot.media){files.push({id:String(media.id),kind:'original',path:'media/'+String(media.baby_id)+'/'+String(media.id)+'.'+extension(String(media.mime)),size:Number(media.size)});if(media.thumbnail_ready)files.push({id:String(media.id),kind:'thumbnail',path:'thumbnails/'+String(media.id)+'.jpg'})}
+ for(const media of snapshot.media){files.push({id:String(media.id),kind:'original',path:'media/'+String(media.baby_id)+'/'+String(media.id)+'.'+extension(String(media.mime)),size:Number(media.size)});if(media.thumbnail_ready||media.thumbnail_object_key)files.push({id:String(media.id),kind:'thumbnail',path:'thumbnails/'+String(media.id)+'.jpg'})}
  return {snapshot,files};
 }
 export async function completeFamilyExport(env:Env){
@@ -27,7 +27,7 @@ export async function completeFamilyExport(env:Env){
  for(const media of snapshot.media){
   const id=String(media.id),baby=String(media.baby_id);
   objects.push({key:String(media.object_key),path:'media/'+baby+'/'+id+'.'+extension(String(media.mime)),size:Number(media.size)});
-  if(media.thumbnail_ready)objects.push({key:'private/thumbnails/'+id+'.jpg',path:'thumbnails/'+id+'.jpg',size:-1});
+  if(media.thumbnail_ready||media.thumbnail_object_key)objects.push({key:String(media.thumbnail_object_key||'private/thumbnails/'+id+'.jpg'),path:'thumbnails/'+id+'.jpg',size:-1});
  }
  // Fail before headers for missing originals. Recheck each body when opening it;
  // a mid-download failure aborts the ZIP rather than silently exporting less.
