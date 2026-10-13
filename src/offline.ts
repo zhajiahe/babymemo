@@ -48,7 +48,7 @@ async function sendJob(job:OfflineJob){
  }
  if(job.kind==='avatar')return wire(job.path,{method:'PUT',headers:{'Content-Type':'image/jpeg','X-Avatar-Id':job.id,'X-Expected-Version':job.payload.expectedUpdatedAt??''},body:job.file});
  if(job.kind==='media'){
-  const file=job.file!,p=job.payload,headers={'Content-Type':p.mime,'x-baby-id':p.babyId,'x-upload-day':p.day,'x-upload-title':encodeURIComponent(p.title)};
+  const file=job.file!,p=job.payload,headers={'Content-Type':p.mime,'x-baby-id':p.babyId,'x-upload-day':p.day,'x-upload-title':encodeURIComponent(p.title),'x-upload-description':encodeURIComponent(p.description||'')};
   if(file.size<=5*1024*1024)return wire('/api/upload/direct/'+job.id,{method:'PUT',body:file,headers});
   const session=await wire('/api/upload/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...p,size:file.size,requestId:job.id})});
   if(session.completed)return session;

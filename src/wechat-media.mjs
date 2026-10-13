@@ -248,8 +248,8 @@ export async function persistWeChatMedia(env,raw,baby,messageId,options={}){
   const captured=kind==='image'?await r2PhotoCaptureDay(env.MEDIA,objectKey,size,mime,baby.time_zone||'Asia/Shanghai'):null;
   const day=validCaptureDay(captured,baby.time_zone||'Asia/Shanghai')||localDay(raw,baby);
   const caption=raw.item_list?.filter(x=>x?.type===1&&typeof x.text_item?.text==='string')
-    .map(x=>x.text_item.text).join(' ').trim().slice(0,100);
-  const title=caption||(kind==='video'?'微信视频 ':'微信照片 ')+day;
+    .map(x=>x.text_item.text).join(' ').trim().slice(0,1000);
+  const title=caption.slice(0,120)||(kind==='video'?'微信视频 ':'微信照片 ')+day;
   let thumbReady=0;
   const thumbKey='private/thumbnails/'+id+'.jpg';
   if(await env.MEDIA.head(thumbKey))thumbReady=1;
@@ -264,8 +264,8 @@ export async function persistWeChatMedia(env,raw,baby,messageId,options={}){
    }catch{/* Thumbnail is always optional. */}
   }
   const indexStartedAt=performance.now();
-  await env.DB.prepare('INSERT OR IGNORE INTO media(id,baby_id,day,title,object_key,mime,size,created_at,thumbnail_ready,source_message_id) VALUES(?,?,?,?,?,?,?,?,?,?)')
-   .bind(id,baby.id,day,title,objectKey,mime,size,new Date().toISOString(),thumbReady,sourceId).run();
+  await env.DB.prepare('INSERT OR IGNORE INTO media(id,baby_id,day,title,description,object_key,mime,size,created_at,thumbnail_ready,source_message_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
+   .bind(id,baby.id,day,title,caption,objectKey,mime,size,new Date().toISOString(),thumbReady,sourceId).run();
   const indexed=await env.DB.prepare('SELECT id FROM media WHERE source_message_id=?').bind(sourceId).first();
   if(!indexed)throw Error('WECHAT_MEDIA_INDEX_FAILED');
   mediaTiming({channel:'wechat',stage:'index',size,startedAt:indexStartedAt});

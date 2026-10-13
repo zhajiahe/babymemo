@@ -34,7 +34,12 @@ test('album preview uses native modal and private same-origin media URLs', () =>
   assert.match(viewer, /dialog\.showModal\(\)/);
   assert.match(viewer, /onClose=\{onClose\}/);
   assert.match(viewer, /src \+ '\?download=1'/);
-  assert.match(viewer, /onSave\(\{day,requestId,expectedUpdatedAt:version\}\)/);
+  assert.match(viewer, /onSave\(\{day,description,requestId,expectedUpdatedAt:version\}\)/);
+  assert.match(viewer, /照片或视频描述/);
+  assert.match(app, /x-upload-description/);
+  assert.match(app, /description,mime/);
+  assert.match(worker, /SELECT id,baby_id,day,title,description,mime/);
+  assert.match(worker, /description=\?,day=\?,updated_at=\?/);
   assert.doesNotMatch(viewer, /<span>名称<\/span>/);
   assert.doesNotMatch(app, /thumbnail-backfill/);
 });

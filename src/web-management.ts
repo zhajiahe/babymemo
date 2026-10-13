@@ -13,7 +13,7 @@ webManagement.get('/records/:kind/:id',async c=>{
  return row?c.json(row):error(c,404,'NOT_FOUND');
 });
 webManagement.get('/media/:id',async c=>{
- const row=await c.env.DB.prepare('SELECT id,baby_id,day,title,mime,size,thumbnail_ready,updated_at FROM media WHERE id=? AND deleted_at IS NULL AND purge_token IS NULL').bind(c.req.param('id')).first();
+ const row=await c.env.DB.prepare('SELECT id,baby_id,day,title,description,mime,size,thumbnail_ready,updated_at FROM media WHERE id=? AND deleted_at IS NULL AND purge_token IS NULL').bind(c.req.param('id')).first();
  return row?c.json(row):error(c,404,'NOT_FOUND');
 });
 webManagement.patch('/records/:kind/:id',async c=>{
