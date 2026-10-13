@@ -60,5 +60,8 @@
     "vite": "^7.3.0",
     "wrangler": "^4.100.0",
     "@types/json-bigint": "^1.0.4"
+  },
+  "overrides": {
+    "rollup": "4.64.5"
   }
 }
