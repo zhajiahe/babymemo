@@ -41,9 +41,13 @@ export function isMilestoneSaveFollowup(text){
 // explicitly proposed saving the last user's observation. Assistant-generated
 // dates/descriptions are never treated as database grounding.
 export function confirmsMilestoneProposal(text,reply){
- const affirmative=/^(?:好|好的|好呀|好啊|好哒|行|可以|嗯|嗯嗯|没问题|就这么办)(?:[～~。！!，,\s]*)$/;
- if(!affirmative.test(String(text||'').trim()))return false;
- return /(?:要(?:不要)?我|需要我|想让我|我可以|要不要|是否).{0,100}(?:记下|记录|保存|写进|存入).{0,25}(?:吗|么|[？?])/.test(String(reply||''));
+ // Native speech transcripts often repeat short confirmations, e.g. "可以可以。".
+ // Never treat words with extra instructions/negation as authorization.
+ const answer=String(text||'').trim().replace(/[～~。！!，,\s]/g,'');
+ if(!/^(?:好|好的|好呀|好啊|好哒|行|可以|嗯|没问题|就这么办){1,3}$/.test(answer))return false;
+ // Support natural offers such as "要帮你记成...吗？" as well as "要我帮你记下来吗？".
+ // The proposal is only used to establish consent, never as fact/date grounding.
+ return /(?:要(?:不要)?(?:我|帮你)|需要我|想让我|我可以|要不要|是否).{0,100}(?:记下|记成|记录|保存|写进|存入).{0,40}(?:吗|么|[？?])/.test(String(reply||''));
 }
 export function buildCommandContext(text,thread,now=Date.now(),babyId=thread.babyId){
  const turns=(thread.turns||[]).filter(t=>t.babyId===babyId),last=turns.at(-1),messages=[];
