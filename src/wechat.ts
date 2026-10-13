@@ -9,6 +9,7 @@ import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './w
 import {messageTime,dayInZone} from './wechat-policy.mjs';
 import {runWechatPlan,quickCommand} from './wechat-orchestrator.mjs';
 import {isWechatHelpCommand,retryReadOnlyTool} from './wechat-tool-routing.mjs';
+import {getWechatConnection} from './wechat-connections';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
 const wireJSON=JSONBig({storeAsString:true,strict:true,protoAction:'error',constructorAction:'error'});
@@ -56,8 +57,8 @@ export async function qrStatus(qrcode:string,verifyCode?:string,base=API_BASE):P
     botId:r.status==='confirmed'?r.ilink_bot_id:undefined,userId:r.status==='confirmed'?r.ilink_user_id:undefined,
     base:r.status==='confirmed'?trustedBase(typeof r.baseurl==='string'?r.baseurl:base):undefined,redirectBase};
 }
-export function workerBot(env:Env):DurableObjectStub {
-  return env.BOT.get(env.BOT.idFromName('family'));
+export function workerBot(env:Env,connectionId='legacy'):DurableObjectStub {
+  return env.BOT.get(env.BOT.idFromName(connectionId==='legacy'?'family':'wechat:'+connectionId));
 }
 // OpenRouter is exclusively the WeChat command interpreter; no website chat API.
 export async function testOpenRouterConnection(env:Env):Promise<boolean>{
@@ -151,12 +152,18 @@ export class WechatSession {
   async fetch(request:Request):Promise<Response>{
     const path=new URL(request.url).pathname;
     if(path==='/status'){
-      return Response.json({enabled:await setting(this.env,'wechat_enabled')==='true',connected:!!await setting(this.env,'wechat_token'),lastPoll:await this.ctx.storage.get('lastPoll')||null,
+      const id=new URL(request.url).searchParams.get('connectionId')||await this.ctx.storage.get<string>('connectionId')||'legacy';
+      const connection=await getWechatConnection(this.env,id);
+      return Response.json({connectionId:id,enabled:connection?.enabled===1,connected:!!connection,lastPoll:await this.ctx.storage.get('lastPoll')||null,
         lastError:await this.ctx.storage.get('lastError')||null,lastMessage:await this.ctx.storage.get('lastMessage')||null,
         lastProcessing:await this.ctx.storage.get('lastProcessing')||null});
     }
     if(request.method!=='POST')return new Response('Not found',{status:404});
     if(path==='/start'){
+      const data=await request.json().catch(()=>({})) as {connectionId?:unknown};
+      const id=typeof data.connectionId==='string'?data.connectionId:'legacy';
+      if(!/^(legacy|[0-9a-f-]{36})$/.test(id)||!await getWechatConnection(this.env,id))return Response.json({error:'WECHAT_CONNECTION_NOT_FOUND'},{status:404});
+      await this.ctx.storage.put('connectionId',id);
       await this.ctx.storage.put('lastError',null);
       await this.ctx.storage.setAlarm(Date.now()+1000);
       return Response.json({ok:true});
@@ -167,16 +174,20 @@ export class WechatSession {
     }
     if(path==='/reset'){
       await this.ctx.storage.deleteAlarm();
-      await Promise.all(['cursor','lastPoll','lastError','lastMessage','conversation'].map(key=>this.ctx.storage.delete(key)));
+      await Promise.all(['cursor','lastPoll','lastError','lastMessage','lastProcessing','conversation'].map(key=>this.ctx.storage.delete(key)));
       return Response.json({ok:true});
     }
     return new Response('Not found',{status:404});
   }
   async alarm():Promise<void>{
-    if(await setting(this.env,'wechat_enabled')!=='true')return;
-    const tokenEncrypted=await setting(this.env,'wechat_token');
-    const botId=await setting(this.env,'wechat_bot_id'),userId=await setting(this.env,'wechat_user_id');
-    const base=await setting(this.env,'wechat_base')||API_BASE;
+    // Each account is polled by its own Durable Object with its own cursor,
+    // conversation state and alarm. The migrated account retains the old DO id.
+    const connectionId=await this.ctx.storage.get<string>('connectionId')||'legacy';
+    const connection=await getWechatConnection(this.env,connectionId);
+    if(!connection||connection.enabled!==1)return;
+    const tokenEncrypted=connection.token_cipher;
+    const botId=connection.bot_id,userId=connection.user_id;
+    const base=connection.base_url||API_BASE;
     if(!tokenEncrypted||!botId||!userId)return;
     let delay=2500;
     try{
@@ -247,12 +258,12 @@ export class WechatSession {
       await this.ctx.storage.put('lastError',code);
       delay=30000;
       if(code==='WECHAT_AUTH_EXPIRED'){
-        await this.env.DB.prepare("INSERT INTO app_settings(name,value,updated_at) VALUES('wechat_enabled','false',?) ON CONFLICT(name) DO UPDATE SET value='false',updated_at=excluded.updated_at").bind(new Date().toISOString()).run();
+        await this.env.DB.prepare('UPDATE wechat_connections SET enabled=0,updated_at=? WHERE id=?').bind(new Date().toISOString(),connectionId).run();
         await this.ctx.storage.deleteAlarm();
         return;
       }
     }finally{
-      if(await setting(this.env,'wechat_enabled')==='true')await this.ctx.storage.setAlarm(Date.now()+delay);
+      if((await getWechatConnection(this.env,connectionId))?.enabled===1)await this.ctx.storage.setAlarm(Date.now()+delay);
     }
   }
 }
