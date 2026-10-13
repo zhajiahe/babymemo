@@ -9,6 +9,7 @@ import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './w
 import {messageTime,dayInZone} from './wechat-policy.mjs';
 import {runWechatPlan,quickCommand} from './wechat-orchestrator.mjs';
 import {isWechatHelpCommand,retryReadOnlyTool} from './wechat-tool-routing.mjs';
+import {runWechatAgentLoop} from './wechat-agent-loop.mjs';
 import {getWechatConnection} from './wechat-connections';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
@@ -90,32 +91,47 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
  if(!key)return '请先在网页设置中配置 OpenRouter Key，或在部署时设置 OPENROUTER_API_KEY Secret';
  const model=await setting(env,'openrouter_model')||DEFAULT_OPENROUTER_MODEL;
  const localDay=dayInZone(at,baby.time_zone||'Asia/Shanghai');
- const instruction='你是 BabyMemo 微信成长记录工具规划器，不是聊天、医疗诊断或育儿分析助手。'+
-  '当前消息发出时宝宝本地日期 '+localDay+'，目标宝宝 '+baby.name+'。只使用提供的白名单工具，绝不输出 SQL。'+
-  '可从用户明确授权的同一消息规划最多 4 个工具调用；先查询后修改必须有精确目标。'+
-  '不得编造日期、数值、单位、宝宝身份、照片批次或记录编号。缺少参数时不要调用工具，改为等待用户补充。'+
-  '请根据上下文处理“刚才”“第一条”“错了”等，但旧查询记录只由服务端核验；否定、条件指令绝不能调用写工具。'+
-  '工具返回的是程序从 D1/R2 读取或确认的数据，不得捏造。';
- const response=await openRouterCompletion({key,model,
-  messages:[{role:'system',content:instruction},...context.modelMessages],
-  tools:wechatTools,max_tokens:1200});
- let calls=response?.choices?.[0]?.message?.tool_calls;
- if((!Array.isArray(calls)||calls.length===0)&&!thread?.pending){
-  // Only re-ask for unambiguous READ-ONLY queries. Some providers reject named
-  // forced tool_choice with HTTP 400 even when auto tool calling works.
-  const fallbackCalls=await retryReadOnlyTool({
-   command,tools:wechatTools,
-   messages:[{role:'system',content:instruction+' 仅在用户明确要求查询时调用对应的只读工具，不能修改数据。'},...context.modelMessages],
-   complete:(params:any)=>openRouterCompletion({key,model,...params})
-  });
-  if(fallbackCalls)calls=fallbackCalls;
- }
- if(!Array.isArray(calls)||calls.length===0){
-  if(thread?.pending)return '尚缺少明确的数值、单位或日期，请继续补充；发送“取消”可终止这次任务。';
-  return '模型没有返回可执行的工具指令，未修改任何记录。请补充宝宝、日期、数值或动作。\n\n'+wechatHelp;
- }
- return runWechatPlan(env,baby,calls,{messageId,text:command,groundedText:context.groundedText,at,thread,
-  encryptReply:(value:string)=>encryptSecret(env,value),decryptReply:(value:string)=>decryptSecret(env,value)});
+ const instruction='你是 BabyMemo 微信成长记录工具 Agent，不提供闲聊、医疗诊断或育儿分析。'+
+  '消息发送时宝宝本地日期 '+localDay+'，当前宝宝 '+baby.name+'，宝宝时区 '+(baby.time_zone||'Asia/Shanghai')+'。'+
+  '你可以先读后写；每次收到工具结果后根据真实结果决定继续调用工具还是结束。'+
+  '用户明确要求的简单记录应直接执行，不要求固定中文表达；必要时可调用 get_runtime_context 获取当前日期和时区。'+
+  '只能调用白名单工具，不得输出 SQL 或编造宝宝、记录编号、数值、日期。'+
+  '写入前核实用户意图；修改和删除必须找到唯一且属于当前宝宝的记录，不可从旧回复编造记录 ID。'+
+  '若工具拒绝或返回歧义，请根据原因询问用户，绝不能尝试绕过权限与业务校验。'+
+  '工具结果是唯一的数据库事实来源，绝不声称尚未确认的写操作成功。';
+ const baseMessages=[{role:'system',content:instruction},...context.modelMessages];
+ const complete=async({messages,tools,round}:any)=>{
+  const response=await openRouterCompletion({key,model,messages,tools,max_tokens:1200});
+  const first=response?.choices?.[0]?.message;
+  if(round===0&&(!Array.isArray(first?.tool_calls)||first.tool_calls.length===0)&&!thread?.pending){
+   const fallbackCalls=await retryReadOnlyTool({
+    command,tools,
+    messages:[{role:'system',content:instruction+' 对明确只读查询优先调用只读工具。'},...context.modelMessages],
+    complete:(params:any)=>openRouterCompletion({key,model,...params})
+   });
+   if(fallbackCalls)return {choices:[{message:{role:'assistant',content:null,tool_calls:fallbackCalls}}]};
+  }
+  if(round===0&&(!Array.isArray(first?.tool_calls)||first.tool_calls.length===0))
+   return {choices:[{message:{role:'assistant',content:'模型没有返回可执行的工具指令，未修改任何记录。请说明要查询、记录或修改的内容。',tool_calls:[]}}]};
+  return response;
+ };
+ return runWechatAgentLoop({
+  messages:baseMessages,tools:wechatTools,complete,
+  loadDecision:async(round:number)=>{
+   const record=await env.DB.prepare('SELECT assistant_cipher FROM wechat_agent_rounds WHERE message_id=? AND round_index=?')
+    .bind(messageId,round).first<{assistant_cipher:string}>();
+   return record?JSON.parse(await decryptSecret(env,record.assistant_cipher)):null;
+  },
+  saveDecision:async(round:number,assistant:any)=>{
+   await env.DB.prepare('INSERT OR IGNORE INTO wechat_agent_rounds(message_id,round_index,assistant_cipher,created_at) VALUES(?,?,?,?)')
+    .bind(messageId,round,await encryptSecret(env,JSON.stringify(assistant)),new Date().toISOString()).run();
+  },
+  execute:(call:any,stepOffset:number)=>runWechatPlan(env,baby,[call],{
+   messageId,text:command,groundedText:context.groundedText,at,thread,stepOffset,
+   encryptReply:(value:string)=>encryptSecret(env,value),
+   decryptReply:(value:string)=>decryptSecret(env,value)
+  })
+ });
 }
 // The photo itself has no baby name. Use the caption when present, otherwise
 // an explicitly configured default baby; never silently choose first of many.
