@@ -19,8 +19,12 @@ test('drift with missing prerequisite is never silently marked applied',()=>{
   assert.throws(()=>reconciliationDecision(fixture({applied:['0001_initial.sql']})),/MISSING_PREVIOUS/);
   assert.throws(()=>reconciliationDecision(fixture({tables:['babies']})),/MISSING_MIGRATION_HISTORY/);
 });
-test('refuse wrong type, nullable field or different default',()=>{
-  for(const change of [{type:'INTEGER'},{notnull:0},{dflt_value:null},{dflt_value:"'unknown'"}]){
+test('accept earlier nullable TEXT definitions with no default or empty default',()=>{
+  assert.equal(reconciliationDecision(fixture({columns:[{...complete,notnull:0,dflt_value:null}]})),'reconcile');
+  assert.equal(reconciliationDecision(fixture({columns:[{...complete,type:'VARCHAR(5)',notnull:0,dflt_value:'""'}]})),'reconcile');
+});
+test('refuse non-text fields, nonempty defaults or primary-key drift',()=>{
+  for(const change of [{type:'INTEGER'},{type:'BLOB'},{dflt_value:"'unknown'"},{pk:1}]){
     assert.throws(()=>reconciliationDecision(fixture({columns:[{...complete,...change}]})),/SCHEMA_MISMATCH/);
   }
 });
