@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="BabyMemo — 宝宝与成长日记">
+  <title>BabyMemo</title>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#688EFA"/>
+      <stop offset=".52" stop-color="#456ADE"/>
+      <stop offset="1" stop-color="#2349BA"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2=".35" y2="1">
+      <stop stop-color="#FFF9ED"/>
+      <stop offset="1" stop-color="#FFE5C6"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2=".8" y2="1">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E9F4FF"/>
+    </linearGradient>
+    <linearGradient id="rightPage" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFFBF3"/>
+      <stop offset="1" stop-color="#EDE6FF"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h1024v1024H0z"/>
+  <circle cx="174" cy="127" r="275" fill="#FFFFFF" opacity=".065"/>
+  <circle cx="964" cy="1000" r="280" fill="#142E9B" opacity=".13"/>
+  <g id="baby">
+    <ellipse cx="512" cy="493" rx="244" ry="257" fill="#172D87" opacity=".13"/>
+    <ellipse cx="512" cy="473" rx="234" ry="241" fill="url(#face)"/>
+    <circle cx="290" cy="497" r="44" fill="#FFE6C8"/>
+    <circle cx="734" cy="497" r="44" fill="#FFE6C8"/>
+    <path d="M465 248c-19-41 11-86 54-86 38 0 64 26 64 60 0 27-20 48-43 49" fill="none" stroke="#273D81" stroke-width="34" stroke-linecap="round"/>
+    <path d="M474 251c-5-30 12-54 38-58" fill="none" stroke="#FFF2D9" stroke-width="12" stroke-linecap="round" opacity=".46"/>
+    <ellipse cx="423" cy="466" rx="18" ry="26" fill="#293354"/>
+    <ellipse cx="601" cy="466" rx="18" ry="26" fill="#293354"/>
+    <ellipse cx="365" cy="523" rx="37" ry="19" fill="#FF9A93" opacity=".72"/>
+    <ellipse cx="659" cy="523" rx="37" ry="19" fill="#FF9A93" opacity=".72"/>
+    <path d="M482 533q30 32 60 0" fill="none" stroke="#C36D63" stroke-width="13" stroke-linecap="round"/>
+  </g>
+  <g id="journal">
+    <path d="M193 627q148-43 319 36 171-79 319-36v199q-163-34-319 52-156-86-319-52z" fill="#1D3788" opacity=".2" transform="translate(0 14)"/>
+    <path d="M196 618q158-45 316 35v202q-156-87-316-51z" fill="url(#paper)"/>
+    <path d="M828 618q-158-45-316 35v202q156-87 316-51z" fill="url(#rightPage)"/>
+    <path d="M512 654v201" stroke="#D4DEF3" stroke-width="10" stroke-linecap="round"/>
+    <path d="M213 818q148-19 299 60 151-79 299-60" fill="none" stroke="#BFCFEB" stroke-width="11" stroke-linecap="round"/>
+    <path d="M619 702c-24-36-82-26-82 18 0 40 82 89 82 89s82-49 82-89c0-44-58-54-82-18z" fill="#F47D80"/>
+  </g>
+</svg>

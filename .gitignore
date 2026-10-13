@@ -12,7 +12,7 @@ e2e-artifacts/
 # Complete family backup includes sensitive database content and private media
 .backup-private/
 
-# Generated from public/brand/baby-journal-source.png by scripts/build-brand-assets.mjs
+# Generated from public/brand/icon-source.svg by scripts/build-brand-assets.mjs
 /public/favicon.svg
 /public/favicon-32.png
 /public/favicon.ico
