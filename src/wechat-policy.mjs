@@ -1,7 +1,7 @@
 // Deterministic safety policy for BabyMemo's user-authorised WeChat tools.
 // The model is a parser, NEVER an authority to bypass these checks.
 const destructive=/delete_|restore_trash|update_/;
-export const MUTATING_ACTIONS=new Set(['update_baby','create_growth','update_growth','delete_growth','create_milestone','update_milestone','delete_milestone','update_media','delete_media','restore_trash']);
+export const MUTATING_ACTIONS=new Set(['update_baby','create_growth','update_growth','delete_growth','create_milestone','update_milestone','delete_milestone','update_media','delete_media','restore_trash','update_recent_media']);
 export const QUERY_KINDS={list_growth:'growth',list_milestones:'milestones',list_media:'media',search_records:null};
 export function validDay(s){
  if(typeof s!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
@@ -67,7 +67,11 @@ export function measurementGrounded(args,text){
   if(!choices.length)return false;
   // Two values for the same kind cannot be assigned safely without disambiguation.
   const distinct=new Set(mentions(text,kind).map(m=>normalized(m,kind).toFixed(2)));
-  if(distinct.size>1 && !/(?:更正|不是|改成|改为|而不是)/.test(text))return false;
+  if(distinct.size>1 && !/(?:更正|不是|改成|改为|而不是)/.test(text)){
+   const word=kind==='weight'?'(?:体重|重量)':kind==='height'?'(?:身高|身长)':'头围';
+   const related=new RegExp(word+'[^\\d]{0,12}'+got+'\\s*(?:kg|公斤|斤|克|cm|厘米|公分|米)','i');
+   if(!related.test(text))return false;
+  }
  }
  return true;
 }
@@ -80,7 +84,11 @@ export function guardAction(action,args,text,baby,at=Date.now()){
   if(action!=='update_baby'&&!groundingOfDate(args,text,baby?.time_zone||'Asia/Shanghai',at))
    return '请明确指出原记录日期或查询后的记录编号，未执行修改。';
  }
- if(action==='update_media'&&args?.newDay&&!validDay(args.newDay))return '照片日期不合法，未修改。';
+ if((action==='update_media'||action==='update_recent_media')&&args?.newDay&&(!validDay(args.newDay)||explicitDay(text,at,baby?.time_zone||'Asia/Shanghai')!==args.newDay))return '照片新日期缺乏原文依据，未修改。';
+ if(action==='update_baby'){
+  if(args.birthday&&explicitDay(text,at,baby?.time_zone||'Asia/Shanghai')!==args.birthday)return '出生日期缺乏原文依据，未修改。';
+  if(args.allergies&&!String(text).includes(String(args.allergies).trim()))return '过敏信息缺乏原文依据，未修改。';
+ }
  if((action==='update_milestone'||action==='update_media')&&args?.newDay&&args.day===args.newDay)
   return '请区分要修改的原日期和新日期，未修改。';
  return null;
