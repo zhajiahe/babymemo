@@ -8,7 +8,7 @@ import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './wechat-memory.mjs';
 import {messageTime,dayInZone} from './wechat-policy.mjs';
 import {runWechatPlan,quickCommand} from './wechat-orchestrator.mjs';
-import {retryReadOnlyTool} from './wechat-tool-routing.mjs';
+import {isWechatHelpCommand,retryReadOnlyTool} from './wechat-tool-routing.mjs';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
 const wireJSON=JSONBig({storeAsString:true,strict:true,protoAction:'error',constructorAction:'error'});
@@ -69,7 +69,7 @@ export async function testOpenRouterConnection(env:Env):Promise<boolean>{
 export async function handleWechatCommand(env:Env,text:string,messageId:string,thread:any=null,at=Date.now()):Promise<string>{
  const command=text.trim();
  if(!command)return wechatHelp;
- if(/^(帮助|使用说明|菜单|help|你能做什么|有什么功能)[？?!！]?$/i.test(command))return wechatHelp;
+ if(isWechatHelpCommand(command))return wechatHelp;
  const babies=await env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes FROM babies ORDER BY created_at').all<Baby>();
  if(!babies.results.length)return '请先在 BabyMemo 中添加宝宝资料';
  if(/^(宝宝列表|列出宝宝|有哪些宝宝|查看所有宝宝)[？?]?$/i.test(command))

@@ -98,7 +98,9 @@ async function cdnFetch(item,{fetchImpl=fetch,maxBytes=MAX_WECHAT_MEDIA_BYTES}={
 }
 async function decryptAndSink(item,write,{fetchImpl=fetch,maxBytes=MAX_WECHAT_MEDIA_BYTES}={}){
  const {reader,aesKey,kind}=await cdnFetch(item,{fetchImpl,maxBytes});
- const cipher=createDecipheriv('aes-128-ecb',aesKey,null);
+ // ECB has no IV. Workers' node:crypto requires an explicit empty buffer;
+ // null is accepted by Node.js but rejected by the Workers runtime.
+ const cipher=createDecipheriv('aes-128-ecb',aesKey,Buffer.alloc(0));
  let encrypted=0,plain=0,mime=null,first=Buffer.alloc(0);
  async function consume(chunk){
   if(!chunk.length)return;
