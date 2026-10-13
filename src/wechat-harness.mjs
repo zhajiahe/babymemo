@@ -124,8 +124,9 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
   if(action==='get_runtime_context'){
    const zone=baby?.time_zone||'Asia/Shanghai';
    const parts=new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(at));
-   return JSON.stringify({messageTimestamp:new Date(at).toISOString(),localDay:dayInZone(at,zone),
-    localTime:parts,timeZone:zone,targetBaby:baby?.name||null});
+   return JSON.stringify({currentTimestamp:new Date().toISOString(),messageTimestamp:new Date(at).toISOString(),
+    messageLocalDay:dayInZone(at,zone),localDay:dayInZone(Date.now(),zone),
+    messageLocalTime:parts,timeZone:zone,targetBaby:baby?.name||null});
   }
   if(action==='list_babies'){
    const r=await env.DB.prepare('SELECT name,birthday FROM babies ORDER BY created_at LIMIT 30').all();
