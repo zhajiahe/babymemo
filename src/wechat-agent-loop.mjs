@@ -24,7 +24,10 @@ function assistantMessage(raw){
 function render(results,finalText='',suffix=''){
  // Database/tool output is authoritative. A model's free-form text must not
  // claim that a write succeeded without a corresponding committed tool result.
- if(results.length)return [...results,suffix].filter(Boolean).join('\n').slice(0,1800);
+ if(results.length){
+  const verified=[...results,suffix].filter(Boolean).join('\n');
+  return verified.length>1800?verified.slice(0,1690)+'\n结果较长，回复已截断；请到 BabyMemo 网页核对全部操作。':verified;
+ }
  if(suffix)return suffix;
  const text=String(finalText||'').trim();
  if(/^(?:已保存|已更新|已删除|已恢复|已经记录|已添加)/.test(text))
