@@ -5,6 +5,7 @@ const day={type:'string',description:'真实公历日期 YYYY-MM-DD'};
 const number=(unit,max)=>({type:'number',description:unit+'（必须是用户明确给出的数值）',exclusiveMinimum:0,maximum:max});
 const selector={id:{type:'string',description:'查询结果中的记录编号，至少前 8 位'},day:{type:'string',description:'唯一匹配记录的日期 YYYY-MM-DD；同日多条时需要记录编号'}};
 const tool=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
+import {guardAction,validDay,explicitDay} from './wechat-policy.mjs';
 export const wechatTools=[
  tool('list_babies','列出这个家庭已经创建的宝宝'),
  tool('get_baby','读取当前宝宝的生日、昵称、过敏等档案'),
@@ -21,7 +22,10 @@ export const wechatTools=[
  tool('update_media','修改日期或收藏一项相册内容',{...selector,newDay:day,favorite:{type:'boolean'}}),
  tool('delete_media','把一项相册内容移入 30 天回收站，必须有删除意图',selector),
  tool('list_trash','查看当前宝宝的回收站',{kind:{type:'string',enum:['growth','milestones','media']}}),
- tool('restore_trash','从回收站中恢复一项内容',{kind:{type:'string',enum:['growth','milestones','media']},...selector},['kind'])
+ tool('restore_trash','从回收站中恢复一项内容',{kind:{type:'string',enum:['growth','milestones','media']},...selector},['kind']),
+ tool('search_records','按关键词和日期范围查询记录',{kind:{type:'string',enum:['growth','milestones','media']},startDay:day,endDay:day,keyword:str,limit:{type:'integer',minimum:1,maximum:10}},['kind']),
+ tool('growth_summary','汇总区间内体重身高头围',{startDay:day,endDay:day},['startDay','endDay']),
+ tool('update_recent_media','更正刚发送的一批照片或视频日期',{newDay:day},['newDay'])
 ];
 export const wechatHelp='BabyMemo 微信操作\n可以直接发送：\n· 小好今天体重 10.5 kg，身高 80 cm\n· 查小好最近五次体重\n· 小好今天会走路了\n· 查小好的里程碑 / 相册\n· 把小好 10 月 1 日的体重改成 10.2 kg\n· 删除小好 10 月 1 日的成长记录\n· 查看小好的回收站 / 恢复编号 12345678\n· 直接发送照片或视频 → 自动存入私有相册（单个 50 MiB 上限）\n· 查询后说“把第一条改成……”可连续操作；发送“清除上下文”重置记忆（多宝宝请先设置默认收图宝宝）\n同一天有多条时，先查询记录并使用回复里的编号。删除后可在 30 天内恢复。支持绑定微信的私聊文字与照片。';
 const validDate=x=>{
@@ -104,7 +108,8 @@ function measurement(args){
  if(args.notes!==undefined){const txt=cleanText(args.notes,1500);if(txt===null)throw Error('备注格式错误');changes.notes=txt}
  return changes;
 }
-export async function runWechatTool(env,baby,action,args={},messageId='',originalText=''){
+export async function runWechatTool(env,baby,action,args={},messageId='',originalText='',options={}){
+ const at=options.at||Date.now();
  try{
   if(!args||typeof args!=='object'||Array.isArray(args))return '指令参数不正确，请换一种说法';
   if(action==='list_babies'){
@@ -117,7 +122,9 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    if(!/修改|更正|更改|更新|设置|改成|改为|改一下|记为|添加过敏|补充过敏/.test(originalText))return '请明确说明“修改宝宝资料”，防止误操作';
    const changes={};
    if(args.name!==undefined){const name=cleanText(args.name,80);if(!name)throw Error('昵称不能为空');changes.name=name}
-   if(args.allergies!==undefined){if(typeof args.allergies!=='string'||args.allergies.length>2000)throw Error('过敏备注最长 2000 字');changes.allergies=args.allergies}
+   if(args.allergies!==undefined){if(typeof args.allergies!=='string'||args.allergies.length>2000)throw Error('过敏备注最长 2000 字');
+    changes.allergies=/补充过敏|添加过敏|增加过敏/.test(originalText)?[...new Set([...(baby.allergies||'').split(/[，,、;；]+/),args.allergies].map(x=>x.trim()).filter(Boolean))].join('，'):args.allergies;
+   }
    if(args.notes!==undefined){if(typeof args.notes!=='string'||args.notes.length>4000)throw Error('备注最长 4000 字');changes.notes=args.notes}
    if(args.birthday!==undefined){if(!validDate(args.birthday))throw Error('生日日期不正确');changes.birthday=args.birthday}
     if(args.birthTime!==undefined){if(typeof args.birthTime!=='string'||args.birthTime!==''&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(args.birthTime))throw Error('出生时间应为 HH:mm');changes.birth_time=args.birthTime}
@@ -130,6 +137,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
   }
   if(action==='create_growth'){
    if(!validDate(args.day))throw Error('请给出有效日期');
+   const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const changes=measurement(args);
    if(!['weight','height','head_circumference'].some(x=>x in changes))throw Error('请明确体重、身高或头围数值');
    const id=crypto.randomUUID(),when=new Date().toISOString();
@@ -154,6 +162,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
     if(!/修改|更正|更改|更新|改成|改为|改一下|设为|标记|收藏|取消收藏/.test(originalText))return '请明确说明修改操作';
     if(args.id===undefined&&args.day===undefined)return '请指定记录日期或编号，避免改错记录';
     if(!groundedTarget(args,originalText,baby))return '请在消息中明确指出要修改的日期或记录编号，避免改错记录';
+    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
     const row=await findTarget(env,baby.id,kind,args);
     const changes={};
     if(kind==='growth')Object.assign(changes,measurement(args));
@@ -170,6 +179,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    if(action==='delete_'+(kind==='milestones'?'milestone':kind)){
     if(!/删除|删掉|移入回收站|移到回收站/.test(originalText))return '请明确说“删除”并指定日期或编号';
     if(!groundedTarget(args,originalText,baby))return '请在消息中写明需要删除的日期或记录编号，避免误删';
+    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
     const row=await findTarget(env,baby.id,kind,args);
     const changed=await env.DB.prepare('UPDATE '+tableForKind[kind]+' SET deleted_at=? WHERE id=? AND baby_id=? AND deleted_at IS NULL')
      .bind(new Date().toISOString(),row.id,baby.id).run();
@@ -177,14 +187,18 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    }
   }
   if(action==='list_trash'){
-   const kind=args.kind||'growth';const table=tableForKind[kind];if(!table)throw Error('回收站类型不正确');
-   const rows=await env.DB.prepare('SELECT * FROM '+table+' WHERE baby_id=? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 10').bind(baby.id).all();
-   return rows.results.length?'回收站 · '+labelForKind[kind]+'：\n'+rows.results.map(x=>listLine(kind,x)).join('\n'):'没有这类已删除记录';
+   const kinds=args.kind?[args.kind]:['growth','milestones','media'],sections=[];
+   for(const kind of kinds){const table=tableForKind[kind];if(!table)throw Error('回收站类型不正确');
+    const rows=await env.DB.prepare('SELECT * FROM '+table+' WHERE baby_id=? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 10').bind(baby.id).all();
+    if(rows.results.length)sections.push('回收站 · '+labelForKind[kind]+'：\n'+rows.results.map(x=>listLine(kind,x)).join('\n'));
+   }
+   return sections.join('\n')||'回收站暂无内容';
   }
   if(action==='restore_trash'){
    if(!/恢复|还原|找回/.test(originalText))return '请明确说“恢复”并指定记录编号';
    if(!tableForKind[args.kind])throw Error('请说明恢复的是测量、事件或相册');
    if(!groundedTarget(args,originalText,baby))return '请在消息中写明恢复记录的日期或编号';
+   const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const row=await findTarget(env,baby.id,args.kind,args,true);
    const change=await env.DB.prepare('UPDATE '+tableForKind[args.kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL').bind(row.id,baby.id).run();
    return change.meta.changes?'已恢复 '+labelForKind[args.kind]+'（'+short(row.id)+'）。':'该记录无法恢复';
