@@ -181,6 +181,7 @@ export class WechatSession {
         const text=raw.item_list.filter((i:any)=>i?.type===1&&typeof i?.text_item?.text==='string').map((i:any)=>i.text_item.text).join('\n').trim();
         const msgid=String(raw.message_id||raw.msg_id||'');
         const hasMedia=mediaItems(raw).length>0;
+         const processingStarted=Date.now();
         if((!text&&!hasMedia)||!msgid||text.length>3000)continue;
         const unique=botId+':'+msgid;
         await this.env.DB.prepare("INSERT OR IGNORE INTO wechat_messages(message_id,state,created_at) VALUES(?,'processing',?)").bind(unique,new Date().toISOString()).run();
