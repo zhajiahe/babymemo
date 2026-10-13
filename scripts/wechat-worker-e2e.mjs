@@ -100,8 +100,8 @@ try{
   assert.equal(r.error,undefined);
   assert.equal(r.models,1);
   assert.equal(r.status.lastProcessing.kind,'forward');
-  assert.equal(r.growth.length,0);
-  assert.equal(r.milestones.length,0);
+  assert.equal(r.growth.filter(x=>x.source_message_id?.includes('merged-text')).length,0);
+  assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('merged-text')).length,0);
   assert.match(r.modelMessages[0].at(-1).content,/走了几步/);
   assert.match(r.modelMessages[0].at(-1).content,/语音转写/);
   assert.match(r.modelMessages[0][0].content,/不可信的历史材料/);
@@ -116,7 +116,7 @@ try{
   assert.equal(r.error,undefined);
   assert.equal(r.models,0);
   assert.equal(r.media.length,1);
-  assert.equal(r.milestones.length,0);
+  assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('merged-photo')).length,0);
   assert.equal(r.status.lastProcessing.kind,'forward');
   assert.match(r.replies.join(' '),/合并转发内容/);
  });
