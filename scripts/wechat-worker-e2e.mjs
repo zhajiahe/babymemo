@@ -231,7 +231,7 @@ try{
   assert.equal(r.messages.some(x=>x.message_id==='synthetic-bot:not-authorized'),false);
  });
  await step('same-batch text and a later D1 query finish while a CDN stream remains blocked',async()=>{
-  const r=await run({mode:'alarm',holdMedia:true,messages:[raw('slow-media'),textFrom('same-batch-help','synthetic-user','synthetic-bot','你好，你可以做什么')],followupMessages:[textFrom('query-while-saving','synthetic-user','synthetic-bot','查询测试宝宝最近五条体重记录')],responses:[tool('list_growth',{limit:5})],encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});
+  const r=await run({mode:'alarm',holdMedia:true,messages:[raw('slow-media'),textFrom('same-batch-help','synthetic-user','synthetic-bot','你好，你可以做什么')],followupMessages:[textFrom('query-while-saving','synthetic-user','synthetic-bot','查询测试宝宝最近五条体重记录')],responses:[natural('你好，我可以帮你管理家庭成长记录。'),tool('list_growth',{limit:5}),natural('查到了，最近的体重是 10.2 公斤。')],encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});
   assert.equal(r.error,undefined);assert.equal(r.status.textWhileSaving.beforeDownloads,0);assert.ok(r.status.textWhileSaving.elapsedMs<3000);assert.ok(r.status.textWhileSaving.replies.some(x=>/10\.2/.test(x)));assert.ok(r.status.textWhileSaving.replies.some(x=>/正在保存/.test(x)));assert.equal(r.media.length,6);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.status.media.pending,0);
  });
  await step('reset during a slow save suppresses stale caption writes and replies',async()=>{
