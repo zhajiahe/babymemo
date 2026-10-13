@@ -112,14 +112,14 @@ try{
   assert.equal(r.milestones.filter(m=>m.source_message_id==='ai-milestone-final:step:0').length,1);
   assert.match(r.modelMessages[1].at(-1).content,/已保存成长事件/);
  });
- await step('read-only retry returns real D1 results after no-tool response',async()=>{const r=await run({mode:'text',id:'query-weight',text:'查询测试宝宝最近五条体重记录',responses:[noTools,tool('list_growth',{limit:5})]});assert.equal(r.models,3);assert.match(r.reply,/10\.5/);assert.equal(r.growth.length,1)});
+ await step('read-only retry returns real D1 results after no-tool response',async()=>{const r=await run({mode:'text',id:'query-weight',text:'查询测试宝宝最近五条体重记录',responses:[noTools,tool('list_growth',{limit:5})]});assert.equal(r.models,4);assert.match(r.reply,/10\.5/);assert.equal(r.growth.length,1)});
  await step('ReAct read -> write uses a real queried ID and tool observations',async()=>{
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
   const r=await run({mode:'text',id:'react-correct',text:'把测试宝宝今天的体重更正为 10.2kg',
    responses:[tool('list_growth',{day}),tool('update_growth',{id:savedWeightRecordId.slice(0,8),weight:10.2}),stop]});
   assert.equal(r.error,undefined);
   assert.equal(r.growth.length,1);assert.equal(r.growth[0].weight,10.2);
-  assert.equal(r.models,3);assert.equal(r.rounds.length,3);
+  assert.equal(r.models,4);assert.deepEqual(r.rounds.map(x=>x.round_index),[0,1,2,31]);
   assert.equal(r.modelMessages[1].at(-1).role,'tool');
   assert.equal(r.modelMessages[2].at(-1).role,'tool');
   assert.match(r.reply,/已更新/);
@@ -158,7 +158,7 @@ try{
    ]
   });
   assert.equal(r.error,undefined);
-  assert.equal(r.models,4);
+  assert.equal(r.models,5); // tool-only final invokes one extra tool-free summarization
   assert.equal(r.replies.length,2);
   const savedDiary=r.milestones.filter(x=>x.source_message_id?.endsWith('json-diary-two:step:1'));
   assert.equal(savedDiary.length,1); // source-scoped, independent of earlier fixture writes
@@ -188,7 +188,7 @@ try{
    ]
   });
   assert.equal(r.error,undefined);
-  assert.equal(r.models,5);
+  assert.equal(r.models,6); // 5 ReAct decisions + 1 independent final summary fallback
   assert.equal(r.replies.length,4);
   assert.match(r.replies[0],/想让我帮你记到日记里吗/);
   assert.match(r.replies[1],/连续三个小时/);
