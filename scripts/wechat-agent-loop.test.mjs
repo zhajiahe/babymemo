@@ -200,3 +200,16 @@ test('model can answer after a runtime context tool without displaying the JSON'
  assert.equal(r,'现在是下午四点三十二分。');
  assert.doesNotMatch(r,/currentTimestamp|timeZone/);
 });
+
+test('reading the baby profile never authorizes a fake cheerful diary acknowledgement',async()=>{
+ const r=await runWechatAgentLoop({...args,
+  complete:async({round})=>round===0?reply(call('a','get_baby')):done('记好啦！小好的睡眠已经记进日记了。'),
+  execute:async()=> '小好 的档案：生日 2025-05-30'});
+ assert.equal(r,'小好 的档案：生日 2025-05-30');
+});
+test('a no-tool cheerful acknowledgement cannot impersonate a successful write',async()=>{
+ const r=await runWechatAgentLoop({...args,
+  complete:async()=>done('记好啦！'),
+  execute:async()=>{throw Error('unexpected')}});
+ assert.match(r,/没有实际保存或修改/);
+});
