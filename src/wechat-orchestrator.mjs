@@ -7,7 +7,33 @@ const KINDS={create_growth:'growth',update_growth:'growth',delete_growth:'growth
  create_milestone:'milestones',update_milestone:'milestones',delete_milestone:'milestones',list_milestones:'milestones',
  update_media:'media',delete_media:'media',list_media:'media',update_recent_media:'media',update_baby:'baby',restore_trash:null};
 const TABLES={growth:'growth_records',milestones:'milestones',media:'media',baby:'babies'};
-const MUTATION_OK=/^(已保存|已更新|已将|已恢复)/;
+// A partial/zero batch update is not a fully successful mutation.
+export function isCommittedMutationReply(action,reply){
+ if(action==='update_recent_media'){
+  const m=String(reply).match(/^已更新最近 (\d+)\/(\d+) 项/);
+  return !!m&&Number(m[1])>0&&Number(m[1])===Number(m[2]);
+ }
+ return /^(已保存|已更新|已将|已恢复|此前已成功提交)/.test(String(reply));
+}
+async function recoverCachedStep(env,thread,baby,action,args,kind,sourceId,messageId,at,reply){
+ if(!thread)return;
+ if(['list_growth','list_milestones','list_media','search_records'].includes(action)){
+  const queryKind=action==='search_records'?args.kind:kind;
+  if(queryKind)recordQuery(thread,baby.id,queryKind,idFromReply(reply),at,messageId);
+ }
+ if(!MUTATING_ACTIONS.has(action)||!isCommittedMutationReply(action,reply))return;
+ thread.pending=null;
+ const sources=action==='update_recent_media'
+  ? Array.from({length:4},(_,n)=>sourceId+':media:'+n)
+  : [sourceId,sourceId+':audit'];
+ const rows=await env.DB.prepare('SELECT id FROM wechat_operation_log WHERE baby_id=? AND source_message_id IN ('+
+  sources.map(()=>'?').join(',')+') ORDER BY created_at')
+  .bind(baby.id,...sources).all();
+ const opIds=rows.results.map(r=>r.id);
+ if(opIds.length)thread.lastOperation={babyId:baby.id,
+  ...(action==='update_recent_media'?{opIds}:{opId:opIds.at(-1)}),
+  expiresAt:at+1200000};
+}
 const bounded=(t,n)=>String(t||'').slice(0,n);
 const idFromReply=s=>[...String(s).matchAll(/^([a-f0-9]{8}) · /gim)].map(x=>x[1]);
 async function recordFor(env,kind,babyId,args){
@@ -37,12 +63,16 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   if(call?.type!=='function'||!names.has(call.function?.name)||typeof call.function.arguments!=='string')
    return [...results,'出现不受支持的工具操作，剩余操作未执行。'].join('\n');
   const action=call.function.name,kind=KINDS[action]||null,sourceId=messageId+':step:'+(stepOffset+i);
+  // Claims and results are always scoped by the server-selected baby, not a model babyId.
   let args;try{args=JSON.parse(call.function.arguments)}catch{return [...results,'模型参数不是合法 JSON，后续操作未执行。'].join('\n')}
   if(!args||typeof args!=='object'||Array.isArray(args))return [...results,'模型参数格式不正确，后续操作未执行。'].join('\n');
-  // Claims and results are always scoped by the server-selected baby, not a model babyId.
   const cached=await env.DB.prepare('SELECT reply FROM wechat_tool_steps WHERE source_message_id=? AND baby_id=? LIMIT 1')
     .bind(sourceId,baby.id).first();
-  if(cached){results.push(await decryptReply(cached.reply));continue}
+  if(cached){
+   const reply=await decryptReply(cached.reply);
+   await recoverCachedStep(env,thread,baby,action,args,kind,sourceId,messageId,at,reply);
+   results.push(reply);continue;
+  }
   // A transaction can commit before the message reply/step journal is persisted.
   // Do not replay an old edit over a newer record state after such a crash.
   if(['update_baby','update_growth','update_milestone','update_media','delete_growth','delete_milestone','delete_media','restore_trash','update_recent_media'].includes(action)){
@@ -86,7 +116,7 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   }
   const reply=await runWechatTool(env,baby,action,args,sourceId,toolText,{thread,at});
   results.push(reply);
-  const success=MUTATION_OK.test(reply);
+  const success=isCommittedMutationReply(action,reply);
   if(MUTATING_ACTIONS.has(action)&&!success){
    if(thread&&/(?:请|需要|明确|日期|编号|不合法)/.test(reply))
     setPending(thread,baby.id,action,groundedText,args,at);

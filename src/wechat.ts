@@ -7,7 +7,7 @@ import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.m
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './wechat-memory.mjs';
 import {messageTime,dayInZone} from './wechat-policy.mjs';
-import {runWechatPlan,quickCommand} from './wechat-orchestrator.mjs';
+import {runWechatPlan,quickCommand,isCommittedMutationReply} from './wechat-orchestrator.mjs';
 import {isWechatHelpCommand,retryReadOnlyTool} from './wechat-tool-routing.mjs';
 import {runWechatAgentLoop} from './wechat-agent-loop.mjs';
 import {getWechatConnection} from './wechat-connections';
@@ -126,7 +126,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
    return record?JSON.parse(await decryptSecret(env,record.assistant_cipher)):null;
   },
   saveDecision:async(round:number,assistant:any)=>{
-   await env.DB.prepare('INSERT OR IGNORE INTO wechat_agent_rounds(message_id,round_index,assistant_cipher,created_at) VALUES(?,?,?,?)')
+   await env.DB.prepare('INSERT INTO wechat_agent_rounds(message_id,round_index,assistant_cipher,created_at) VALUES(?,?,?,?)')
     .bind(messageId,round,await encryptSecret(env,JSON.stringify(assistant)),new Date().toISOString()).run();
   },
   execute:async(call:any,stepOffset:number)=>{
@@ -138,7 +138,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
    // Failed/denied mutations cannot be followed by further writes in the same
    // user message, even when the model returned multiple tool calls at once.
    const mutating=/^(?:update_|create_|delete_|restore_)/.test(call.function.name);
-   return {content,halt:mutating&&!/^(?:已保存|已更新|已将|已恢复|此前已成功)/.test(content)};
+   return {content,halt:mutating&&(!isCommittedMutationReply(call.function.name,content)||/部分记录同时发生变更/.test(content))};
   }
  });
 }

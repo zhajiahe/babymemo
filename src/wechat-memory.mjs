@@ -32,7 +32,7 @@ export function setPending(thread,babyId,action,text,args={},now=Date.now()){
  thread.pending={babyId,action,text:bounded(text,650),args:copy(args)||{},expiresAt:now+CONTEXT_TTL_MS};
 }
 export function buildCommandContext(text,thread,now=Date.now(),babyId=thread.babyId){
- const turns=thread.turns||[],last=turns.at(-1),messages=[];
+ const turns=(thread.turns||[]).filter(t=>t.babyId===babyId),last=turns.at(-1),messages=[];
  for(const turn of turns){
   messages.push({role:'user',content:bounded(turn.user,600)});
   messages.push({role:'assistant',content:bounded(turn.reply,1200)});

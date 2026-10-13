@@ -65,6 +65,8 @@ export async function runWechatAgentLoop({
   if(assistant.tool_calls.length>limits.perRound || totalCalls+assistant.tool_calls.length>limits.tools)
    return render(results,'','本次操作达到工具调用上限，剩余步骤未执行。');
   for(const call of assistant.tool_calls){
+   if(now()-started>=limits.deadlineMs)
+    return render(results,'','本次操作达到时间上限，剩余工具未执行。');
    const outcome=await execute(call,totalCalls,round);
    const result=typeof outcome==='string'?outcome:String(outcome?.content||'工具未返回结果');
    const halt=typeof outcome==='object'&&outcome?.halt===true;
