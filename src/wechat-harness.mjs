@@ -6,6 +6,7 @@ const number=(unit,max)=>({type:'number',description:unit+'（必须是用户明
 const selector={id:{type:'string',description:'查询结果中的记录编号，至少前 8 位'},day:{type:'string',description:'唯一匹配记录的日期 YYYY-MM-DD；同日多条时需要记录编号'}};
 const tool=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
 import {guardAction,validDay,explicitDay} from './wechat-policy.mjs';
+import {operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
 export const wechatTools=[
  tool('list_babies','列出这个家庭已经创建的宝宝'),
  tool('get_baby','读取当前宝宝的生日、昵称、过敏等档案'),
@@ -225,8 +226,22 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    if(!batch||batch.babyId!==baby.id||batch.expiresAt<=at||!Array.isArray(batch.ids))return '没有可确认的最近照片批次';
    if(!/照片|图片|视频|这几张|刚才/.test(originalText)||!validDay(args.newDay)||
       explicitDay(originalText,at,baby.time_zone)!==args.newDay)return '请明确指定刚发送的照片和新日期';
-   const results=await env.DB.batch(batch.ids.slice(0,4).map(id=>env.DB.prepare('UPDATE media SET day=? WHERE id=? AND baby_id=? AND deleted_at IS NULL').bind(args.newDay,id,baby.id)));
-   return '已更新最近 '+results.reduce((n,r)=>n+(r.meta?.changes||0),0)+' 项照片或视频的日期。';
+   const statements=[],opIds=[];
+   for(let i=0;i<Math.min(4,batch.ids.length);i++){
+    const id=batch.ids[i];
+    const previous=await env.DB.prepare('SELECT * FROM media WHERE id=? AND baby_id=? AND deleted_at IS NULL LIMIT 1').bind(id,baby.id).first();
+    if(!previous)throw Error('最近照片批次包含无效或已删除记录，请重新查询');
+    const opId=crypto.randomUUID();opIds.push(opId);
+    statements.push(env.DB.prepare('UPDATE media SET day=? WHERE id=? AND baby_id=? AND deleted_at IS NULL AND day=?')
+      .bind(args.newDay,id,baby.id,previous.day));
+    statements.push(env.DB.prepare('INSERT OR IGNORE INTO wechat_operation_log(id,source_message_id,baby_id,kind,record_id,action,before_json,after_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+      .bind(opId,messageId+':media:'+i,baby.id,'media',id,'update_recent_media',
+       JSON.stringify(operationSnapshot('media',previous)),JSON.stringify(snapshotChanges('media',previous,{day:args.newDay})),new Date().toISOString()));
+   }
+   const results=await env.DB.batch(statements);
+   if(results.some((r,i)=>i%2===0&&r.meta?.changes!==1))throw Error('部分照片已变化，请重新查询');
+   if(options.thread)options.thread.lastOperation={babyId:baby.id,opIds,expiresAt:at+1200000};
+   return '已更新最近 '+opIds.length+' 项照片或视频的日期。';
   }
   if(action==='restore_trash'){
    if(!/恢复|还原|找回/.test(originalText))return '请明确说“恢复”并指定记录编号';
