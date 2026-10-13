@@ -145,15 +145,24 @@ jobs:
       - name: Wrangler publish preview
         if: ${{ needs.gate.outputs.dry_run == 'true' }}
         run: npx wrangler deploy --dry-run
+      - name: Reconcile previously applied birth_time schema (migration history only)
+        if: ${{ needs.gate.outputs.dry_run == 'false' && (github.event_name == 'workflow_dispatch' || steps.latest.outputs.safe_to_publish == 'true') }}
+        run: node scripts/reconcile-birth-time.mjs
       - name: Apply remote database migrations
         if: ${{ needs.gate.outputs.dry_run == 'false' && (github.event_name == 'workflow_dispatch' || steps.latest.outputs.safe_to_publish == 'true') }}
         run: npx wrangler d1 migrations apply DB --remote
+      - name: Prepare optional OpenRouter Secret for atomic Worker deployment
+        if: ${{ needs.gate.outputs.dry_run == 'false' && (github.event_name == 'workflow_dispatch' || steps.latest.outputs.safe_to_publish == 'true') }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: node scripts/prepare-openrouter-secret.mjs
       - name: Publish Worker (retry transient Cloudflare API errors)
         if: ${{ needs.gate.outputs.dry_run == 'false' && (github.event_name == 'workflow_dispatch' || steps.latest.outputs.safe_to_publish == 'true') }}
         env:
           EXPECTED_SHA: ${{ needs.gate.outputs.revision }}
         run: bash scripts/deploy-worker-with-retry.sh
-      # Auto-deploy preserves existing Worker secrets; never replay GitHub values.
+      # Auto-deploy preserves existing SESSION_SECRET and DATA_KEY values.
+      # Optional OpenRouter API Key is uploaded atomically with code.
       - name: Sync configured Worker secrets (manual release only)
         if: ${{ github.event_name == 'workflow_dispatch' && needs.gate.outputs.dry_run == 'false' }}
         shell: bash
@@ -169,6 +178,13 @@ jobs:
               echo "::warning::$name not synced: repository secret absent. Existing Worker secret (if any) is kept."
             fi
           done
+      - name: Remove temporary OpenRouter Secret file
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -n "${BABYMEMO_SECRETS_FILE:-}" ]]; then
+            rm -f -- "$BABYMEMO_SECRETS_FILE"
+          fi
       - name: Smoke-check the published instance
         if: ${{ needs.gate.outputs.dry_run == 'false' && (github.event_name == 'workflow_dispatch' || steps.latest.outputs.safe_to_publish == 'true') }}
         run: npm run smoke:check

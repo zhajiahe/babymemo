@@ -7,7 +7,7 @@
 ## 0. 部署约束
 
 - 目标技术栈固定：Node.js 22+、React/Vite、Hono/Cloudflare Workers、D1 `DB`、R2 `MEDIA`、Durable Object `BOT`（类 `WechatSession`）。
-- AI 供应商仅使用 OpenRouter，通过 BabyMemo 网页设置 Key/模型；微信可选，使用 iLink，**不需要** VPS / OpenClaw。
+- AI 供应商仅使用 OpenRouter；管理员可在 GitHub Actions Secret `OPENROUTER_API_KEY` 中配置部署管理的 Key，或在 BabyMemo 网页加密保存 Key。部署 Secret 优先，网页仍能调整模型 ID；微信使用 iLink，**不需要** VPS / OpenClaw。
 - 先看 [`wrangler.jsonc`](../wrangler.jsonc)、[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)、[`package.json`](../package.json)、[`migrations/`](../migrations) 和本文件，**以当前代码为准**。
 - 不准把密码、`SESSION_SECRET`、`DATA_KEY`、OpenRouter Key、微信授权 Token、Cookie 或日志中的敏感原文复制到聊天、PR、Issue、Git 仓库或命令行参数。
 - 不得生成虚假的“部署成功”“扫码成功”“数据迁移成功”报告；任何一项未实测要写成**未验证**。
@@ -96,15 +96,16 @@ npm run provision:remote -- --check
 npm run verify
 
 # 3. 先执行数据库 migration，再发布 Worker。
+node scripts/reconcile-birth-time.mjs
 npx wrangler d1 migrations apply DB --remote
-npx wrangler deploy
+npx wrangler deploy --keep-vars
 
 # 4. 首次部署后，由部署者安全地配置两个 Worker Secret（见上节）。
 # 5. 最后检查服务。
 npm run smoke:check
 ```
 
-**不要直接使用当前 `npm run deploy` 替代此流程**：它目前把 `wrangler deploy` 排在远端 D1 migration 前面，而 GitHub Actions 工作流与本 Runbook 使用“先 migration、后 publish”的顺序。
+`npm run deploy` 已调整为“构建 → 解析 D1 ID → 核验与必要时修复 0012 迁移历史 → 远端增量迁移 → 发布 Worker”。需要使用 `OPENROUTER_API_KEY` 的管理员，请优先通过 GitHub Actions Secret 与发布工作流原子上传；运行普通 Wrangler 命令不会自动从 GitHub 读取该 Secret。
 
 `smoke:check` 会使用 `BABYMEMO_PUBLIC_URL`（如果配置）作为目标站点；否则通过 `CLOUDFLARE_API_TOKEN` 与 `CLOUDFLARE_ACCOUNT_ID` 查询当前账号的 workers.dev 子域。手动运行时可在**自己的终端**只为本次检查设置一个公开地址：
 

@@ -50,7 +50,8 @@ async function boot() {
   sessionSecret = randomBytes(32).toString('hex');
   writeFileSync(envFile,
     'SESSION_SECRET='+sessionSecret+'\n'+
-    'DATA_KEY='+randomBytes(32).toString('hex')+'\n',
+    'DATA_KEY='+randomBytes(32).toString('hex')+'\n'+
+    (process.env.E2E_DEPLOY_KEY==='1'?'OPENROUTER_API_KEY=sk-or-e2e-deployment-key-never-sent'+'\n':''),
     {mode:0o600});
   createdVars = true;
   port = await freePort();
@@ -279,11 +280,27 @@ async function e2e() {
     assert.equal((await json('/api/trash/milestones/'+created.data.id+'/restore',{method:'POST',body:{}})).status,200);
   });
   await step('encrypted OpenRouter config without contacting external service',async()=>{
-    const saved=await json('/api/settings/openrouter',{method:'POST',
-      body:{model:'openai/gpt-4.1-mini',apiKey:'sk-or-local-fake-key-never-sent'}});
+    const deployed=process.env.E2E_DEPLOY_KEY==='1';
+    const before=(await json('/api/state')).data.openrouter;
+    assert.equal(before.configured,deployed);
+    assert.equal(before.managedByDeployment,deployed);
+    const keyAttempt=await json('/api/settings/openrouter',{method:'POST',body:{model:'openai/gpt-4.1-mini',apiKey:'sk-or-local-fake-key-never-sent'}});
+    if(deployed){
+      assert.equal(keyAttempt.status,409);
+      assert.equal(keyAttempt.data.error,'OPENROUTER_MANAGED_BY_DEPLOYMENT');
+      assert.equal((await json('/api/settings/openrouter',{method:'POST',body:{model:'openai/gpt-4.1-mini'}})).status,200);
+      const state=await json('/api/state');
+      assert.equal(state.data.openrouter.configured,true);
+      assert.equal(state.data.openrouter.managedByDeployment,true);
+      assert.equal(JSON.stringify(state.data).includes('sk-or-e2e'),false);
+      return;
+    }
+    assert.equal(keyAttempt.status,200);
+    const saved=await json('/api/settings/openrouter',{method:'POST',body:{model:'openai/gpt-4.1-mini'}});
     assert.equal(saved.status,200,JSON.stringify(saved.data));
     const state=await json('/api/state');
     assert.equal(state.data.openrouter.configured,true);
+    assert.equal(state.data.openrouter.managedByDeployment,false);
     assert.equal(JSON.stringify(state.data).includes('sk-or-local-fake'),false);
   });
   let mediaId,original;

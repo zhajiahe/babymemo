@@ -17,7 +17,12 @@ for ((attempt=1;attempt<=3;attempt++)); do
     fi
   fi
   echo "::group::Wrangler deploy attempt $attempt/3"
-  if npx wrangler deploy --keep-vars 2>&1 | tee "$log"; then
+  deploy_args=(deploy --keep-vars)
+  if [[ -n "${BABYMEMO_SECRETS_FILE:-}" ]]; then
+    [[ -f "$BABYMEMO_SECRETS_FILE" ]] || { echo "::error::OpenRouter secret file is missing"; exit 1; }
+    deploy_args+=(--secrets-file "$BABYMEMO_SECRETS_FILE")
+  fi
+  if npx wrangler "${deploy_args[@]}" 2>&1 | tee "$log"; then
     echo "::endgroup::"
     echo "Worker deployment succeeded on attempt $attempt."
     exit 0

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Baby } from './types';
 import { applySession, authenticated, clearSession, login, owner, sameOrigin, setup } from './auth';
 import { constantEqual, passwordHash, randomHex } from './crypto';
-import { decryptSecret, encryptSecret, setSetting, setting } from './crypto';
+import { decryptSecret, encryptSecret, setSetting, setting, deployedOpenRouterKey } from './crypto';
 import { generateQr, qrStatus, testOpenRouterConnection, workerBot } from './wechat';
 import { mediaDownloadHeader } from './media-filename.mjs';
 import { finalizeUpload, FinalizeMismatchError } from './upload-finalize.mjs';
@@ -85,7 +85,7 @@ app.get('/api/state',async c=>{
     countsByBaby[row.baby_id][row.kind]=row.total;
   }
   return c.json({ownerName:user!.name,familyName:familyName||'家庭空间',babies:babies.results,counts:{growth:growth?.count??0,milestones:milestones?.count??0,media:media?.count??0},countsByBaby,
-    openrouter:{configured:!!encryptedApiKey,model:model||'openai/gpt-4.1-mini'},
+    openrouter:{configured:!!encryptedApiKey||!!deployedOpenRouterKey(c.env),managedByDeployment:!!deployedOpenRouterKey(c.env),model:model||'openai/gpt-4.1-mini'},
     wechat:{connected:!!encryptedBot,enabled:botOn==='true',defaultBabyId:await setting(c.env,'wechat_default_baby_id')||''}});
 });
 app.post('/api/babies',async c=>{
@@ -405,6 +405,7 @@ app.post('/api/settings/openrouter',async c=>{
     const v=await json(c.req.raw);
     if(typeof v.model!=='string'||!/^[\w./:-]{3,100}$/.test(v.model))return fail(c,400,'INVALID_MODEL');
     if(v.apiKey!==undefined){
+      if(deployedOpenRouterKey(c.env))return fail(c,409,'OPENROUTER_MANAGED_BY_DEPLOYMENT');
       if(typeof v.apiKey!=='string'||!v.apiKey.startsWith('sk-or-')||v.apiKey.length>300)return fail(c,400,'INVALID_API_KEY');
       await setSetting(c.env,'openrouter_key',await encryptSecret(c.env,v.apiKey));
     }
