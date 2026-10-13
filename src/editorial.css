@@ -20,8 +20,8 @@ h1,h2,h3 { letter-spacing:normal; }
 .page-heading { margin-bottom:24px; gap:14px; }
 .page-heading h1 { font-size:clamp(27px,3vw,34px); font-weight:690; margin:0 0 5px; }
 .page-heading p { margin:0; font-size:14px; }
-.baby-pill { box-shadow:none; border:1px solid var(--bm-border); background:var(--bm-surface); border-radius:10px; }
-.baby-pill select { color:var(--bm-ink); font-weight:600; }
+
+
 .card { border:1px solid var(--bm-border); background:var(--bm-surface); box-shadow:none; border-radius:13px; }
 .primary,.secondary { border-radius:9px; }
 .icon-subtle,.stat-icon { background:transparent; }
@@ -71,7 +71,7 @@ h1,h2,h3 { letter-spacing:normal; }
 /* Unframed, compact images; controls are in media details. */
 .album-content-toolbar { margin:0 0 12px; }
 .album-toolbar-actions { gap:12px; }
-.album-favorite-filter { color:var(--bm-muted); }
+
 .album-add-btn { font-size:14px; }
 .photo-month { margin:17px 0 29px; }
 .photo-month h3 { font-size:15px; font-weight:630; margin:0 0 10px; }
@@ -106,7 +106,7 @@ h1,h2,h3 { letter-spacing:normal; }
  .page-heading { margin-bottom:18px; }
  .page-heading h1 { font-size:27px; }
  .page-heading p { font-size:13px; }
- .baby-pill { margin-top:0; }
+ 
  .home-feed { display:flex; flex-direction:column; gap:23px; }
  .home-memories,.home-measurements,.home-events { width:100%; }
  .home-section-title { margin-bottom:11px; }
@@ -145,7 +145,7 @@ h1,h2,h3 { letter-spacing:normal; }
  .photo-month h3 { padding:0 12px; }
  .album-toolbar-actions { gap:4px; }
  .album-add-btn { font-size:12px; padding:8px 10px; }
- .album-favorite-filter { font-size:12px; }
+ 
  .home-event time { min-width:76px; }
 }
 @media(prefers-reduced-motion:reduce) { .mobile-nav { backdrop-filter:none; } }
