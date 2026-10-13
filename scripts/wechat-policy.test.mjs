@@ -46,3 +46,21 @@ test('cancel and undo are explicit, not inferred from casual messages',()=>{
  assert.equal(isCancel('取消'),true);assert.equal(isUndo('撤销'),true);
  assert.equal(isUndo('撤销最近一天的记录'),false);
 });
+
+test('last week weekday is resolved in the baby timezone from message time',()=>{
+ const tz='Asia/Shanghai';
+ const tue=Date.parse('2026-10-13T18:50:00+08:00');
+ for(const txt of ['上周六，第一次睡拼接床','上星期六第一次睡拼接床','上礼拜六买了拼接床']){
+  assert.equal(explicitDay(txt,tue,tz),'2026-10-10',txt);
+  assert.equal(guardAction('create_milestone',{day:'2026-10-10'},txt+'\n可以可以。',baby,tue),null,txt);
+  assert.match(guardAction('create_milestone',{day:'2026-10-09'},txt+'\n可以可以。',baby,tue),/日期缺乏/,txt);
+ }
+ assert.equal(explicitDay('上周一',tue,tz),'2026-10-05');
+ assert.equal(explicitDay('上周日',tue,tz),'2026-10-11');
+ assert.equal(explicitDay('上周天',tue,tz),'2026-10-11');
+ // Calendar-week semantics on Sunday: "上周六" is eight days ago.
+ assert.equal(explicitDay('上周六',Date.parse('2026-10-18T18:50:00+08:00'),tz),'2026-10-10');
+ assert.equal(explicitDay('上周六',Date.parse('2026-01-01T08:00:00+08:00'),tz),'2025-12-27');
+ assert.equal(explicitDay('上周六',tue,tz),'2026-10-10');
+ assert.equal(explicitDay('是我们在二手平台买的',tue,tz),null);
+});

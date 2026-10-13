@@ -101,3 +101,29 @@ test('confirmation uses the original description, never dates added by the assis
  assert.equal(ctx.milestoneGroundedText,'去公园玩了\n好');
  assert.doesNotMatch(ctx.milestoneGroundedText,/10月2号/);
 });
+
+test('spoken 可以可以 confirms an immediate "要帮你记成" proposal using only the user original event',()=>{
+ const at=Date.parse('2026-10-13T18:50:00+08:00');
+ const original='上周六，测试宝宝第一次睡拼接床，是我们在二手平台上买的，尺寸特别合适。';
+ const proposal='第一次睡拼接床啦！要帮你记成10月10日那天的成长事件吗？';
+ let thread=getActiveThread(null,'synthetic-bot','synthetic-user',at);
+ thread=appendTurn(thread,original,proposal,'synthetic-baby',at);
+ const context=buildCommandContext('可以可以。',thread,at+60000,'synthetic-baby');
+ assert.equal(confirmsMilestoneProposal('可以可以。',proposal),true);
+ assert.equal(confirmsMilestoneProposal('可以，可以。',proposal),true);
+ assert.equal(confirmsMilestoneProposal('好好',proposal),true);
+ assert.equal(context.milestoneGroundedText,original+'\n可以可以。');
+ assert.equal(context.groundedText,'可以可以。'); // Other write types cannot borrow earlier context
+ assert.match(context.modelMessages.at(-1).content,/create_milestone/);
+ assert.doesNotMatch(context.milestoneGroundedText,/10月10日/); // Assistant claims cannot ground dates
+});
+test('repeated confirmation is not general write authorization',()=>{
+ const at=Date.parse('2026-10-13T18:50:00+08:00'),original='上周六第一次睡拼接床';
+ const offer='要帮你记成10月10日那天的成长事件吗？';
+ const denial=['不可以','可以但是别保存','可以删除刚才那条','可以吗','好，但别记'];
+ for(const answer of denial)assert.equal(confirmsMilestoneProposal(answer,offer),false,answer);
+ assert.equal(confirmsMilestoneProposal('可以可以。','要我帮你看看最近的相册吗？'),false);
+ const thread=appendTurn(getActiveThread(null,'b','u',at),original,'要帮你查查宝宝的生日吗？','synthetic-baby',at);
+ assert.equal(buildCommandContext('可以可以。',thread,at+1000,'synthetic-baby').milestoneGroundedText,null);
+ assert.equal(buildCommandContext('可以可以。',thread,at+1000,'other-baby').milestoneGroundedText,null);
+});

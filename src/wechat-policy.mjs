@@ -23,6 +23,17 @@ export function explicitDay(text,now,tz){
  if(typeof text!=='string')return null;
  const exact=text.match(/(?:^|[^\d])((?:19|20)\d{2})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/);
  if(exact){const day=[exact[1],exact[2].padStart(2,'0'),exact[3].padStart(2,'0')].join('-');return validDay(day)?day:null}
+ // A date supplied as a relative weekday in the USER's original words is
+ // still explicit grounding. Compute from the message's local calendar day,
+ // never from the assistant's proposed (possibly invented) date.
+ const previousWeekday=text.match(/上(?:周|星期|礼拜)\s*([一二三四五六日天])/);
+ if(previousWeekday){
+  const dayIndex={'一':0,'二':1,'三':2,'四':3,'五':4,'六':5,'日':6,'天':6}[previousWeekday[1]];
+  const today=dayInZone(now,tz),d=new Date(today+'T12:00:00Z');
+  const daysSinceMonday=(d.getUTCDay()+6)%7;
+  const offset=-daysSinceMonday-7+dayIndex;
+  return new Date(d.getTime()+offset*86400000).toISOString().slice(0,10);
+ }
  for(const [mark,offset] of [['前天',-2],['昨天',-1],['昨日',-1],['昨晚',-1],['昨夜',-1],['今天',0],['今日',0]]){
   if(text.includes(mark))return relativeDay(offset,now,tz);
  }

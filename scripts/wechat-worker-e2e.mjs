@@ -291,6 +291,47 @@ try{
   assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('hallucinated-date-two')).length,0);
   assert.match(r.replies[1],/没有实际保存/);
  });
+ await step('regression: voice 上周六 plus voice 可以可以。 saves the correct previous-Saturday diary date',async()=>{
+  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const d=new Date(today+'T12:00:00Z'),weekday=(d.getUTCDay()+6)%7;
+  const lastSaturday=new Date(d.getTime()-(weekday+2)*86400000).toISOString().slice(0,10);
+  const event='上周六，测试宝宝第一次睡拼接床，是我们在二手平台上买的，尺寸特别合适。';
+  const question='第一次睡拼接床啦！要帮你记成那天的成长事件吗？';
+  const r=await run({mode:'alarm',alarms:2,pollBatches:[
+   [voiceFrom('voice-previous-saturday-event',event)],
+   [voiceFrom('voice-confirm-repeated-yes','可以可以。')]
+  ],responses:[
+   natural(question),
+   tool('create_milestone',{day:lastSaturday,title:'第一次睡拼接床',description:'上周六第一次睡拼接床，拼接床是二手平台淘到的，尺寸特别合适。'}),
+   natural('记下啦！宝宝第一次睡拼接床的回忆已经保存。')
+  ]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,3);
+  assert.equal(r.sent,2);
+  const entries=r.milestones.filter(x=>x.source_message_id?.endsWith('voice-confirm-repeated-yes:step:0'));
+  assert.equal(entries.length,1);
+  assert.equal(entries[0].day,lastSaturday);
+  assert.match(entries[0].description,/第一次睡拼接床/);
+  assert.match(r.replies[1],/记下啦/);
+  assert.ok(r.modelMessages[1].some(x=>x.role==='user'&&x.content===event));
+  assert.match(r.modelMessages[1].at(-1).content,/create_milestone/);
+ });
+ await step('repeated voice affirmation without a save proposal cannot write a milestone',async()=>{
+  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const d=new Date(today+'T12:00:00Z'),weekday=(d.getUTCDay()+6)%7;
+  const lastSaturday=new Date(d.getTime()-(weekday+2)*86400000).toISOString().slice(0,10);
+  const r=await run({mode:'alarm',alarms:2,pollBatches:[
+   [voiceFrom('voice-unrelated-event','上周六第一次睡拼接床')],
+   [voiceFrom('voice-unrelated-confirm','可以可以。')]
+  ],responses:[
+   natural('要我帮你查看一下相册吗？'),
+   tool('create_milestone',{day:lastSaturday,title:'睡拼接床',description:'上周六第一次睡拼接床'}),
+   natural('没有保存任何成长日记。')
+  ]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('voice-unrelated-confirm')).length,0);
+  assert.match(r.replies[1],/没有保存|未保存/);
+ });
  await step('negated delete cannot mutate local D1',async()=>{const r=await run({mode:'text',id:'negated-delete',text:'不要删除测试宝宝今天的体重',responses:[tool('delete_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})})]});assert.equal(r.growth.length,2);assert.doesNotMatch(r.reply,/已删除/)});
  await step('four consecutive WeChat messages naturally respond, then save one consolidated diary milestone',async()=>{
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
