@@ -10,7 +10,7 @@ BabyMemo 是小型、隐私优先的家庭成长记录服务。核心体验是�
 - 后端：Hono on Cloudflare Workers，路由在 `src/worker.ts`，登录/初始化在 `src/auth.ts`。
 - 持久化：Cloudflare D1（业务事实来源）；R2 `MEDIA`（私有照片和视频）；Durable Object `BOT` / `WechatSession`（微信 iLink 轮询）。
 - 配置：`wrangler.jsonc`；数据库迁移：`migrations/`；构建及脚本：`package.json`。
-- OpenRouter **仅用作微信消息→工具调用路由**，不是网页聊天模型。Key 在设置页保存并通过 `DATA_KEY` 加密；微信 iLink 可选，不需要 OpenClaw、VPS 或常驻 Node 服务。
+- OpenRouter **仅用作微信消息→工具调用路由**，不是网页聊天模型。Key 可由 `OPENROUTER_API_KEY` 部署 Secret 统一配置，或在网页设置页通过 `DATA_KEY` 加密保存；微信 iLink 可选，不需要 OpenClaw、VPS 或常驻 Node 服务。
 - 当前是**单家庭管理员**的初始化和登录流程，使用应用层 HttpOnly Cookie，不使用 FlareMo 的 Better Auth / PAT / Memos API。不要未经产品决策增设公开注册、多租户、第二套登录或匿名数据访问。
 - MyBaby 旧生产站（Vercel/Neon/R2）与 BabyMemo 新环境隔离。**没有授权不得触碰、迁移、覆盖旧生产数据**。迁移计划参见 `docs/MIGRATION.md`。
 
@@ -21,7 +21,7 @@ BabyMemo 是小型、隐私优先的家庭成长记录服务。核心体验是�
 | UI / 交互 | `docs/design-system.md`、`src/styles.css`、`src/App.tsx` |
 | 初始化 / 登录 | `src/auth.ts`、`src/worker.ts`、`docs/DEPLOY.md` |
 | D1 / 成长记录 | `migrations/`、`src/worker.ts`、`src/types.ts` |
-| 相册上传 / 视频 | `src/App.tsx` 的 `Album`、`src/worker.ts` 的 `/api/upload/*` 和 `/api/media/*`、R2 binding |
+| 相册上传 / 视频 | `src/features/album/Album.tsx`、`src/media-upload.ts`、`src/worker.ts` 的 `/api/upload/*`、`/api/media/*` 与 R2 binding |
 | 微信操作 Harness | `src/wechat-harness.mjs` 工具白名单与 D1 执行、`src/wechat.ts` 绑定/路由/轮询、`src/worker.ts` 配置 API |
 | 部署 / Cloudflare | `docs/agent-deploy.md`、`docs/github-action-deploy.md`、`.github/workflows/deploy.yml`、`wrangler.jsonc` |
 | 新旧系统迁移 | `docs/MIGRATION.md`；只做规划和核验，除非另获明确执行授权 |
@@ -56,7 +56,7 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 
 - 延续项目当前 **React + TS + Hono + 原生 CSS** 体系；未经批准不引入 Tailwind、shadcn、外部状态管理、第二个后端或数据库。
 - 改一条业务流程时检查对应的 API、数据结构、错误码和前端反馈。前端不添加「看得见但不可用」的按钮。
-- 通用无业务组件 `Logo / Notice / Field / Primary / Card / Pager` 位于 `src/components/ui.tsx`；先复用它们，再考虑添加新原语。业务组件仍集中于 `src/App.tsx`，可按边界渐进拆分，但不要为了小修复重写整个页面。
+- 通用无业务组件 `Logo / Notice / Field / Primary / Card / Pager` 位于 `src/components/ui.tsx`；先复用它们，再考虑添加新原语。业务组件已拆分至 `src/features/`；保持 `App` 的协调职责，不要为小修复重写页面。
 - API 涉及用户数据的操作继续强制认证；状态变更请求不得绕过 `sameOrigin` 校验。错误区分 `401`（未登录）、`403`（Origin）、网络暂时不可达；不要将网络中断误判为需要重新初始化。
 - D1 是用户、宝宝、成长记录、里程碑、媒体索引及加密配置的事实来源。结构修改必须提交新的 `migrations/` SQL，并考虑已部署数据库的兼容性；**禁止删表、清库、重建资源来“修复”迁移**。
 - R2 保存媒体对象；读取仍经登录后的 Worker 代理。上传保持分片、并发上限、重试与失败取消逻辑；不要把视频全量读进 Worker 或为方便直接公开 R2 bucket。移动 Safari 需覆盖 HEIC/MOV、慢网和取消后的状态。
@@ -70,16 +70,16 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 
 - 优先沿用现有 `.card`、`.primary`、`.secondary`、`.field`、`.nav-link`、`.mobile-nav` 等类；新 CSS token 先统一定义，不要散落新的魔法色值。
 - 新增中文可读文案字号 **至少 12px**；目前遗留的 10–11px 文案作为后续清理项，不继续扩大。
-- 新触控控件争取至少 **44 × 44 CSS px**，焦点必须可见。对比度目标：普通正文至少 4.5:1，较大文字或 UI 图形至少 3:1，必要时调整颜色而不是降低字号。
+- 新触控控件至少 **44 × 44 CSS px**，焦点必须可见。对比度目标：普通正文至少 4.5:1，较大文字或 UI 图形至少 3:1，必要时调整颜色而不是降低字号。
 - 重点检查宽度 **320px、375px、768px 和桌面**，关注底部安全区、相册、长文件名、初始化表单和软键盘遮挡。
 - 尊重 `prefers-reduced-motion`；加载、上传、保存、失败都应有可理解的状态，不滥用 toast、持续动画和装饰性渐变。
-- 新增 UI 文案统一使用「成长记录 / 成长瞬间 / 家庭相册 / 微信操作」，不随意改名。宝宝健康信息不做未经验证的医学诊断。
+- 新增 UI 文案统一使用「成长记录 / 成长瞬间 / 相册 / 微信操作」，不随意改名。宝宝健康信息不做未经验证的医学诊断。
 
 ## 6. 密钥、隐私与安全
 
 - 初始化密钥已取消，公开空实例存在管理员被抢先注册风险。部署后应立即初始化，或使用 Cloudflare Access 限制访问。不得覆盖已有管理员账号。
 
-生产只需要 `SESSION_SECRET`、`DATA_KEY` 分别独立生成；`DATA_KEY` 是已保存 OpenRouter 和微信凭据的加密密钥，错误轮换会导致密文无法解密。**不读取、索取、回显、记录或轮换已有生产密钥**；不得将其复制到 PR、Issue、聊天、日志或代码。
+生产认证与数据加密必需 `SESSION_SECRET`、`DATA_KEY` 分别独立生成；部署可选 `OPENROUTER_API_KEY`，只允许按授权步骤安全同步；`DATA_KEY` 是已保存 OpenRouter 和微信凭据的加密密钥，错误轮换会导致密文无法解密。**不读取、索取、回显、记录或轮换已有生产密钥**；不得将其复制到 PR、Issue、聊天、日志或代码。
 
 不要将真实宝宝姓名、生日、照片、病史、家庭会话、微信凭据和 OpenRouter Key 放入测试样本或日志。测试采用合成资料；调试报告只保留脱敏错误码与必要复现步骤。
 
@@ -99,6 +99,7 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 ## 8. 交付与文档入口
 
 - `README.md`：功能、部署入口与现状
+- `ENGINEERING.md`：项目结构、代码质量与文档信息架构
 - `docs/design-system.md`：视觉 token、排版、响应式、文案与验收原则
 - `docs/DEPLOY.md`：面向用户的一键部署与初始化
 - `docs/github-action-deploy.md`：GitHub Actions 受控部署步骤

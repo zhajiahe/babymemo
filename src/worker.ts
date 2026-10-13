@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Baby } from './types';
+import {validCalendarDay,validTimeZone} from './validation';
+import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import { applySession, authenticated, clearSession, login, owner, sameOrigin, setup } from './auth';
 import { constantEqual, passwordHash, randomHex } from './crypto';
 import { decryptSecret, encryptSecret, setSetting, setting, deployedOpenRouterKey } from './crypto';
@@ -17,11 +19,7 @@ const json = async (req: Request, limit=16_384):Promise<any> => {
   if(raw.length>limit)throw Error('BODY_TOO_LARGE');
   return JSON.parse(raw);
 };
-const dayOk = (s:unknown):s is string => {
-  if(typeof s!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
-  const day=new Date(s+'T00:00:00Z');
-  return !Number.isNaN(day.getTime())&&day.toISOString().slice(0,10)===s;
-};
+const dayOk=validCalendarDay;
 const validBirthTime=(v:unknown):v is string=>typeof v==='string'&&(v===''||/^([01]\d|2[0-3]):[0-5]\d$/.test(v));
 const validNum=(v:unknown,min:number,max:number):boolean=>v===null||v===undefined||(typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max);
 const now=()=>new Date().toISOString();
@@ -85,12 +83,12 @@ app.get('/api/state',async c=>{
     countsByBaby[row.baby_id][row.kind]=row.total;
   }
   return c.json({ownerName:user!.name,familyName:familyName||'家庭空间',babies:babies.results,counts:{growth:growth?.count??0,milestones:milestones?.count??0,media:media?.count??0},countsByBaby,
-    openrouter:{configured:!!encryptedApiKey||!!deployedOpenRouterKey(c.env),managedByDeployment:!!deployedOpenRouterKey(c.env),model:model||'openai/gpt-4.1-mini'},
+    openrouter:{configured:!!encryptedApiKey||!!deployedOpenRouterKey(c.env),managedByDeployment:!!deployedOpenRouterKey(c.env),model:model||DEFAULT_OPENROUTER_MODEL},
     wechat:{connected:!!encryptedBot,enabled:botOn==='true',defaultBabyId:await setting(c.env,'wechat_default_baby_id')||''}});
 });
 app.post('/api/babies',async c=>{
   try {
-    const v=await json(c.req.raw);if(typeof v.name!=='string'||!v.name.trim()||v.name.length>80||!dayOk(v.birthday)||!validBirthTime(v.birthTime??'')||!['boy','girl','other'].includes(v.gender))return fail(c,400,'INVALID_BABY');
+    const v=await json(c.req.raw);if(typeof v.name!=='string'||!v.name.trim()||v.name.length>80||!dayOk(v.birthday)||!validBirthTime(v.birthTime??'')||!validTimeZone(v.timeZone||'Asia/Shanghai')||!['boy','girl','other'].includes(v.gender))return fail(c,400,'INVALID_BABY');
     const id=crypto.randomUUID();
     await c.env.DB.prepare('INSERT INTO babies(id,name,birthday,birth_time,gender,time_zone,allergies,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,v.name.trim(),v.birthday,v.birthTime??'',v.gender,String(v.timeZone||'Asia/Shanghai'),String(v.allergies||'').slice(0,2000),'',now()).run();
     return c.json({id},201);
@@ -462,7 +460,7 @@ app.post('/api/settings/wechat/:action',async c=>{
   const action=c.req.param('action');
   if(!['start','pause'].includes(action))return fail(c,404,'NOT_FOUND');
   if(action==='start'&&!await setting(c.env,'wechat_token'))return fail(c,409,'WECHAT_NOT_PAIRED');
-  if(action==='start'&&!await setting(c.env,'openrouter_key'))return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
+  if(action==='start'&&!deployedOpenRouterKey(c.env)&&!await setting(c.env,'openrouter_key'))return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
   await setSetting(c.env,'wechat_enabled',action==='start'?'true':'false');
   const result=await workerBot(c.env).fetch('https://bot.internal/'+action,{method:'POST'});
   if(!result.ok){

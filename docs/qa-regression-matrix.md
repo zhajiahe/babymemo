@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | `npm run test:unit` | Node，离线 | 微信工具和记忆、OpenRouter 429/5xx 重试、微信加密媒体、上传最终化和回收、备份包完整性 |
 | `npm run test:e2e` | 本地 Wrangler + 独立 D1/R2/DO | 认证与 CSRF、同请求并发幂等、多宝宝隔离、私有媒体读写、视频分片、Range、删除和恢复 |
-| `BROWSER_E2E=1 npm run test:e2e` | Chromium / WebKit | 登录持久性、添加宝宝、上传与补缩略图、编辑及删除、多视口、草稿隔离、可访问性基础断言 |
-| GitHub Actions `Check BabyMemo` | 四个隔离 Job | 检查和构建、Worker E2E、Chromium、Linux WebKit；截图保存在 Artifacts |
+| `BROWSER_E2E=1 npm run test:e2e` | Chromium / WebKit | 登录持久性、添加宝宝、上传与私有相册、编辑及删除、多视口、草稿隔离、可访问性基础断言 |
+| GitHub Actions `Check BabyMemo` | 四个隔离 Job | 检查和构建、Worker E2E（包括部署 Key 模拟）、Chromium、Linux WebKit；截图保存在 Artifacts |
 
 CI 使用自动生成的本地测试密钥与临时 D1/R2 存储，不连接生产 Cloudflare 资源。截图只含虚构数据。
 
@@ -46,3 +46,11 @@ CI 使用自动生成的本地测试密钥与临时 D1/R2 存储，不连接生�
 - 新增场景如发现缺陷，应先修复生产代码或在 PR 中记录明确的阻塞项，不能简单删除失败断言。
 - 核验截图，并进行真实 iPhone、微信账号和完整离线恢复演练后，才可声称相关功能通过生产验收。
 - 合并测试 PR 时不要轮换 SESSION_SECRET / DATA_KEY，也不要运行生产数据迁移之外的破坏性脚本。
+
+## 手动真实模型验证（不随 CI 自动触发）
+
+| 测试 | 入口 | 自动执行 | 访问真实家庭数据 |
+| --- | --- | --- | --- |
+| OpenRouter Tool Calling E2E | GitHub Actions `Manual OpenRouter Live E2E` 或设置确认变量后执行 `npm run test:openrouter:live` | **否** | 不访问 Cloudflare D1/R2 或微信，仅向外部模型发送一条虚构指令 |
+
+本地 Worker E2E 与 Chromium/WebKit E2E **继续自动执行**，它们使用假 Key 和临时存储，不会产生 OpenRouter 调用费用。手动模型测试需要管理员配置真实 Key，可能产生小额 API 费用；可验证目标模型当前是否返回标准工具调用，而不是验证真实微信授权或用户家庭数据。

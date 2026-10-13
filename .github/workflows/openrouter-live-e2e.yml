@@ -1,0 +1,32 @@
+name: Manual OpenRouter Live E2E
+
+# Makes one real paid API request. No automatic events.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: babymemo-manual-openrouter-e2e
+  cancel-in-progress: false
+
+jobs:
+  live-tool-call:
+    name: Check real model tool calling (synthetic input)
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Real OpenRouter E2E (manual, one request)
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_E2E_CONFIRM: 'YES'
+        run: node scripts/openrouter-live-e2e.mjs
