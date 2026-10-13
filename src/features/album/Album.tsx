@@ -94,14 +94,18 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
      // A lost HTTP response or Safari reload can be safely retried.
      if(!matching&&canDirectUpload(file.size)){
       const key='bm-direct-'+baby.id+'-'+fingerprint;
-      let id=sessionStorage.getItem(key)||'';
-      if(!/^[0-9a-f-]{36}$/.test(id)){id=crypto.randomUUID();sessionStorage.setItem(key,id)}
+      let id='';
+      try{id=sessionStorage.getItem(key)||''}catch{/* Safari private storage may be unavailable. */}
+      if(!/^[0-9a-f-]{36}$/.test(id)){
+       id=crypto.randomUUID();
+       try{sessionStorage.setItem(key,id)}catch{/* Keep this attempt's ID in memory. */}
+      }
       uploadId=id;
       const headers={'Content-Type':mime,'x-baby-id':baby.id,'x-upload-day':day,'x-upload-title':encodeURIComponent(title)};
       for(let attempt=0;attempt<3;attempt++){
        try{
         await api('/api/upload/direct/'+id,{method:'PUT',body:file,headers});
-        sessionStorage.removeItem(key);
+        try{sessionStorage.removeItem(key)}catch{/* Storage is best effort. */}
         completedId=id;
         uploadId=undefined;
         break;
