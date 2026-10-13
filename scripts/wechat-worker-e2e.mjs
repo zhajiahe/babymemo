@@ -87,7 +87,7 @@ try{
   assert.equal(r.sent,2);
   assert.equal(r.replies.length,2);
   assert.ok(r.modelMessages[1].some(m=>m.role==='user'&&m.content==='测试宝宝今天在公园第一次独立走路'));
-  assert.match(r.modelMessages[1].at(-1).content,/create_milestone/);
+  assert.equal(r.modelMessages[1].at(-1).content,'好');
   assert.equal(r.milestones.filter(x=>x.source_message_id==='synthetic-bot:voice-followup-yes:step:0').length,1);
  });
  await step('voice without native transcription is acknowledged once, without ASR or model calls',async()=>{
