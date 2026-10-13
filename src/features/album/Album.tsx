@@ -74,6 +74,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
    const results=await mapBounded(files,policy.files,async file=>{
     const fileStarted=performance.now();
     let uploadId:string|undefined;
+    let completedId='';
     try{
      if(file.size<1||file.size>209715200)throw Error('文件大小需在 1B～200MB 之间');
      const extension=file.name.toLowerCase().match(/\.(heic|heif|jpg|jpeg|png|webp|gif|mov|mp4|webm)$/)?.[1];
@@ -96,6 +97,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
        try{
         await api('/api/upload/direct/'+id,{method:'PUT',body:file,headers});
         sessionStorage.removeItem(key);
+        completedId=id;
         uploadId=undefined;
         break;
        }catch(error){
@@ -143,6 +145,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
         await new Promise(resolve=>setTimeout(resolve,1000*2**attempt));
        }
       }
+      completedId=session.id;
       uploadId=undefined;
      }
      saved++;
@@ -150,8 +153,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
      setProgress('已保存 '+saved+'/'+files.length+' · '+(file.size/1048576/seconds).toFixed(1)+' MiB/s');
      changed();
      notify('已保存 '+file.name);
-     queueThumbnail(file,mime,uploadId||(!matching&&canDirectUpload(file.size)?sessionStorage.getItem('not-used')||'':''));
-     // For both paths use the stable ID returned by the server or allocated above.
+     queueThumbnail(file,mime,completedId);
     }catch(error){
      notify(file.name+'：'+(error instanceof Error?error.message:'上传中断')+(uploadId&&!canDirectUpload(file.size)?'。重新选择同一文件即可续传。':''));
     }
