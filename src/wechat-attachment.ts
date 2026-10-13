@@ -1,7 +1,7 @@
 import {createDecipheriv} from 'node:crypto';
 import {decodeWeChatAesKey,wechatCdnUrl} from './wechat-media.mjs';
-import {resolveOpenRouterKey} from './crypto';
-import {parseWechatIncoming,type ParsedWechatIncoming,type WechatItem} from './wechat-forward';
+import {resolveOpenRouterKey} from './crypto.ts';
+import {parseWechatIncoming,type ParsedWechatIncoming,type WechatItem} from './wechat-forward.ts';
 import type {Env} from './types';
 
 type ResponseFetch=typeof fetch;
