@@ -22,7 +22,9 @@ export async function auditChange(env,{sourceId,babyId,kind,recordId,action,befo
   const results=await env.DB.batch([statement,insert]);
   if(!results[0]?.meta?.changes)return null;
  }else await insert.run();
- return opId;
+ const actual=await env.DB.prepare('SELECT id FROM wechat_operation_log WHERE source_message_id=? AND baby_id=? LIMIT 1')
+  .bind(sourceId||opId,babyId).first();
+ return actual?.id||opId;
 }
 export async function undoOperation(env,babyId,opId){
  if(!opId||typeof opId!=='string')return '没有可撤销的最近操作';
