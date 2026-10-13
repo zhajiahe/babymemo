@@ -25,6 +25,7 @@ const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const tool=(name,args)=>({choices:[{message:{tool_calls:[{id:'synthetic-call',type:'function',function:{name,arguments:JSON.stringify(args)}}]},finish_reason:'tool_calls'}]});
 const noTools={choices:[{message:{content:'synthetic no-tool response'},finish_reason:'stop'}]};
 const raw=(id,type=2)=>({message_id:id,from_user_id:'synthetic-user',to_user_id:'synthetic-bot',message_type:1,message_state:2,context_token:'synthetic-context',create_time_ms:Date.now(),item_list:[type===2?{type:2,image_item:{media:{encrypt_query_param:'synthetic',aes_key:key.toString('base64')}}}:{type:5,video_item:{media:{encrypt_query_param:'synthetic',aes_key:key.toString('base64')}}}]});
+const textFrom=(id,from,to,text)=>({message_id:id,from_user_id:from,to_user_id:to,message_type:1,message_state:2,context_token:'synthetic-context',create_time_ms:Date.now(),item_list:[{type:1,text_item:{text}}]});
 async function step(title,run){await run();passed++;console.log('PASS '+title)}
 try{
  const server=createServer();await new Promise((res,rej)=>{server.once('error',rej);server.listen(0,'127.0.0.1',res)});const port=server.address().port;await new Promise(res=>server.close(res));
@@ -47,6 +48,22 @@ try{
  await step('R2 commit survives failed D1 indexing; retry avoids CDN download',async()=>{const r=await run({mode:'alarm',messages:[raw('index-retry')],alarms:2,failIndexOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,3);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:index-retry').photo_attempts,1)});
  await step('failed reply transport retries persisted response/client ID without re-import',async()=>{const r=await run({mode:'alarm',messages:[raw('send-retry')],alarms:2,failSendOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,4);assert.equal(r.downloads,1);assert.equal(r.sent,2);assert.equal(r.clientIds[0],r.clientIds[1]);assert.equal(r.originalMatches,true)});
  await step('CDN failures retain sanitized diagnostics through idle polling until media succeeds',async()=>{const failed=await run({mode:'alarm',messages:[raw('cdn-failed')],alarms:3,cdnStatus:503});assert.match(failed.reply,/图片或视频下载\/入库多次失败/);assert.equal(failed.media.length,4);assert.equal(failed.downloads,3);assert.deepEqual(Object.keys(failed.status.lastMediaError).sort(),['at','attempt','code']);assert.equal(failed.status.lastMediaError.code,'WECHAT_CDN_HTTP_503');assert.equal(failed.status.lastMediaError.attempt,3);const idle=await run({mode:'alarm',messages:[],storage:failed.status});assert.equal(idle.status.lastError,null);assert.deepEqual(idle.status.lastMediaError,failed.status.lastMediaError);const ok=await run({mode:'alarm',messages:[raw('cdn-recovered')],storage:idle.status,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(ok.reply,/已保存/);assert.equal(ok.media.length,5);assert.equal(ok.status.lastMediaError,undefined);assert.equal(ok.originalMatches,true)});
+ await step('two WeChat accounts have independent cursors, sender filters and pause state',async()=>{
+  const payload={mode:'multi',
+   messagesA:[textFrom('same-message','synthetic-user','synthetic-bot','你好，你可以做什么'),textFrom('not-authorized','synthetic-user-2','synthetic-bot','你好，你可以做什么')],
+   messagesB:[textFrom('same-message','synthetic-user-2','synthetic-bot-2','你好，你可以做什么')]};
+  const r=await run(payload);
+  assert.equal(r.error,undefined);
+  assert.equal(r.sent,2);
+  assert.deepEqual(r.sentTo,['synthetic-user','synthetic-user-2']);
+  assert.equal(r.status.firstCursor,'cursor-one');
+  assert.equal(r.status.secondCursor,'cursor-two');
+  assert.notEqual(r.status.firstConnection,r.status.secondConnection);
+  assert.equal(r.status.pausedAccountSentNothing,true);
+  assert.equal(r.messages.filter(x=>x.message_id==='synthetic-bot:same-message').length,1);
+  assert.equal(r.messages.filter(x=>x.message_id==='synthetic-bot-2:same-message').length,1);
+  assert.equal(r.messages.some(x=>x.message_id==='synthetic-bot:not-authorized'),false);
+ });
  console.log(JSON.stringify({suite:'isolated WeChat Worker E2E',passed,failed:0,realExternalCalls:0,productionWrites:0}));
 }catch(error){console.error(error);process.exitCode=1}
 finally{

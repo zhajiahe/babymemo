@@ -511,6 +511,17 @@ async function e2e() {
     assert.equal((await json('/api/settings/wechat/default-baby',{method:'POST',body:{babyId:''}})).status,200);
     assert.equal((await json('/api/state')).data.wechat.defaultBabyId,'');
   });
+  await step('WeChat member management rejects unauthenticated, invalid and missing accounts',async()=>{
+    const connections=(await json('/api/state')).data.wechat.connections;
+    assert.ok(Array.isArray(connections));assert.equal(connections.length,0);
+    assert.equal((await json('/api/settings/wechat/qr',{method:'POST',body:{label:''}})).status,400);
+    assert.equal((await json('/api/settings/wechat/qr/status',{method:'POST',body:{pairingId:'not-a-uuid'}})).status,400);
+    const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    assert.equal((await json('/api/settings/wechat/connections/'+id+'/start',{method:'POST',body:{}})).status,404);
+    assert.equal((await json('/api/settings/wechat/connections/'+id+'/status')).status,404);
+    assert.equal((await json('/api/settings/wechat/connections/'+id,{method:'DELETE'})).status,404);
+    assert.equal((await json('/api/settings/wechat/connections/'+id+'/start',{method:'POST',anonymous:true,body:{}})).status,401);
+  });
   await step('scheduled cleanup handler accepts Cloudflare local Cron trigger',async()=>{
     const response=await request('/cdn-cgi/local/scheduled?format=json',{anonymous:true});
     assert.equal(response.status,200,await response.text());

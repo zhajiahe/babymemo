@@ -196,3 +196,13 @@
 .settings-baby-switch{padding:14px 15px;margin-bottom:20px;border:1px solid var(--bm-border);background:var(--bm-surface-soft);border-radius:12px}
 .settings-baby-switch .field select{min-height:44px;font-size:16px}
 .settings-baby-switch .muted{margin:9px 0 0;line-height:1.5}
+
+/* WeChat family member connection management */
+.wechat-member-list{display:grid;gap:10px;margin:12px 0 20px}
+.wechat-member-row{display:flex;gap:14px;justify-content:space-between;align-items:center;padding:14px 16px;border:1px solid var(--bm-border-soft);border-radius:12px;background:var(--bm-surface)}
+.wechat-member-info{min-width:0}.wechat-member-info strong{font-size:14px}.wechat-member-info p{margin:5px 0 0}
+.wechat-member-row .wechat-actions{justify-content:flex-end}.wechat-member-row .wechat-actions button{min-height:40px}
+.wechat-member-status{margin:12px 0}.wechat-member-status strong{font-size:13px}
+.wechat-add{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--bm-border-soft)}
+.wechat-add .field{flex:1;min-width:min(100%,240px)}
+@media(max-width:650px){.wechat-member-row{align-items:stretch;flex-direction:column}.wechat-member-row .wechat-actions{justify-content:flex-start}.wechat-add{flex-direction:column;align-items:stretch}.wechat-add .field{width:100%}}

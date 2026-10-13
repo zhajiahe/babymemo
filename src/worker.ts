@@ -6,6 +6,7 @@ import { applySession, authenticated, clearSession, login, owner, sameOrigin, se
 import { constantEqual, passwordHash, randomHex } from './crypto';
 import { decryptSecret, encryptSecret, setSetting, setting, deployedOpenRouterKey } from './crypto';
 import { generateQr, qrStatus, testOpenRouterConnection, workerBot } from './wechat';
+import {getWechatConnection,listWechatConnections} from './wechat-connections';
 import { mediaDownloadHeader } from './media-filename.mjs';
 import { finalizeUpload, FinalizeMismatchError } from './upload-finalize.mjs';
 import { cleanupExpiredUploads } from './upload-cleanup.mjs';
@@ -74,8 +75,8 @@ app.get('/api/state',async c=>{
     c.env.DB.prepare("SELECT baby_id,kind,COUNT(*) AS total FROM (SELECT baby_id,'growth' AS kind FROM growth_records WHERE deleted_at IS NULL UNION ALL SELECT baby_id,'milestones' AS kind FROM milestones WHERE deleted_at IS NULL UNION ALL SELECT baby_id,'media' AS kind FROM media WHERE deleted_at IS NULL) GROUP BY baby_id,kind")
       .all<{baby_id:string;kind:'growth'|'milestones'|'media';total:number}>()
   ]);
-  const [encryptedApiKey,encryptedBot,model,botOn,familyName] = await Promise.all([
-    setting(c.env,'openrouter_key'),setting(c.env,'wechat_token'),setting(c.env,'openrouter_model'),setting(c.env,'wechat_enabled'),setting(c.env,'family_name')
+  const [encryptedApiKey,model,familyName,connections] = await Promise.all([
+    setting(c.env,'openrouter_key'),setting(c.env,'openrouter_model'),setting(c.env,'family_name'),listWechatConnections(c.env)
   ]);
   const countsByBaby:Record<string,{growth:number;milestones:number;media:number}>={};
   for(const row of byBaby.results){
@@ -84,7 +85,7 @@ app.get('/api/state',async c=>{
   }
   return c.json({ownerName:user!.name,familyName:familyName||'家庭空间',babies:babies.results,counts:{growth:growth?.count??0,milestones:milestones?.count??0,media:media?.count??0},countsByBaby,
     openrouter:{configured:!!encryptedApiKey||!!deployedOpenRouterKey(c.env),managedByDeployment:!!deployedOpenRouterKey(c.env),model:model||DEFAULT_OPENROUTER_MODEL},
-    wechat:{connected:!!encryptedBot,enabled:botOn==='true',defaultBabyId:await setting(c.env,'wechat_default_baby_id')||''}});
+    wechat:{connected:connections.length>0,enabled:connections.some(x=>x.enabled),connections,defaultBabyId:await setting(c.env,'wechat_default_baby_id')||''}});
 });
 app.post('/api/babies',async c=>{
   try {
@@ -405,36 +406,97 @@ app.post('/api/settings/openrouter/test',async c=>{
   try{const ok=await testOpenRouterConnection(c.env);return c.json({ok});}
   catch(e){return fail(c,502,e instanceof Error?e.message:'OPENROUTER_FAILED');}
 });
+// Pending QR codes are scoped to one pairing ID, so two family members may
+// scan concurrently without racing on the previous global pairing setting.
 app.post('/api/settings/wechat/qr',async c=>{
   try{
+    const v=await json(c.req.raw);
+    const label=typeof v.label==='string'?v.label.trim():'';
+    if(!label||label.length>40)return fail(c,400,'INVALID_WECHAT_MEMBER_NAME');
     const info=await generateQr();
-    await setSetting(c.env,'pairing_qr',await encryptSecret(c.env,info.code));
-    await setSetting(c.env,'pairing_base','https://ilinkai.weixin.qq.com');
-    return c.json({qrContent:info.content});
+    const id=crypto.randomUUID();
+    await c.env.DB.prepare('INSERT INTO wechat_pairings(id,label,qr_cipher,base_url,expires_at) VALUES(?,?,?,?,?)')
+      .bind(id,label,await encryptSecret(c.env,info.code),'https://ilinkai.weixin.qq.com',Date.now()+10*60_000).run();
+    return c.json({pairingId:id,qrContent:info.content});
   }catch{return fail(c,502,'WECHAT_QR_FAILED');}
 });
 app.post('/api/settings/wechat/qr/status',async c=>{
   try{
-    const v=await json(c.req.raw);const saved=await setting(c.env,'pairing_qr');
-    if(!saved)return fail(c,400,'PAIRING_NOT_STARTED');
-    const pairingBase=await setting(c.env,'pairing_base')||'https://ilinkai.weixin.qq.com';
-    const result=await qrStatus(await decryptSecret(c.env,saved),typeof v.verifyCode==='string'?v.verifyCode:undefined,pairingBase);
-    if(result.redirectBase)await setSetting(c.env,'pairing_base',result.redirectBase);
+    const v=await json(c.req.raw);
+    if(typeof v.pairingId!=='string'||!/^[0-9a-f-]{36}$/.test(v.pairingId))return fail(c,400,'PAIRING_NOT_STARTED');
+    const pairing=await c.env.DB.prepare('SELECT id,label,qr_cipher,base_url,expires_at FROM wechat_pairings WHERE id=?')
+      .bind(v.pairingId).first<{id:string;label:string;qr_cipher:string;base_url:string;expires_at:number}>();
+    if(!pairing)return fail(c,404,'PAIRING_NOT_FOUND');
+    if(pairing.expires_at<Date.now()){
+      await c.env.DB.prepare('DELETE FROM wechat_pairings WHERE id=?').bind(pairing.id).run();
+      return c.json({status:'expired'});
+    }
+    const result=await qrStatus(await decryptSecret(c.env,pairing.qr_cipher),
+      typeof v.verifyCode==='string'?v.verifyCode.slice(0,32):undefined,pairing.base_url);
+    if(result.redirectBase)await c.env.DB.prepare('UPDATE wechat_pairings SET base_url=? WHERE id=?')
+      .bind(result.redirectBase,pairing.id).run();
     if(result.status==='confirmed'){
       if(!result.botToken||!result.botId||!result.userId)return fail(c,502,'INVALID_WECHAT_CREDENTIALS');
-      await setSetting(c.env,'wechat_token',await encryptSecret(c.env,result.botToken));
-      await setSetting(c.env,'wechat_bot_id',result.botId);
-      await setSetting(c.env,'wechat_user_id',result.userId);
-      await setSetting(c.env,'wechat_base',result.base||'https://ilinkai.weixin.qq.com');
-      await setSetting(c.env,'wechat_enabled','false');
-      // A newly linked account must never reuse the previous bot's getupdates cursor.
-      const reset=await workerBot(c.env).fetch('https://bot.internal/reset',{method:'POST'});
+      const existing=await c.env.DB.prepare('SELECT id FROM wechat_connections WHERE bot_id=? OR user_id=? LIMIT 1')
+        .bind(result.botId,result.userId).first<{id:string}>();
+      const id=existing?.id||crypto.randomUUID();
+      if(existing){
+        // Stop polling before replacing credentials; never inherit old cursors.
+        await workerBot(c.env,id).fetch('https://bot.internal/pause',{method:'POST'});
+        await c.env.DB.prepare('UPDATE wechat_connections SET bot_id=?,user_id=?,token_cipher=?,base_url=?,enabled=0,updated_at=? WHERE id=?')
+          .bind(result.botId,result.userId,await encryptSecret(c.env,result.botToken),result.base||pairing.base_url,now(),id).run();
+      }else{
+        await c.env.DB.prepare('INSERT INTO wechat_connections(id,label,bot_id,user_id,token_cipher,base_url,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,0,?,?)')
+          .bind(id,pairing.label,result.botId,result.userId,await encryptSecret(c.env,result.botToken),result.base||pairing.base_url,now(),now()).run();
+      }
+      const reset=await workerBot(c.env,id).fetch('https://bot.internal/reset',{method:'POST'});
       if(!reset.ok)throw Error('WECHAT_RESET_FAILED');
-      await setSetting(c.env,'pairing_qr','');
-      return c.json({status:'confirmed'});
+      await c.env.DB.prepare('DELETE FROM wechat_pairings WHERE id=?').bind(pairing.id).run();
+      return c.json({status:'confirmed',connectionId:id});
     }
     return c.json({status:result.status});
   }catch{return fail(c,502,'WECHAT_PAIRING_FAILED');}
+});
+app.patch('/api/settings/wechat/connections/:id',async c=>{
+  const connection=await getWechatConnection(c.env,c.req.param('id'));
+  if(!connection)return fail(c,404,'WECHAT_CONNECTION_NOT_FOUND');
+  try{
+    const v=await json(c.req.raw);
+    if(typeof v.label!=='string'||!v.label.trim()||v.label.trim().length>40)return fail(c,400,'INVALID_WECHAT_MEMBER_NAME');
+    await c.env.DB.prepare('UPDATE wechat_connections SET label=?,updated_at=? WHERE id=?').bind(v.label.trim(),now(),connection.id).run();
+    return c.json({ok:true});
+  }catch{return fail(c,400,'INVALID_WECHAT_MEMBER_NAME');}
+});
+app.post('/api/settings/wechat/connections/:id/:action',async c=>{
+  const {id,action}=c.req.param();
+  if(action!=='start'&&action!=='pause')return fail(c,404,'NOT_FOUND');
+  const connection=await getWechatConnection(c.env,id);
+  if(!connection)return fail(c,404,'WECHAT_CONNECTION_NOT_FOUND');
+  if(action==='start'&&!deployedOpenRouterKey(c.env)&&!await setting(c.env,'openrouter_key'))return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
+  const enabled=action==='start'?1:0;
+  await c.env.DB.prepare('UPDATE wechat_connections SET enabled=?,updated_at=? WHERE id=?').bind(enabled,now(),id).run();
+  const response=await workerBot(c.env,id).fetch('https://bot.internal/'+action,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({connectionId:id})});
+  if(!response.ok){
+    if(action==='start')await c.env.DB.prepare('UPDATE wechat_connections SET enabled=0,updated_at=? WHERE id=?').bind(now(),id).run();
+    return fail(c,502,'WECHAT_BOT_UPDATE_FAILED');
+  }
+  return c.json({ok:true,status:action});
+});
+app.get('/api/settings/wechat/connections/:id/status',async c=>{
+  const id=c.req.param('id');
+  if(!await getWechatConnection(c.env,id))return fail(c,404,'WECHAT_CONNECTION_NOT_FOUND');
+  const response=await workerBot(c.env,id).fetch('https://bot.internal/status?connectionId='+encodeURIComponent(id));
+  return c.json(await response.json());
+});
+app.delete('/api/settings/wechat/connections/:id',async c=>{
+  const id=c.req.param('id');
+  if(!await getWechatConnection(c.env,id))return fail(c,404,'WECHAT_CONNECTION_NOT_FOUND');
+  await c.env.DB.prepare('UPDATE wechat_connections SET enabled=0,updated_at=? WHERE id=?').bind(now(),id).run();
+  const response=await workerBot(c.env,id).fetch('https://bot.internal/reset',{method:'POST'});
+  if(!response.ok)return fail(c,502,'WECHAT_BOT_UPDATE_FAILED');
+  await c.env.DB.prepare('DELETE FROM wechat_connections WHERE id=?').bind(id).run();
+  return c.json({ok:true});
 });
 // The default target is used only for image-only WeChat messages in multi-baby families.
 app.post('/api/settings/wechat/default-baby',async c=>{
@@ -446,23 +508,6 @@ app.post('/api/settings/wechat/default-baby',async c=>{
     return c.json({ok:true,defaultBabyId:v.babyId});
   }catch{return fail(c,400,'INVALID_BABY')}
 });
-app.post('/api/settings/wechat/:action',async c=>{
-  const action=c.req.param('action');
-  if(!['start','pause'].includes(action))return fail(c,404,'NOT_FOUND');
-  if(action==='start'&&!await setting(c.env,'wechat_token'))return fail(c,409,'WECHAT_NOT_PAIRED');
-  if(action==='start'&&!deployedOpenRouterKey(c.env)&&!await setting(c.env,'openrouter_key'))return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
-  await setSetting(c.env,'wechat_enabled',action==='start'?'true':'false');
-  const result=await workerBot(c.env).fetch('https://bot.internal/'+action,{method:'POST'});
-  if(!result.ok){
-    if(action==='start')await setSetting(c.env,'wechat_enabled','false');
-    return fail(c,502,'WECHAT_BOT_UPDATE_FAILED');
-  }
-  return c.json({ok:true,status:action});
-});
-app.get('/api/settings/wechat/status',async c=>{
-  const response=await workerBot(c.env).fetch('https://bot.internal/status');
-  return c.json(await response.json());
-});
 app.onError((e,c)=>{
   console.error(JSON.stringify({level:'error',code:'UNHANDLED_REQUEST',path:c.req.path})); 
   return fail(c,500,'INTERNAL_ERROR');
@@ -472,6 +517,8 @@ export default {
   async scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext){
     ctx.waitUntil(env.DB.prepare("DELETE FROM wechat_messages WHERE state='done' AND created_at<?").bind(new Date(Date.now()-90*86400000).toISOString()).run()
       .catch(()=>console.error(JSON.stringify({level:'error',event:'BOT_DEDUP_RETENTION_FAILED'}))));
+    ctx.waitUntil(env.DB.prepare('DELETE FROM wechat_pairings WHERE expires_at<?').bind(Date.now()).run()
+      .catch(()=>console.error(JSON.stringify({level:'error',event:'PAIRING_RETENTION_FAILED'}))));
     ctx.waitUntil(purgeDeleted(env).catch(()=>console.error(JSON.stringify({level:'error',event:'TRASH_PURGE_FAILED'}))));
     ctx.waitUntil(cleanupExpiredUploads({
       env,
