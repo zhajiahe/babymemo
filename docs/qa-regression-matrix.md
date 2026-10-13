@@ -54,3 +54,9 @@ CI 使用自动生成的本地测试密钥与临时 D1/R2 存储，不连接生�
 | OpenRouter Tool Calling E2E | GitHub Actions `Manual OpenRouter Live E2E` 或设置确认变量后执行 `npm run test:openrouter:live` | **否** | 不访问 Cloudflare D1/R2 或微信，仅向外部模型发送一条虚构指令 |
 
 本地 Worker E2E 与 Chromium/WebKit E2E **继续自动执行**，它们使用假 Key 和临时存储，不会产生 OpenRouter 调用费用。手动模型测试需要管理员配置真实 Key，可能产生小额 API 费用；可验证目标模型当前是否返回标准工具调用，而不是验证真实微信授权或用户家庭数据。
+
+## 家庭空间与相册交互约束（2026-10）
+
+- 家庭空间名称继续由 D1 `family_name` 设置提供，手机顶部和桌面侧栏都必须展示；长名称不得引起页面横向溢出。
+- 当前查看的宝宝仅可从「设置 → 宝宝资料」切换，切换后内容、草稿和相册必须按宝宝隔离。
+- 收藏按钮、收藏筛选、收藏写入 API 和微信收藏工具已停用；历史 D1 `favorite` 列及导出字段继续保留，不执行破坏性迁移。
