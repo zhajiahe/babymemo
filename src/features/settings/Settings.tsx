@@ -14,7 +14,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated}:{state:State;
  const [password,setPassword]=useState({currentPassword:'',newPassword:'',confirmPassword:''}),[passwordBusy,setPasswordBusy]=useState(false);
  const [trash,setTrash]=useState<{growth:{id:string;baby_id:string;day:string;deleted_at:string}[];milestones:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[];media:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[]}|null>(null);
  const [trashBusy,setTrashBusy]=useState(false);
- useEffect(()=>{setName(baby.name);setBirthday(baby.birthday);setBirthTime(baby.birth_time||'');setAllergies(baby.allergies)},[baby.id,baby.name,baby.birthday,baby.allergies]);
+ useEffect(()=>{setName(baby.name);setBirthday(baby.birthday);setBirthTime(baby.birth_time||'');setAllergies(baby.allergies)},[baby.id,baby.name,baby.birthday,baby.birth_time,baby.allergies]);
  useEffect(()=>{if(qr)void import('qrcode').then(({default:QRCode})=>QRCode.toDataURL(qr,{width:220,margin:2,errorCorrectionLevel:'M'})).then(setQrImage).catch(()=>notify('二维码渲染失败'))},[qr]);
  useEffect(()=>{if(!qr||status==='confirmed'||status==='expired')return;let cancelled=false;let timeout:ReturnType<typeof setTimeout>;
   const poll=async()=>{try{const r=await post<{status:string}>('/api/settings/wechat/qr/status',{verifyCode});if(cancelled)return;setStatus(r.status);if(r.status==='confirmed'){setQr('');setQrImage('');changed();notify('微信绑定成功，请手动启用 Bot');return;}}catch(e){if(!cancelled)setStatus('连接重试中');}if(!cancelled)timeout=setTimeout(poll,2000)};

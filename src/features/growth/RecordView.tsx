@@ -8,7 +8,6 @@ export function RecordView({baby,kind,items,history,historyLimited,busy,setBusy,
  const [form,setForm]=useState(()=>readDraft(draftKey));
  const [offline,setOffline]=useState(()=>!navigator.onLine);
  useEffect(()=>{const refresh=()=>setOffline(!navigator.onLine);window.addEventListener('online',refresh);window.addEventListener('offline',refresh);return()=>{window.removeEventListener('online',refresh);window.removeEventListener('offline',refresh)}},[]);
- useEffect(()=>{setForm(readDraft(draftKey))},[draftKey]);
  useEffect(()=>{try{sessionStorage.setItem(draftKey,JSON.stringify(form))}catch{}},[draftKey,form]);
  async function save(e:FormEvent){e.preventDefault();if(offline){notify('当前离线：草稿保留在此浏览器标签页，联网后请重新点击保存');return}setBusy(true);try{
   const payload=kind==='growth'?{babyId:baby.id,requestId:form.requestId,day:form.day,weight:form.weight?Number(form.weight):null,height:form.height?Number(form.height):null,headCircumference:form.headCircumference?Number(form.headCircumference):null,notes:form.notes}:{babyId:baby.id,requestId:form.requestId,day:form.day,title:form.title,description:form.description};

@@ -123,6 +123,8 @@ async function e2e() {
     const tooShort=await json('/api/bootstrap',{method:'POST',body:{...input,password:'12345'},anonymous:true});
     assert.equal(tooShort.status,400);
     assert.equal(tooShort.data.error,'INVALID_SETUP_INPUT');
+    assert.equal((await json('/api/bootstrap',{method:'POST',body:{...input,birthday:'2026-02-31'},anonymous:true})).status,400);
+    assert.equal((await json('/api/bootstrap',{method:'POST',body:{...input,timeZone:'Mars/Nowhere'},anonymous:true})).status,400);
     const first=await json('/api/bootstrap',{method:'POST',body:input,anonymous:true});
     assert.equal(first.status,201,JSON.stringify(first.data));
     babyId=first.data.babyId;
@@ -182,6 +184,8 @@ async function e2e() {
     assert.equal(unauthorized.status,401);
     const invalid=await json('/api/babies',{method:'POST',body:{name:'',birthday:'2025-05-05',gender:'other'}});
     assert.equal(invalid.status,400);
+    const invalidZone=await json('/api/babies',{method:'POST',body:{name:'Bad TZ',birthday:'2025-05-05',gender:'girl',timeZone:'Mars/Nowhere'}});
+    assert.equal(invalidZone.status,400);
     const created=await json('/api/babies',{method:'POST',body:{
       name:'Second Baby',birthday:'2025-05-05',gender:'boy',timeZone:'Asia/Shanghai',allergies:''
     }});
