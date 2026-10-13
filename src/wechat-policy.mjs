@@ -78,6 +78,10 @@ export function measurementGrounded(args,text){
 export function guardAction(action,args,text,baby,at=Date.now()){
  if(!MUTATING_ACTIONS.has(action))return null;
  if(isNegativeOrConditional(text,action))return '这句话包含否定或条件操作，尚未修改任何数据。请明确说明需要执行的动作。';
+ if((action==='create_growth'||action==='create_milestone')&&args?.day){
+  const target=explicitDay(text,at,baby?.time_zone||'Asia/Shanghai');
+  if(target!==args.day)return '记录日期缺乏原消息的明确依据，请补充“今天、昨天”或具体日期。';
+ }
  if((action==='create_growth'||action==='update_growth')&&!measurementGrounded(args,text))
   return '测量数值或单位与原消息不一致，请明确单位和数值后再记录。';
  if(action.startsWith('update_')||action.startsWith('delete_')||action==='restore_trash'){
