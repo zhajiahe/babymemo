@@ -1,143 +1,64 @@
-# BabyMemo 部署和初始化
+# BabyMemo 部署与初始化
 
-> 本指南面向个人自托管。当前仍是开发预览；不要直接替换运行中的 MyBaby。
+面向自托管管理员。这里介绍**该做什么**；GitHub Actions 的逐步命令、参数和发布门禁以 [GitHub Actions 部署指南](github-action-deploy.md) 为准，Agent 操作规范以 [Agent Runbook](agent-deploy.md) 为准。
 
-## 1. 架构和边界
+## 1. 选择部署方式
 
-- Cloudflare Worker（Hono）：前端、API、认证、微信工具路由。
-- D1：账号、宝宝、成长记录、里程碑、附件索引、凭据密文。
-- R2：私有照片和视频，所有媒体读取均由已登录的 Worker 代理。
-- SQLite-backed Durable Object + Alarm：微信 iLink Bot 消息轮询，无需 VPS。
-- 所有账号登录和变更 API 都是同源请求；**绑定新域名无需更改固定的 PUBLIC_URL**。
-
-## 2. 部署方式 A：Deploy to Cloudflare
-
-在 [仓库主页](https://github.com/zhajiahe/babymemo) 点击 **Deploy to Cloudflare**，授权 Cloudflare 对你的 GitHub 账户创建部署仓库。
-
-首次部署由 Wrangler 自动创建缺失的 D1 `babymemo`、R2 `babymemo-media` 和 Durable Object 类 `WechatSession`。项目脚本在部署后解析 D1 的远端 ID，然后执行 migrations。脚本 **只查找和复用名称完全匹配的 D1，不会删除或重建已有数据库**。
-
-若自动部署脚本在 `wrangler d1 migrations apply DB --remote` 失败，可在部署项目的控制台运行 `npm run db:resolve` 验证是否正确查找到 `babymemo`；不要自行删除数据库。
-
-部署向导可读取 `.dev.vars.example` 显示必填 Secret 的名称与说明；如果部署过程中没有出现密钥表单，请按下节到 Worker 控制台设置。
-
-**重要**：在配置 Secret 并完成数据库迁移之前，网站可能尚不能进入初始化。
-
-## 3. 两个必需 Secret（必须分别生成并保存）
-
-终端连续执行两次，每次得到独立的 64 位十六进制值：
-
-```bash
-openssl rand -hex 32
-openssl rand -hex 32
-```
-
-进入 Cloudflare Dashboard → Workers & Pages → `babymemo` → Settings → Variables and Secrets，添加：
-
-| 类型 | 名称 | 用途 |
+| 方式 | 首次创建资源 | 后续更新 |
 | --- | --- | --- |
-| Secret | `SESSION_SECRET` | 登录会话签名，改变将导致已登录设备退出 |
-| Secret | `DATA_KEY` | OpenRouter / 微信凭据的 AES-GCM 加密密钥，**改动后旧密文不可解密** |
+| [Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/zhajiahe/babymemo) | Wrangler 自动准备同名 D1、R2、Durable Object | 可继续使用 Cloudflare 构建 |
+| [GitHub Actions](github-action-deploy.md) | 手动 \`dry_run=false\`、\`provision=true\`，会显式创建缺失资源 | \`main\` 通过 CI 后自动发布（默认只验证资源） |
 
-密钥不要贴进 URL、Issue、日志或 README，不要提交 .dev.vars。建议保存在密码管理器。
+Cloudflare 绑定：D1 \`DB\`（数据库名 \`babymemo\`）；R2 \`MEDIA\`（bucket 名 \`babymemo-media\`）；Durable Object \`BOT\`（\`WechatSession\`）。**禁止为排除迁移故障而清空或重建线上 D1/R2。**
 
-## 4. 首次初始化
+部署前先确认目标账号与备份；部署期间的数据库迁移不是可自动回滚操作。
 
-打开 `https://<你的 workers.dev 域名>/`：
+## 2. 配置密钥
 
-1. 直到两项 Secret 状态均为已配置，才允许提交表单。
-2. 输入家庭名称、管理员登录名和至少 6 位的家庭密码。
-3. 输入第一位宝宝的姓名、出生日期、性别、时区；过敏信息可选。
-4. 提交后自动登录。初始化是一次性操作，不能通过刷新页面重建另一个所有者。
-5. 使用家庭管理员登录名 + 家庭密码再次登录，验证浏览器会话。
+Cloudflare → Workers & Pages → \`babymemo\` → Settings → Variables and Secrets：
 
-**安全提示：** 首次注册不再要求初始化密钥。公开空实例允许第一个访问者创建唯一管理员，存在被抢先注册的风险。请部署后立即完成初始化，或先使用 Cloudflare Access 限制访问。已有管理员不能因重部署被覆盖或重置。
+| 名称 | 是否必需 | 要求 |
+| --- | --- | --- |
+| \`SESSION_SECRET\` | 是 | 最少 32 字符；会话签名，长期不更换 |
+| \`DATA_KEY\` | 是 | 独立的 64 位十六进制随机值；解密已有 D1 凭据 |
+| \`OPENROUTER_API_KEY\` | 否 | 以 \`sk-or-\` 开头；微信自然语言工具路由使用 |
 
-为保护隐私，默认仅允许一个家庭管理员；后续增加家庭多用户需要独立的角色设计。
+前两个密钥可以在安全终端各运行一次 \`openssl rand -hex 32\` 生成；后续升级需复用原值，不要重新生成。
 
-## 5. 部署方式 B：GitHub Actions
+如果使用 **GitHub Actions**，管理员可以把 \`OPENROUTER_API_KEY\` 配置为仓库或 \`production\` Environment Secret，再正式部署。Worker 会优先使用这个 Key。也可以部署后在网页「设置 → 微信操作引擎 · OpenRouter」配置 Key（加密保存于 D1）。两种路径的优先级和撤销方法见 [GitHub Actions 指南](github-action-deploy.md)。
 
-在仓库 Settings → Secrets and variables → Actions 配置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`SESSION_SECRET`、`DATA_KEY`，并确认作用于目标 Cloudflare 账号。详细说明见 [GitHub Actions 部署指南](github-action-deploy.md)。
+## 3. 首次初始化
 
-Actions → **Deploy BabyMemo to Cloudflare** → **Run workflow**，默认 `dry_run=true`：
+部署成功且 Worker Secrets 配置好后，访问 Worker 的 HTTPS 首页 \`/\`，填写家庭名称、管理员登录名、**至少 6 位**家庭密码，以及第一位宝宝姓名、出生日期、性别、时区。出生时间、过敏信息可后续补充。
 
-1. 只读核对已有 D1 / R2、执行类型检查、单元测试、构建及 Wrangler Dry Run。
-2. **首次尚无 D1/R2 时，默认 Dry Run 因资源缺失而失败是预期行为**，不要通过删除或重建数据库绕过。
-3. 得到明确的正式发布授权后，选择 `dry_run=false`、`provision=true`。工作流校验两项业务 Secret（包含 `DATA_KEY` 的 64 位 hex 格式）、创建或复用 D1/R2、**先应用 D1 migration、再发布 Worker**，随后同步 Secret 并检查健康状态。
-4. 后续发布同样需要手动触发，Push 和 PR 不会自动更新 Cloudflare。
+初始化**没有独立密钥**。尚未注册的公开站点可被其他人抢先初始化：应及时注册，或预先使用 Cloudflare Access 限制公开访问。
 
-这一路径与一键 Cloudflare 模板部署路径不同。**当前 `npm run deploy` 仍采用“Worker 发布 → 解析 D1 ID → migration”的顺序**，不能把它的顺序当成此 GitHub Actions 工作流的顺序。Agent 受控部署细节见 [Agent Runbook](agent-deploy.md)。
+初始化后可在「设置 → 宝宝资料」新增第二个宝宝，无需另建家庭账号。
 
-## 6. 自定义域名
+## 4. 使用与检查
 
-在 Cloudflare Worker → Settings → Domains & Routes → Add Custom Domain，输入自有域名，例如 `baby.example.com`，等待证书 Active；然后测试登录、创建记录和视频上传。
+- 登录后分别测试宝宝切换、成长记录、成长瞬间和回收站的创建、查看、删除与恢复。
+- 测试一张图片和一段视频的私密上传与下载。网页单文件上限 200 MB；微信消息附件单文件上限 50 MiB。Safari HEIC、MOV/HEVC 的可播放性取决于设备解码器，**当前没有自动转码**。
+- 如需微信操作，配置 OpenRouter 模型 ID，测试连接，再通过「设置 → 微信操作」扫码绑定 iLink Bot，之后手动启用。
+- 如需自定义域名，先在 Cloudflare Workers 绑定并确认 HTTPS 可用，再在 GitHub Variables 配置用于 Smoke Check 的 \`BABYMEMO_PUBLIC_URL\`。**不要因为更换域名就轮换会话或加密密钥。**
 
-Browser Auth 使用 `window.location.origin` 发起同源请求，而非 FlareMo 的固定公开 URL 模式。旧域名和新域名如果都指向同一个 Worker，可以分别登录（会话 Cookie 不共享）。由于 Cloudflare 全球网络在中国大陆的访问情况受运营商等因素影响，自定义域名并不保证全国无代理稳定可用。
+## 5. 已有实例升级
 
-## 7. 微信操作与 OpenRouter 指令路由
+\`main\` 提交完成 CI 后会自动触发发布工作流：确认最新提交 → 检查 D1/R2 → 验证 D1 迁移历史 → 应用未执行的迁移 → 发布 Worker 并保留原有密钥 → 健康检查。
 
-登录网站 → 设置 → 微信操作引擎 · OpenRouter，填 API Key + 模型 ID，保存并点击测试。密钥只在服务端解密发起请求，不向浏览器回传。
+针对曾出现的 \`duplicate column name: birth_time\`，部署脚本 \`scripts/reconcile-birth-time.mjs\` 只有在列已经存在且 \`TEXT NOT NULL DEFAULT ''\`、上一条迁移记录已存在时才补记 \`0012_birth_time.sql\`。**修复的是迁移历史，不删除或修改宝宝资料**。其他不符合预期的数据库差异会停止部署，需人工诊断。
 
-设置 → 微信操作 → 扫码绑定，确认后手动启用 Bot。Durable Object 用 Alarm 反复拉取消息；只接受绑定微信用户的单聊文字。重新绑定会重置旧游标，避免漏读或串号。
+只有确认备份可用且知道生产账号时，才运行正式部署。建议先运行 GitHub Actions 的 \`dry_run=true\`，后续要手工发布再显式选择 \`dry_run=false\`。
 
-**微信 iLink 为第三方适配，可能失效**。首次运行前测试二维码、扫码确认、文字消息发送、去重、记录查询、新增、暂停、重新启用和凭证过期处理。微信用户文字、宝宝昵称与日期等用于工具路由的参数可能发送到 OpenRouter；不要把医疗隐私写入公开分享链接。
+## 6. 故障排查入口
 
-## 8. 排障
-
-| 症状 | 检查 |
+| 症状 | 优先排查 |
 | --- | --- |
-| 首页报 500 / 初始化状态失败 | D1 迁移是否完成，Worker 是否绑定到了正确的数据库 |
-| 初始化按钮不可点 | 两个 Secret 是否存在，`DATA_KEY` 是否为 64 位十六进制 |
-| 自定义域名登录失败 | Origin / Cookie、HTTPS、DNS，Network 中登录 API 返回状态 |
-| 重新部署后所有设备登出 | `SESSION_SECRET` 是否误改 |
-| OpenRouter / 微信无法使用 | `DATA_KEY` 是否被误改，Key 是否过期；查看服务端错误码 |
-| 大 MOV 上传慢 | 启用并行分片；确认 iPhone 上行和 CF 连通性；当前尚不提供服务器视频转码 |
-| 微信扫码成功但不收消息 | 先检查 Bot 是否启用、DO 状态及第三方接口可用性 |
+| 部署报 D1、R2 不存在 | 首次创建与非首次自动发布模式不同；参考 [GitHub Actions 指南](github-action-deploy.md) |
+| 迁移报重复列 | 确认 D1 指向正确的生产数据库；查看 \`reconcile-birth-time\` 的安全校验结果 |
+| 初始化无法完成 | \`/api/health\` 和 \`/api/bootstrap/status\`，以及两项必需 Worker Secrets |
+| 登录失效或 403 Origin | HTTPS 域名、Cookie 域隔离、同源 POST；不要关闭 CSRF 验证 |
+| 微信 Bot 不回复 | OpenRouter Key/余额/工具调用支持、iLink 授权、默认宝宝和 Bot 状态 |
+| 视频在 iPhone 无法播放 | 浏览器支持的 MIME/编解码格式；上传成功不代表转码成功 |
 
-不要通过删除 D1 / R2 来修复登录或部署问题。
-## 9. 相册缩略图和续传升级检查
-
-新迁移 `migrations/0003_upload_fingerprints.sql` 为现有 `media_uploads` 增加 `fingerprint` 字段，默认空字符串，**不会删除旧记录或重建 D1**。正式工作流先执行迁移，再发布 Worker；必须核对部署顺序。已完成上传的原始媒体不需要迁移。
-
-上传中断后重新选择相同本地文件可以续传；旧版遗留的空指纹会话不可自动识别，但可从「待续传文件」中手动取消。新图片在浏览器内生成 JPEG 缩略图后才上传派生文件；失败不影响原图。旧图片自动回退原始媒体，未来可另行安排私有的批量补图任务。请在 iPhone Safari 测试弱网续传、登录过期、上传中途退出及相册切换宝宝的隔离性。
-
-**升级已有实例时请保留原本 `SESSION_SECRET` / `DATA_KEY`，不要清空 D1/R2。**
-
-## 10. 旧照片补图与上传保留策略
-
-`0004_thumbnail_retention.sql` 只添加图片缩略图标记、上传会话最近活动日期与查询索引，不删除已有媒体和分片。相册内由管理员手动开启旧照片补图；仅从已登录浏览器请求原文件并提交派生缩略图。后台每日 03:00（北京时间）清理连续 14 天无上传活动的未完成 R2 multipart，会先检查是否已有完整对象，已完成则恢复 D1 记录。单次最多处理 30 条；需要观察 Workers Cron Triggers 的执行日志，以确认运行。升级不会轮换 `DATA_KEY` 或 `SESSION_SECRET`。
-
-### iPhone Safari 实机弱网验收（需本人或设备测试平台）
-
-1. 使用一个**不含家庭真实资料**的测试账号，打开 iPhone Safari，确认照片选择/视频选择和相册预览可用。不要用真实家庭数据作测试。
-2. 使用大小超过 8MiB 的测试照片/视频，切到弱 Wi-Fi（例如受控路由器限速）上传，中途切断 Wi-Fi 并恢复；确认失败提示、待续传列表与已完成分片，重新选择相同文件后能够完成且只出现一条相册记录。
-3. 测试 Safari 切后台再回前台；系统可能暂停网络，**不保证后台持续上传**。进行两次试验：断网后直接返回、断网后强制杀掉 Safari 再重新打开。
-4. 使用 HEIC / MOV（特别是 HEVC 编码），核对能否正常预览、下载及在目标浏览器播放。支持上传不代表所有终端可以解码。
-5. 连接 Wi-Fi 进行旧图片缩略图补全，确认停止按钮、失败重试、流量控制和照片原图下载。
-6. 观察 Cloudflare Worker 日志、D1/R2 指标和浏览器提示；反馈时仅记录**不含用户照片或密码**的错误状态与时间，不粘贴登录 Cookie / Token。
-
-### 初始化提示 PBKDF2 迭代次数超限
-
-如果之前部署的 Worker 在第一次注册时出现 `Pbkdf2 failed: iteration counts above 100000 are not supported (requested 120000)`，这是旧版本密码哈希使用了超过 Workers SubtleCrypto 上限的迭代次数。修复后初始化与登录统一使用 100,000 次 PBKDF2-SHA-256，不需要清空 D1、R2，也不需要轮换 `SESSION_SECRET` 或 `DATA_KEY`。旧版本若在派生密码哈希阶段失败，该次操作尚未写入 owner、宝宝资料；重新打开初始化页面完成注册即可。建议家庭密码选用较长随机短语（即使界面允许最低 6 位），不要使用生日等容易猜测的信息。
-
-
-## 微信增删改查验收
-
-启用微信操作后，在绑定账号的私聊分别验证：查询、增加、指定日期/编号修改、唯一目标软删除、从回收站恢复；在两个宝宝同时存在时，未写宝宝名字的消息应被拒绝。核对 D1 真实结果，而不仅仅相信微信文字回复。对于一个日期两条记录的情况，修改和删除必须提示补充编号；非绑定账户或群聊必须忽略。
-
-
-## 微信发送图片到 BabyMemo 相册
-
-网页「设置 → 微信操作」扫描配对并启用后，绑定者给 Bot 发送一张图片即可。两个及更多宝宝先选择「默认收图宝宝」，否则图片消息需要带明确宝宝名字。保存成功的回复会包含已入库照片数量；相册在对应宝宝下显示照片。
-
-技术链路：微信 `item_list[].image_item.media` → 官方 CDN 受限 HTTPS 下载（拒绝重定向）→ 解析各种 AES Key 编码 → AES-128-ECB/PKCS7 解密 → 校验 JPEG/PNG/GIF/WebP/HEIC 文件签名与大小 → 私有 R2 原图 → D1 media 元数据。
-
-验收应覆盖：绑定用户的普通照片、带 caption 的照片、多宝宝默认选择、同一微信消息重复投递、非法 CDN URL、过大图片、CDN 临时失败重试、模拟 R2 成功/D1 失败后的恢复；真机含微信 iOS/Android。无需另购 VPS；不能借用 MyBaby 中的公开 R2 域名方案。
-
-照片媒体下载失败采用 3 次有界重试；超过上限将提示检查相册并重发未保存的照片，避免同一过期 CDN 消息长期阻塞消息队列。重发会生成新的微信消息 ID，因此请先确认是否已有部分照片。
-
-
-## 微信视频、50 MiB 限制与会话记忆
-
-图片和视频均支持单项不超过 50 MiB，微信视频消息走 `video_item.media` 加密 CDN。Worker 使用 8 MiB R2 multipart 加密流解码，元数据仍存 D1；不会用 FFmpeg 转码，HEVC/MOV 的播放兼容性需真机验证。
-
-微信短期上下文最多 4 轮、闲置 20 分钟失效，方便后续引用最近宝宝及查询出的记录编号；发送「清除上下文」可立即重置。每次工具调用仍要校验真实日期/记录编号和修改/删除意图。OpenRouter HTTP 429/502/503/504 最多 3 次退避请求，并尊重可接受的 `Retry-After`；超长限流直接提示稍后再试，不重复执行数据库写操作。
+生产数据需按 [备份与恢复手册](BACKUP.md) 独立保管；MyBaby 旧数据迁移另见 [迁移计划](MIGRATION.md)。
