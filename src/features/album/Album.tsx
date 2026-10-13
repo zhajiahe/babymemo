@@ -1,3 +1,5 @@
+import {RecordFilterBar,type RecordFilters} from '../../components/RecordFilters';
+import {queueMedia} from '../../offline';
 import {useEffect,useRef,useState} from 'react';
 import {Card,Pager} from '../../components/ui';
 import {MediaViewer,type MediaItem} from '../../components/MediaViewer';
@@ -8,11 +10,11 @@ import {bestEffortFileDay} from '../../media-date.mjs';
 import {CloudUpload,Camera,Trash2,Plus} from 'lucide-react';
 import {api,post,today,ApiFailure,type BabyInfo} from '../../lib/client';
 
-export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage}:{baby:BabyInfo;media:MediaItem[];mediaEdited:(id:string,value:{day:string})=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void}){
+export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage,filters,onFilters}:{baby:BabyInfo;media:MediaItem[];mediaEdited:(id:string,value:Partial<MediaItem>)=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void;filters:RecordFilters;onFilters:(value:RecordFilters)=>void}){
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
  const [showUploader,setShowUploader]=useState(false);
  const thumbnailTail=useRef<Promise<void>>(Promise.resolve());
- const [uploadDay,setUploadDay]=useState(today()),[autoDate,setAutoDate]=useState(true);
+ const [uploadDay,setUploadDay]=useState(today(baby.time_zone)),[autoDate,setAutoDate]=useState(true);
  const [selected,setSelected]=useState<MediaItem|null>(null);
  useEffect(()=>{setSelected(null)},[baby.id]);
  type PendingUpload={id:string;day:string;title:string;mime:string;size:number;fingerprint:string;completedParts:number[];created_at:string};
@@ -58,7 +60,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
    void post('/api/upload/metrics',{stage,size,durationMs:Math.round(performance.now()-startedAt),status}).catch(()=>{});
   };
   try{
-   const queue=await refreshPending();
+   const queue=navigator.onLine?await refreshPending():[];
    const reserved=new Set<string>();
    // Derivatives are best effort and never hold an original-file transfer slot.
    // Serialize decoding across batches to avoid exhausting iPhone Safari memory.
@@ -80,14 +82,18 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
     const fileStarted=performance.now();
     let uploadId:string|undefined;
     let completedId='';
+    let resumable:Record<string,any>|null=null;
     try{
      if(file.size<1||file.size>209715200)throw Error('文件大小需在 1B～200MB 之间');
      const extension=file.name.toLowerCase().match(/\.(heic|heif|jpg|jpeg|png|webp|gif|mov|mp4|webm)$/)?.[1];
      const formats:Record<string,string>={heic:'image/heic',heif:'image/heif',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',mov:'video/quicktime',mp4:'video/mp4',webm:'video/webm'};
      const mime=file.type||(extension?formats[extension]:'application/octet-stream');
+     if(!/^(image\/(jpeg|png|webp|heic|heif|gif)|video\/(mp4|quicktime|webm))$/.test(mime))throw Error('暂不支持此文件格式，请选择照片或 MP4、MOV、WebM 视频');
      const fingerprint=await fingerprintFile(file);
      const day=autoDate?await bestEffortFileDay(file,uploadDay,baby.time_zone):uploadDay;
      const title=file.name.slice(0,120);
+     resumable={babyId:baby.id,day,title,mime,fingerprint};
+     if(!navigator.onLine){await queueMedia(file,resumable);notify('已将 '+file.name+' 保存到本机，联网后自动上传');return}
      const matching=queue.find(item=>!reserved.has(item.id)&&pickMatchingUpload([item],{title,size:file.size,mime,fingerprint}));
      if(matching)reserved.add(matching.id);
      // A direct upload ID is preserved in sessionStorage until confirmation.
@@ -95,17 +101,17 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
      if(!matching&&canDirectUpload(file.size)){
       const key='bm-direct-'+baby.id+'-'+fingerprint;
       let id='';
-      try{id=sessionStorage.getItem(key)||''}catch{/* Safari private storage may be unavailable. */}
+      try{id=localStorage.getItem(key)||''}catch{/* Safari private storage may be unavailable. */}
       if(!/^[0-9a-f-]{36}$/.test(id)){
        id=crypto.randomUUID();
-       try{sessionStorage.setItem(key,id)}catch{/* Keep this attempt's ID in memory. */}
+       try{localStorage.setItem(key,id)}catch{/* Keep this attempt's ID in memory. */}
       }
       uploadId=id;
       const headers={'Content-Type':mime,'x-baby-id':baby.id,'x-upload-day':day,'x-upload-title':encodeURIComponent(title)};
       for(let attempt=0;attempt<3;attempt++){
        try{
         await api('/api/upload/direct/'+id,{method:'PUT',body:file,headers});
-        try{sessionStorage.removeItem(key)}catch{/* Storage is best effort. */}
+        try{localStorage.removeItem(key)}catch{/* Storage is best effort. */}
         completedId=id;
         uploadId=undefined;
         break;
@@ -165,25 +171,29 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
      queueThumbnail(file,mime,completedId);
      report('client',file.size,fileStarted,'ok');
     }catch(error){
+     if(resumable&&(!navigator.onLine||error instanceof TypeError)){
+      try{await queueMedia(file,resumable,'media','',uploadId);notify(file.name+' 已保存在本机，联网后继续上传');return}catch{/* Fall through with an explicit storage/network failure. */}
+     }
      failedFiles++;
      report('client',file.size,fileStarted,'error');
      notify(file.name+'：'+(error instanceof Error?error.message:'上传中断')+(uploadId&&!canDirectUpload(file.size)?'。重新选择同一文件即可续传。':''));
     }
    });
    if(failedFiles||results.some(x=>x.status==='rejected'))notify('有 '+(failedFiles+results.filter(x=>x.status==='rejected').length)+' 个文件未完成，可重新选择文件重试');
-   await refreshPending();
+   if(navigator.onLine)await refreshPending();
+   changed();
   }catch(error){
    notify(error instanceof Error?error.message:'无法检查未完成上传，请检查网络后重试');
   }finally{setUploading(false);setProgress('')}
  }
- async function remove(id:string){if(!confirm('将这项媒体移入回收站？30 天内可恢复。'))return;try{await api('/api/media/'+id,{method:'DELETE'});if(selected?.id===id)setSelected(null);changed();notify('已移入回收站，可在设置中恢复')}catch(e){notify(e instanceof Error?e.message:'删除失败')}}
- async function saveMedia(value:{day:string}){
-  if(!selected)return;
-  await api('/api/media/'+selected.id,{method:'PATCH',body:JSON.stringify(value)});
-  setSelected(current=>current?.id===selected.id?{...current,...value}:current);
+ async function remove(id:string){if(!confirm('将这项媒体移入回收站？30 天内可恢复。'))return;try{await api('/api/media/'+id,{method:'DELETE',body:JSON.stringify({babyId:baby.id})});if(selected?.id===id)setSelected(null);changed();notify('已移入回收站，可在设置中恢复')}catch(e){notify(e instanceof Error?e.message:'删除失败')}}
+ async function saveMedia(value:{day:string;requestId?:string;expectedUpdatedAt?:string}){
+  if(!selected)throw Error('请先选择照片或视频');
+  const result=await api<{id:string;queued?:boolean;updated_at?:string}>('/api/media/'+selected.id,{method:'PATCH',body:JSON.stringify({...value,babyId:baby.id,expectedUpdatedAt:value.expectedUpdatedAt??selected.updated_at??''})});
+  setSelected(current=>current?.id===selected.id?{...current,...value,updated_at:result.queued?'pending:'+result.id:result.updated_at,pending:result.queued}:current);
   // The list must update even when the media count stays unchanged.
-  mediaEdited(selected.id,value);
-  changed();notify('照片信息已更新');
+  mediaEdited(selected.id,{...value,updated_at:result.queued?'pending:'+result.id:result.updated_at,pending:result.queued});
+  changed();notify(result.queued?'照片修改已保存在本机，联网后同步':'照片信息已更新');return result;
  }
  function navigateMedia(step:number){
   if(!selected)return;
@@ -192,13 +202,14 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
   if(next)setSelected(next);
  }
  return <>
+ <RecordFilterBar value={filters} onChange={onFilters} media/>
  <div className="album-toolbar album-content-toolbar">
   <div className="album-toolbar-heading"><h2>全部照片</h2></div>
   <div className="album-toolbar-actions">
    <button type="button" className="primary album-add-btn" aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(v=>!v)}><Plus size={17}/>{showUploader?'收起上传':'添加照片或视频'}</button></div>
  </div>
  {showUploader&&<Card className="upload-card"><div id="album-upload-panel" className="album-upload-panel"><CloudUpload size={30}/><h3>上传照片或视频</h3><p className="muted">可一次选择多张照片或视频。网络中断后重新选择原文件即可续传。</p>
-  <div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用拍摄日期</label><label>默认日期 <input type="date" value={uploadDay} max={today()} onChange={e=>setUploadDay(e.target.value)}/></label></div>
+  <div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用拍摄日期</label><label>默认日期 <input type="date" value={uploadDay} max={today(baby.time_zone)} onChange={e=>setUploadDay(e.target.value)}/></label></div>
   <p className="muted small">照片自带拍摄日期时会按原日期归档；缺少日期时使用默认日期。关闭自动日期即可手动指定。</p>
   <label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>
   {progress&&<p className="small" role="status">{progress}</p>}</div></Card>}

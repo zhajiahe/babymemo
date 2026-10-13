@@ -1,9 +1,12 @@
+import {RecordFilterBar,emptyFilters,filterQuery,type RecordFilters} from './components/RecordFilters';
+import {OfflineStatus} from './components/OfflineStatus';
+import {clearDevice,offlineJobs} from './offline';
 import {api,post,ApiFailure,today,type State,type Tab,type RecordItem} from './lib/client';
 import {RecordView,GrowthChart} from './features/growth/RecordView';
 import {ageLabel} from './lib/age.mjs';
 import {Album} from './features/album/Album';
 import {Settings} from './features/settings/Settings';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, useRef, type FormEvent, type ReactNode } from 'react';
 import { Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
 import { MediaViewer, type MediaItem } from './components/MediaViewer';
 import { createAlbumThumbnail, createStoredThumbnail, createVideoThumbnail, fingerprintFile } from './media-upload';
@@ -41,19 +44,24 @@ function Nav({active,setActive,logout,familyName}:{active:Tab;setActive:(t:Tab)=
 }
 export default function App(){
  const [mode,setMode]=useState<'loading'|'gate'|'app'|'unavailable'>('loading');
- const [state,setState]=useState<State|null>(null),[active,setActive]=useState<Tab>('overview'),[babyId,setBabyId]=useState(''),[toast,setToast]=useState('');
+ const [state,setState]=useState<State|null>(null),[active,setActive]=useState<Tab>(()=>{const value=localStorage.getItem('babymemo-view');return ['overview','growth','moments','album','settings'].includes(value||'')?value as Tab:'overview'}),[babyId,setBabyId]=useState(()=>localStorage.getItem('babymemo-baby')||''),[toast,setToast]=useState('');
  const [records,setRecords]=useState<RecordItem[]>([]),[milestones,setMilestones]=useState<RecordItem[]>([]),[media,setMedia]=useState<MediaItem[]>([]);
  const [growthHistory,setGrowthHistory]=useState<RecordItem[]>([]),[historyLimited,setHistoryLimited]=useState(false);
  const [growthPage,setGrowthPage]=useState(0),[momentPage,setMomentPage]=useState(0),[albumPage,setAlbumPage]=useState(0);
  const [hasMore,setHasMore]=useState({growth:false,moments:false,album:false});
  const [busy,setBusy]=useState(false);
+ const [revision,setRevision]=useState(0);
+ const refreshSequence=useRef(0);
+ const [growthFilters,setGrowthFilters]=useState<RecordFilters>(emptyFilters),[momentFilters,setMomentFilters]=useState<RecordFilters>(emptyFilters),[albumFilters,setAlbumFilters]=useState<RecordFilters>(emptyFilters);
+ useEffect(()=>{localStorage.setItem('babymemo-view',active);localStorage.setItem('babymemo-baby',babyId)},[active,babyId]);
  useEffect(()=>{if(!toast)return;const timer=setTimeout(()=>setToast(''),5000);return()=>clearTimeout(timer)},[toast]);
  const baby=state?.babies.find(b=>b.id===babyId)||state?.babies[0];
  async function refresh(){
-  try{const v=await api<State>('/api/state');setState(v);setBabyId(old=>old&&v.babies.some(x=>x.id===old)?old:(v.babies[0]?.id||''));setMode('app');}
-  catch(e){if(e instanceof ApiFailure&&e.status===401){setMode('gate');setState(null);}else{setToast('连接暂时中断，已保留当前页面。请检查网络并重试。');setMode(old=>old==='loading'?'unavailable':old);}}
+  const sequence=++refreshSequence.current;
+  try{const v=await api<State>('/api/state');if(sequence!==refreshSequence.current)return;setState(v);setBabyId(old=>old&&v.babies.some(x=>x.id===old)?old:(v.babies[0]?.id||''));setMode('app');setRevision(value=>value+1);}
+  catch(e){if(sequence!==refreshSequence.current)return;if(e instanceof ApiFailure&&e.status===401){setMode('gate');setState(null);}else{setToast('连接暂时中断，已保留当前页面。请检查网络并重试。');setMode(old=>old==='loading'?'unavailable':old);}}
  }
- useEffect(()=>{refresh()},[]);
+ useEffect(()=>{refresh();const wake=()=>{if(document.visibilityState==='visible')void refresh()};window.addEventListener('focus',wake);document.addEventListener('visibilitychange',wake);return()=>{window.removeEventListener('focus',wake);document.removeEventListener('visibilitychange',wake)}},[]);
  // Load only the resource required by the active view; avoid three D1 reads on
  // every navigation. Ignore late responses when baby or tab changes.
  useEffect(()=>{
@@ -62,11 +70,11 @@ export default function App(){
   const id=encodeURIComponent(baby.id);
   const loads:Promise<void>[]=[];
   if(active==='overview'||active==='growth'){
-   loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/growth?babyId='+id+'&page='+growthPage)
+   loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/growth?babyId='+id+'&page='+(active==='overview'?0:growthPage)+(active==='overview'?'':filterQuery(growthFilters)))
     .then(r=>{if(!cancelled){setRecords(r.items);setHasMore(p=>({...p,growth:r.hasMore}))}}));
   }
   if(active==='overview'||active==='moments'){
-   loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/milestones?babyId='+id+'&page='+momentPage)
+   loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/milestones?babyId='+id+'&page='+(active==='overview'?0:momentPage)+(active==='overview'?'':filterQuery(momentFilters)))
     .then(r=>{if(!cancelled){setMilestones(r.items);setHasMore(p=>({...p,moments:r.hasMore}))}}));
   }
   if(active==='overview'||active==='growth'){
@@ -74,25 +82,27 @@ export default function App(){
     .then(r=>{if(!cancelled){setGrowthHistory(r.items);setHistoryLimited(r.limited)}}));
   }
   if(active==='overview'||active==='album'){
-   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+(active==='overview'?0:albumPage))
+   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+(active==='overview'?0:albumPage)+(active==='overview'?'':filterQuery(albumFilters)))
     .then(r=>{if(!cancelled){setMedia(r.items);setHasMore(p=>({...p,album:r.hasMore}))}}));
   }
   void Promise.all(loads).catch(e=>{if(!cancelled)setToast(e instanceof Error?e.message:'数据读取失败')});
   return ()=>{cancelled=true};
- },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media]);
- function changed(){void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
+ },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media,revision,growthFilters,momentFilters,albumFilters]);
+ function changed(){setRevision(value=>value+1);void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
  function selectBaby(id:string){
   // A newly created baby is valid before /api/state refresh includes the new ID.
   if(!id||id===babyId)return;
-  setBabyId(id);
+  setBabyId(id);setGrowthFilters(emptyFilters);setMomentFilters(emptyFilters);setAlbumFilters(emptyFilters);
   setMedia([]);setRecords([]);setMilestones([]);setGrowthHistory([]);setHistoryLimited(false);
   setHasMore({growth:false,moments:false,album:false});
   setGrowthPage(0);setMomentPage(0);setAlbumPage(0);
  }
  async function logout(){
     try{
-      await post('/api/logout',{});
-      setMode('gate');setState(null);
+      if((await offlineJobs()).length&&!confirm('退出会清除此设备尚未同步的内容和草稿。确认退出？'))return;
+      refreshSequence.current++;localStorage.setItem('babymemo-logout-pending','yes');
+      if(navigator.onLine)try{await post('/api/logout',{});localStorage.removeItem('babymemo-logout-pending')}catch{/* Keep the server logout pending until connectivity returns. */}
+      await clearDevice();setMode('gate');setState(null);setRecords([]);setMilestones([]);setMedia([]);setGrowthHistory([]);
     }catch(e){setToast(e instanceof Error?e.message:'退出失败，请检查网络后重试')}
   }
  if(mode==='loading')return <div className="loading-screen"><Logo/><div>正在载入家庭空间…</div></div>;
@@ -101,7 +111,7 @@ export default function App(){
  if(!state||!baby)return <div className="loading-screen">家庭空间中暂无宝宝档案</div>;
  const titles:Record<Tab,string>={overview:'成长日记',growth:'成长记录',moments:'成长瞬间',album:'相册',settings:'设置'};
  return <div className="app"><Nav active={active} setActive={setActive} logout={logout} familyName={state.familyName||"家庭空间"}/><main className="workspace"><div className="topbar"><div className="crumb"><span className="space-name" aria-label="家庭空间名称" title={state.familyName||'家庭空间'}>{state.familyName||'家庭空间'}</span> <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
- <div className="page"><header className={"page-heading"+(active==="album"?" page-heading-album":"")}><div><h1>{active==='overview'?baby.name:titles[active]}</h1>
+ <div className="page"><OfflineStatus changed={changed} notify={setToast}/><header className={"page-heading"+(active==="album"?" page-heading-album":"")}><div>{baby.avatar_key&&<img className="baby-portrait" src={'/api/babies/'+baby.id+'/avatar?v='+encodeURIComponent(baby.updated_at||'')} alt={baby.name+'的头像'}/>}<h1>{active==='overview'?baby.name:titles[active]}</h1>
  <p className="muted">{active==='overview'
  ? ageLabel(baby.birthday,baby.birth_time,baby.time_zone)+' · 成长日记'
  : active==='album'?'照片与视频':baby.name+' · '+ageLabel(baby.birthday,baby.birth_time,baby.time_zone)}</p>
@@ -123,9 +133,9 @@ export default function App(){
    <button type="button" className="home-add-moment" onClick={()=>setActive('moments')}><Plus size={16}/> 记录新瞬间</button>
   </section>
  </div>}
- {active==='growth'&&<RecordView key={'growth-'+baby.id} baby={baby} kind="growth" items={records} history={growthHistory} historyLimited={historyLimited} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage}/>}
- {active==='moments'&&<RecordView key={'milestones-'+baby.id} baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage}/>}
- {active==='album'&&<Album key={baby.id} baby={baby} media={media} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage}/>}
+ {active==='growth'&&<RecordView key={'growth-'+baby.id} baby={baby} kind="growth" items={records} history={growthHistory} historyLimited={historyLimited} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage} filters={growthFilters} onFilters={value=>{setGrowthFilters(value);setGrowthPage(0)}}/>}
+ {active==='moments'&&<RecordView key={'milestones-'+baby.id} baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage} filters={momentFilters} onFilters={value=>{setMomentFilters(value);setMomentPage(0)}}/>}
+ {active==='album'&&<Album key={baby.id} baby={baby} media={media} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage} filters={albumFilters} onFilters={value=>{setAlbumFilters(value);setAlbumPage(0)}}/>}
  {active==='settings'&&<Settings key={baby.id} state={state} baby={baby} changed={changed} notify={setToast} onBabySelected={selectBaby} onBabyCreated={id=>{selectBaby(id);setActive('overview')}}/>}
  
  </div></main>{toast&&<Notice text={toast} onClose={()=>setToast('')}/>}</div>;

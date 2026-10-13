@@ -19,7 +19,9 @@ import {exifJpeg} from './fixtures/media-exif.mjs';
 const root = process.cwd();
 const dir = mkdtempSync(join(tmpdir(), 'babymemo-e2e-'));
 const wrangler = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler');
-const envFile = join(root, '.dev.vars');
+const envFile = join(dir, '.dev.vars');
+const testConfig=join(dir,'wrangler.json');
+const localEnv={...process.env,CI:'true',BROWSER:'none',WRANGLER_SEND_METRICS:'false',XDG_CONFIG_HOME:join(dir,'config')};
 let worker, serverLog = '', started = false;
 let port, base, sessionCookie = '', createdVars = false, sessionSecret = '';
 
@@ -35,10 +37,10 @@ async function freePort() {
   return value;
 }
 function runCli(args) {
-  const result = spawnSync(wrangler, args, {
+  const result = spawnSync(wrangler, [...args,'--config',testConfig], {
     cwd: root,
     encoding: 'utf8',
-    env: {...process.env, CI: 'true', BROWSER: 'none'},
+    env: localEnv,
     timeout: 90000,
     maxBuffer: 8 * 1024 * 1024,
   });
@@ -47,7 +49,7 @@ function runCli(args) {
   }
 }
 async function boot() {
-  if(existsSync(envFile))throw Error('Refusing to overwrite existing .dev.vars; use a clean isolated checkout');
+  writeFileSync(testConfig,JSON.stringify({name:'babymemo-isolated-e2e',main:join(root,'src/worker.ts'),compatibility_date:'2026-10-12',assets:{directory:join(root,'dist'),binding:'ASSETS',not_found_handling:'single-page-application',run_worker_first:['/api/*']},d1_databases:[{binding:'DB',database_name:'synthetic-db',database_id:'00000000-0000-0000-0000-000000000001',migrations_dir:join(root,'migrations')}],r2_buckets:[{binding:'MEDIA',bucket_name:'synthetic-media'}],durable_objects:{bindings:[{name:'BOT',class_name:'WechatSession'}]},migrations:[{tag:'v1',new_sqlite_classes:['WechatSession']}],triggers:{crons:['0 19 * * *']}}));
   sessionSecret = randomBytes(32).toString('hex');
   writeFileSync(envFile,
     'SESSION_SECRET='+sessionSecret+'\n'+
@@ -58,9 +60,9 @@ async function boot() {
   port = await freePort();
   base = 'http://127.0.0.1:' + port;
   runCli(['d1','migrations','apply','DB','--local','--persist-to',dir]);
-  worker = spawn(wrangler, ['dev','--local','--test-scheduled','--port',String(port),'--ip','127.0.0.1','--persist-to',dir],{
+  worker = spawn(wrangler, ['dev','--local','--config',testConfig,'--test-scheduled','--port',String(port),'--ip','127.0.0.1','--persist-to',dir],{
     cwd:root,
-    env:{...process.env,CI:'true',BROWSER:'none'},
+    env:localEnv,
     stdio:['ignore','pipe','pipe'],
   });
   const collect = chunk => { serverLog = (serverLog + chunk.toString()).slice(-10000); };
@@ -531,8 +533,64 @@ async function e2e() {
   await step('records export protects private data',async()=>{
     assert.equal((await json('/api/export/records',{anonymous:true})).status,401);
     const v=await json('/api/export/records');assert.equal(v.status,200);
-    assert.equal(v.data.schema,'babymemo-family-export-v1');
+    assert.equal(v.data.schema,'babymemo-family-export-v2');
     assert.equal(JSON.stringify(v.data).includes('sk-or-local-fake'),false);
+  });
+  await step('web editing is authenticated, baby-scoped, versioned and retry-safe',async()=>{
+    const created=await json('/api/records/growth',{method:'POST',body:{babyId,day:'2026-10-12',weight:10.1,notes:'web-edit-fixture',requestId:crypto.randomUUID()}});
+    assert.equal(created.status,201);const id=created.data.id;
+    const before=await json('/api/records/growth/'+id);assert.equal(before.status,200);
+    const requestId=crypto.randomUUID(),payload={babyId,day:'2026-10-12',weight:10.2,height:null,headCircumference:null,notes:'web-edited',expectedUpdatedAt:before.data.updated_at};
+    const request={method:'PATCH',headers:{'X-Request-Id':requestId},body:payload};
+    assert.equal((await json('/api/records/growth/'+id,{...request,anonymous:true})).status,401);
+    assert.equal((await json('/api/records/growth/'+id,{...request,body:{...payload,babyId:secondBabyId}})).status,404);
+    assert.equal((await json('/api/records/growth/'+id,request)).status,200);
+    const changed=await json('/api/records/growth/'+id);assert.equal(changed.data.weight,10.2);assert.notEqual(changed.data.updated_at,before.data.updated_at);
+    assert.equal((await json('/api/records/growth/'+id,{method:'PATCH',body:{...payload,weight:10.3}})).status,409);
+    assert.equal((await json('/api/records/growth/'+id,{method:'PATCH',body:{...payload,weight:10.4,expectedUpdatedAt:changed.data.updated_at}})).status,200);
+    assert.equal((await json('/api/records/growth/'+id,request)).status,200);
+    assert.equal((await json('/api/records/growth/'+id)).data.weight,10.4,'lost-response replay must preserve a later edit');
+    assert.equal((await json('/api/records/growth/'+id,{...request,body:{...payload,weight:10.8}})).status,409);
+    const filtered=await json('/api/records/growth?babyId='+babyId+'&q=web-edited&startDay=2026-10-12&endDay=2026-10-12');assert.equal(filtered.data.items.length,1);
+    const deletion={method:'DELETE',headers:{'X-Request-Id':crypto.randomUUID()},body:{babyId}};
+    assert.equal((await json('/api/records/growth/'+id,deletion)).status,200);
+    assert.equal((await json('/api/trash/growth/'+id+'/restore',{method:'POST',body:{}})).status,200);
+    assert.equal((await json('/api/records/growth/'+id,deletion)).status,200);
+    assert.equal((await json('/api/records/growth/'+id)).status,200,'delete replay must not delete a restored row');
+  });
+  await step('full baby editing, private avatar, archiving and complete ZIP export',async()=>{
+    const created=await json('/api/babies',{method:'POST',headers:{'X-Request-Id':crypto.randomUUID()},body:{name:'Export Fixture',birthday:'2025-02-02',birthTime:'12:34',gender:'girl',timeZone:'Asia/Shanghai',allergies:''}});
+    assert.equal(created.status,201);const id=created.data.id;
+    const profile=(await json('/api/state')).data.babies.find(b=>b.id===id);
+    assert.equal((await json('/api/babies/'+id,{method:'PATCH',body:{name:profile.name,birthday:profile.birthday,birthTime:'13:45',gender:'boy',timeZone:'Asia/Tokyo',allergies:'花生',notes:'full profile fixture',expectedUpdatedAt:profile.updated_at}})).status,200);
+    const avatarId=crypto.randomUUID(),avatarPath='/api/babies/'+id+'/avatar',avatar=Uint8Array.from([255,216,255,224,0,16,255,217]);
+    assert.equal((await request(avatarPath,{method:'PUT',body:avatar,headers:{'Content-Type':'image/jpeg','X-Avatar-Id':avatarId}})).status,200);
+    assert.equal((await request(avatarPath,{anonymous:true})).status,401);
+    assert.deepEqual(new Uint8Array(await (await request(avatarPath)).arrayBuffer()),avatar);
+    assert.equal((await request(avatarPath,{method:'PUT',body:avatar,headers:{'Content-Type':'image/jpeg','X-Avatar-Id':avatarId}})).status,200);
+    const moment=await json('/api/records/milestones',{method:'POST',body:{babyId:secondBabyId,day:'2026-10-12',title:'Export relation fixture',description:''}});
+    const linkedMedia=(await json('/api/media?babyId='+secondBabyId)).data.items[0];
+    assert.match(moment.data.id,/^[a-f0-9-]{36}$/i);assert.match(linkedMedia.id,/^[a-f0-9-]{36}$/i);
+    runCli(['d1','execute','DB','--local','--persist-to',dir,'--command',"INSERT INTO milestone_media(milestone_id,media_id) VALUES('"+moment.data.id+"','"+linkedMedia.id+"')"]);
+    const metadata=await json('/api/export/records');assert.equal(metadata.data.babies.find(b=>b.id===id).birth_time,'13:45');assert.ok(metadata.data.milestoneMedia.some(link=>link.milestone_id===moment.data.id&&link.media_id===linkedMedia.id));
+    assert.equal((await json('/api/records/milestones?babyId='+secondBabyId)).data.items.find(row=>row.id===moment.data.id).media[0].id,linkedMedia.id);
+    assert.equal((await request('/api/export/full',{anonymous:true})).status,401);
+    const full=await request('/api/export/full');assert.equal(full.status,200);assert.match(full.headers.get('content-type'),/application\/zip/);
+    const archive=join(dir,'synthetic-family.zip');writeFileSync(archive,new Uint8Array(await full.arrayBuffer()));
+    const verified=spawnSync('python3',['-c',"import sys,zipfile,json\nz=zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None; data=json.loads(z.read('records.json')); assert 'milestoneMedia' in data; assert any(b['birth_time']=='13:45' and b['allergies']=='花生' for b in data['babies']); assert any(n.startswith('avatars/') for n in z.namelist()); assert any(n.startswith('media/') for n in z.namelist()); print('FULL_EXPORT_OK')",archive],{encoding:'utf8'});
+    assert.equal(verified.status,0,verified.stderr);
+    const currentAvatarProfile=(await json('/api/state')).data.babies.find(b=>b.id===id);
+    assert.equal((await request(avatarPath,{method:'PUT',body:avatar,headers:{'Content-Type':'image/jpeg','X-Expected-Version':profile.updated_at}})).status,409,'stale avatar must not overwrite a new profile');
+    const removeAvatar={method:'DELETE',headers:{'X-Request-Id':crypto.randomUUID()},body:{expectedUpdatedAt:currentAvatarProfile.updated_at}};
+    const removedAvatar=await json(avatarPath,removeAvatar);assert.equal(removedAvatar.status,200);
+    assert.equal((await request(avatarPath,{method:'PUT',body:avatar,headers:{'Content-Type':'image/jpeg','X-Expected-Version':removedAvatar.data.updated_at}})).status,200);
+    assert.equal((await json(avatarPath,removeAvatar)).status,200);
+    assert.equal((await request(avatarPath)).status,200,'delete retry must preserve a replacement avatar');
+    assert.equal((await json('/api/babies/'+id,{method:'DELETE',body:{}})).status,200);assert.equal((await json('/api/state')).data.babies.some(b=>b.id===id),false);
+    assert.equal((await json('/api/babies/archived/list')).data.items.some(b=>b.id===id),true);
+    assert.equal((await json('/api/babies/'+id+'/restore',{method:'POST',body:{}})).status,200);
+    assert.equal((await request(avatarPath)).status,200);
+    assert.equal((await json('/api/babies/'+id,{method:'DELETE',body:{}})).status,200);
   });
   await step('WeChat photo default baby is private, validated and changeable',async()=>{
     assert.equal((await json('/api/settings/wechat/default-baby',{method:'POST',anonymous:true,body:{babyId:secondBabyId}})).status,401);
@@ -643,7 +701,7 @@ async function browserE2e(){
       await create.getByLabel('出生日期').fill('2025-06-06');
       await create.getByLabel('性别').selectOption('girl');
       await create.getByRole('button',{name:/创建并切换到新宝宝/}).click();
-      await page.getByRole('heading',{name:'Browser New Baby'}).waitFor();
+      await page.getByRole('heading',{name:'Browser New Baby'}).waitFor({timeout:15000}).catch(async error=>{console.error('Synthetic new-baby failure view: '+(await page.locator('body').innerText()).slice(0,4000));await page.screenshot({path:join(evidence,'new-baby-failure.png'),fullPage:true});throw error});
       assert.equal(await page.locator('.page-heading select[aria-label="选择宝宝"]').count(),0);
       await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
       const picker=page.locator('.settings-baby-switch select[aria-label="选择宝宝"]');
@@ -827,11 +885,16 @@ async function browserE2e(){
       const bytes=await(await fetch(base+'/api/media/'+saved.id+'/content',{headers:{Cookie:sessionCookie}})).arrayBuffer();assert.ok(Buffer.from(bytes).equals(original));
     });
     await step((useWebKit?'WebKit':'Chromium')+': family-facing WeChat status across mobile and desktop widths',async()=>{
+      // This UI fixture mocks HTTP; isolate it from Service Worker interception.
+      // The real application/browser flow keeps Service Workers enabled.
+      const statusContext=await browser.newContext({viewport:{width:1280,height:900},serviceWorkers:'block',...(useWebKit?{isMobile:true,hasTouch:true,deviceScaleFactor:2}:{})});
+      await statusContext.addCookies(await context.cookies());const page=await statusContext.newPage();
+      try{
       const stamp=new Date().toISOString();const members=[{id:'status-normal',label:'测试爸爸',enabled:true},{id:'status-saving',label:'测试妈妈',enabled:true},{id:'status-expired',label:'测试外婆',enabled:false},{id:'status-paused',label:'测试爷爷',enabled:false}];
       const statuses=Object.fromEntries(members.map(member=>[member.id,{connectionId:member.id,connected:true,enabled:member.enabled,lastPoll:stamp,lastMessage:stamp,lastError:member.id==='status-expired'?'WECHAT_AUTH_EXPIRED':null,media:{pending:member.id==='status-saving'?2:0,saving:member.id==='status-saving',retrying:false,lastError:null,lastCompleted:null}}]));
       await page.route('**/api/state',async route=>{const response=await route.fetch();const data=await response.json();data.wechat.connections=members.map(member=>({...member,createdAt:stamp,updatedAt:stamp}));await route.fulfill({response,json:data})});
       await page.route('**/api/settings/wechat/connections/*/status',async route=>{const id=new URL(route.request().url()).pathname.split('/').at(-2);await route.fulfill({json:statuses[id]})});
-      await page.reload();await page.locator('.mobile-nav button[aria-label="设置"]').click();await page.getByText('运行正常',{exact:true}).waitFor();
+      await page.goto(base+'/',{waitUntil:'domcontentloaded'});await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();await page.getByText('运行正常',{exact:true}).waitFor();
       for(const label of ['媒体保存中','需要重新绑定','已暂停'])assert.equal(await page.getByText(label,{exact:true}).isVisible(),true);
       assert.equal(await page.locator('.status-json').count(),0);
       for(const width of [320,375,768,1280]){await page.setViewportSize({width,height:900});const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,'WeChat status overflow at '+width);if(width===320||width===1280)await page.screenshot({path:join(evidence,'wechat-status-'+width+'.png'),fullPage:true})}
@@ -839,7 +902,9 @@ async function browserE2e(){
       statuses['status-saving'].media={pending:0,saving:false,retrying:false,lastError:{code:'WECHAT_CDN_HTTP_503',attempt:3,at:stamp},lastCompleted:null};
       await details.getByRole('button',{name:'状态',exact:true}).click();await page.getByText('部分媒体保存失败',{exact:true}).waitFor();
       await page.unroute('**/api/state');await page.unroute('**/api/settings/wechat/connections/*/status');
+      }finally{await statusContext.close()}
     });
+    if(!useWebKit){const {browserWebManagement}=await import('./browser-web-management.mjs');await browserWebManagement({page,context,base,evidence,step}).catch(async error=>{console.error('Synthetic shell cache: '+JSON.stringify(await page.evaluate(async()=>{const keys=await caches.keys();return Promise.all(keys.filter(k=>k.startsWith('babymemo-shell')).map(async key=>{const cache=await caches.open(key),shell=await cache.match('/index.html');return{key,shell:!!shell,redirected:shell?.redirected,urls:(await cache.keys()).map(r=>new URL(r.url).pathname)}}))})));console.error('Synthetic web-management failure view: '+(await page.locator('body').innerText()).slice(0,5000));await page.screenshot({path:join(evidence,'web-management-failure.png'),fullPage:true});throw error})}
     assert.deepEqual(errors,[],'Uncaught browser exceptions');
     console.log('All '+(useWebKit?'WebKit Safari-engine':'Chromium')+' browser tests passed.');
     await context.close();

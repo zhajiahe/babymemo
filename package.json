@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node scripts/build-brand-assets.mjs",
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/build-offline-shell.mjs",
     "deploy": "npm run build && npm run provision:remote && node scripts/reconcile-birth-time.mjs && wrangler d1 migrations apply DB --remote && wrangler deploy --keep-vars",
     "db:resolve": "node scripts/ensure-d1-id.mjs",
     "test:unit": "node --test scripts/*.test.mjs",

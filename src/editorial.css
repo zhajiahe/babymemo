@@ -65,6 +65,25 @@ h1,h2,h3 { letter-spacing:normal; }
 /* Chart, records, then new measurement. */
 .record-layout { grid-template-columns:minmax(0,1.18fr) minmax(290px,.82fr); align-items:start; gap:18px; }
 .record-layout>.card { padding:24px; }
+.record-layout>div { width:100%; min-width:0; scroll-margin-top:20px; }
+.record-actions { display:flex; gap:4px; }
+.record-actions .icon-btn { min-width:44px; min-height:44px; color:var(--bm-muted); }
+.record-filters { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin:18px 0; }
+.record-filters .field { flex:1 1 155px; min-width:0; }
+.record-filters button { min-height:44px; }
+.pending-label { color:var(--bm-brand); font-size:12px; }
+.offline-status { padding:14px; margin-bottom:18px; border:1px solid var(--bm-border); border-radius:10px; background:var(--bm-brand-soft); font-size:13px; }
+.offline-status p { margin:8px 0; }
+.offline-jobs>div { border-top:1px solid var(--bm-border); padding:12px 0; overflow-wrap:anywhere; }
+.offline-jobs button { margin-right:8px; min-height:44px; }
+.baby-portrait { width:56px; height:56px; object-fit:cover; border-radius:50%; margin-bottom:10px; }
+.baby-avatar-control { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+.baby-avatar-control input { position:absolute; width:1px; height:1px; opacity:0; }
+.baby-avatar-control label { cursor:pointer; min-height:44px; }
+.baby-avatar-control label:focus-within { outline:3px solid var(--bm-focus); outline-offset:3px; }
+.moment-media { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.moment-media button { width:80px; height:80px; padding:0; border:1px solid var(--bm-border); border-radius:6px; overflow:hidden; color:var(--bm-muted); background:var(--bm-page); }
+.moment-media img { width:100%; height:100%; object-fit:cover; }
 .record-layout .timeline-item { border-color:var(--bm-border); }
 .growth-chart { background:var(--bm-surface); box-shadow:none; border-color:var(--bm-border); }
 .chart-tabs { border-color:var(--bm-border); background:var(--bm-page); }
@@ -117,7 +136,7 @@ h1,h2,h3 { letter-spacing:normal; }
  .growth-svg text { font-size:23px; }
  .notice { bottom:calc(104px + env(safe-area-inset-bottom)); max-width:calc(100vw - 32px); }
  .record-layout { display:flex; flex-direction:column; gap:14px; }
- .record-layout>.card { width:100%; padding:18px 16px; }
+ .record-layout>.card,.record-layout>div>.card { width:100%; padding:18px 16px; }
  .record-layout .timeline { max-height:none; }
  .photo-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:3px; }
  .photo-month { margin:12px -16px 25px; }

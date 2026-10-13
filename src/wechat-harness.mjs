@@ -5,8 +5,9 @@ const day={type:'string',description:'真实公历日期 YYYY-MM-DD'};
 const number=(unit,max)=>({type:'number',description:unit+'（必须是用户明确给出的数值）',exclusiveMinimum:0,maximum:max});
 const selector={id:{type:'string',description:'查询结果中的记录编号，至少前 8 位'},day:{type:'string',description:'唯一匹配记录的日期 YYYY-MM-DD；同日多条时需要记录编号'}};
 const tool=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
-import {validDay,dayInZone} from './wechat-policy.mjs';
+import {guardAction,validDay,dayInZone} from './wechat-policy.mjs';
 import {ageOnDay} from './wechat-answer.mjs';
+import {retentionCutoff} from './media-retention.mjs';
 import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
 export const wechatTools=[
  tool('get_runtime_context','读取消息发出时的可信时间、宝宝时区和目标宝宝；只有需要消歧时才调用'),
@@ -111,7 +112,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
     messageLocalTime:parts,timeZone:zone,targetBaby:baby?.name||null});
   }
   if(action==='list_babies'){
-   const r=await env.DB.prepare('SELECT name,birthday FROM babies ORDER BY created_at LIMIT 30').all();
+   const r=await env.DB.prepare('SELECT name,birthday FROM babies WHERE archived_at IS NULL ORDER BY created_at LIMIT 30').all();
    return '家庭宝宝：\n'+r.results.map(x=>x.name+'（'+x.birthday+'）').join('\n');
   }
   if(!baby)return '请先在 BabyMemo 中建立宝宝档案';
@@ -153,6 +154,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    return '已保存 '+baby.name+' 的成长测量：'+(found?listLine('growth',found):args.day+'（'+short(id)+'）');
   }
   if(action==='create_milestone'){
+   const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    if(!validDate(args.day))throw Error('请给出有效日期');
    const title=cleanText(args.title,120);
    if(!title||typeof args.title!=='string'||args.title.length>120)throw Error('请提供 120 字以内的事件标题');
@@ -258,7 +260,9 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    if(!tableForKind[args.kind])throw Error('请说明恢复的是测量、事件或相册');
    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const row=await findTarget(env,baby.id,args.kind,args,true);
-   const stmt=env.DB.prepare('UPDATE '+tableForKind[args.kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL').bind(row.id,baby.id);
+   if(row.deleted_at<retentionCutoff()||args.kind==='media'&&row.purge_token)return '恢复期限已过或文件正在清理，未恢复';
+   const stmt=env.DB.prepare('UPDATE '+tableForKind[args.kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL AND deleted_at>=?'+(args.kind==='media'?' AND purge_token IS NULL':''))
+    .bind(row.id,baby.id,retentionCutoff());
    if(typeof env.DB.batch!=='function'){
     const changed=await stmt.run();return changed.meta.changes?'已恢复 '+labelForKind[args.kind]+'（编号 '+short(row.id)+'）。':'该记录无法恢复';
    }

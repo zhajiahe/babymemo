@@ -1,5 +1,6 @@
 // D1-backed operation journal. No SQL or record IDs may originate from free-form LLM text.
 const TABLES={growth:'growth_records',milestones:'milestones',media:'media',baby:'babies'};
+import {retentionCutoff} from './media-retention.mjs';
 const COLUMNS={
  growth:['weight','height','head_circumference','notes','day','deleted_at'],
  milestones:['day','title','description','deleted_at'],
@@ -36,6 +37,7 @@ export async function undoOperation(env,babyId,opId){
  try{before=JSON.parse(op.before_json);after=JSON.parse(op.after_json)}catch{return '操作历史无法解析，未做任何修改'}
  const current=await env.DB.prepare('SELECT * FROM '+table+' WHERE id=? AND '+(op.kind==='baby'?'id=?':'baby_id=?')+' LIMIT 1').bind(op.record_id,op.kind==='baby'?babyId:babyId).first();
  if(!current)return '记录已不存在，不能撤销';
+ if(op.kind==='media'&&(current.purge_token||current.deleted_at&&current.deleted_at<retentionCutoff()))return '文件已进入清理阶段，不能撤销';
  const expected=after||{};
  if(Object.keys(expected).some(k=>!allowed.includes(k)||JSON.stringify(current[k]??null)!==JSON.stringify(expected[k]??null)))
   return '记录已经被其他操作修改，不能直接撤销，请手动检查';
@@ -44,7 +46,7 @@ export async function undoOperation(env,babyId,opId){
  const keys=Object.keys(values);
  if(!keys.length)return '没有可撤销的字段';
  const conditional=Object.keys(expected).map(k=>k+' IS ?').join(' AND ');
- const update=env.DB.prepare('UPDATE '+table+' SET '+keys.map(k=>k+'=?').join(',')+' WHERE id=? AND '+(op.kind==='baby'?'id=?':'baby_id=?')+(conditional?' AND '+conditional:''))
+ const update=env.DB.prepare('UPDATE '+table+' SET '+keys.map(k=>k+'=?').join(',')+' WHERE id=? AND '+(op.kind==='baby'?'id=?':'baby_id=?')+(conditional?' AND '+conditional:'')+(op.kind==='media'?' AND purge_token IS NULL':''))
  .bind(...keys.map(k=>values[k]),op.record_id,babyId,...Object.keys(expected).map(k=>expected[k]));
  const mark=env.DB.prepare('UPDATE wechat_operation_log SET undone_at=? WHERE id=? AND undone_at IS NULL AND changes()>0').bind(new Date().toISOString(),op.id);
  if(typeof env.DB.batch!=='function')throw Error('AUDIT_TRANSACTION_UNAVAILABLE');

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import {cloneElement,isValidElement,useId,type ReactNode} from 'react';
 
 
 /**
@@ -26,7 +26,10 @@ export function Notice({ text, onClose }: { text: string; onClose: () => void })
 }
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <label className="field"><span>{label}</span>{children}</label>;
+  const labelId=useId();
+  const control=isValidElement<{'aria-label'?:string;'aria-labelledby'?:string}>(children)&&!children.props['aria-label']&&!children.props['aria-labelledby']
+    ?cloneElement(children,{'aria-labelledby':labelId}):children;
+  return <label className="field"><span id={labelId}>{label}</span>{control}</label>;
 }
 
 export function Primary({ children, disabled = false }: { children: ReactNode; disabled?: boolean }) {
