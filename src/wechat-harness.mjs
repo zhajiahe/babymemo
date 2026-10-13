@@ -6,7 +6,7 @@ const number=(unit,max)=>({type:'number',description:unit+'（必须是用户明
 const selector={id:{type:'string',description:'查询结果中的记录编号，至少前 8 位'},day:{type:'string',description:'唯一匹配记录的日期 YYYY-MM-DD；同日多条时需要记录编号'}};
 const tool=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
 import {guardAction,validDay,explicitDay} from './wechat-policy.mjs';
-import {operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
+import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
 export const wechatTools=[
  tool('list_babies','列出这个家庭已经创建的宝宝'),
  tool('get_baby','读取当前宝宝的生日、昵称、过敏等档案'),
@@ -91,12 +91,19 @@ async function listItems(env,baby,kind,args){
  const rows=await env.DB.prepare('SELECT * FROM '+table+' WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC LIMIT ?').bind(...params,maxLimit(args)).all();
  return rows.results.length?baby.name+' 的'+labelForKind[kind]+'：\n'+rows.results.map(x=>listLine(kind,x)).join('\n'):'暂时没有符合条件的'+labelForKind[kind]+'。';
 }
-async function update(env,kind,record,changes){
- const table=tableForKind[kind];
- const names=Object.keys(changes);if(!names.length)return '请明确需要修改的内容';
- const result=await env.DB.prepare('UPDATE '+table+' SET '+names.map(x=>x+'=?').join(',')+' WHERE id=? AND deleted_at IS NULL')
- .bind(...names.map(x=>changes[x]),record.id).run();
- return result.meta.changes?'已更新'+labelForKind[kind]+'（编号 '+short(record.id)+'）。':'记录已失效，请重新查询';
+async function update(env,kind,record,changes,options={}){
+ const table=tableForKind[kind],names=Object.keys(changes);
+ if(!names.length)return '请明确需要修改的内容';
+ const stmt=env.DB.prepare('UPDATE '+table+' SET '+names.map(x=>x+'=?').join(',')+
+  ' WHERE id=? AND baby_id=? AND deleted_at IS NULL AND '+names.map(x=>x+' IS ?').join(' AND '))
+  .bind(...names.map(x=>changes[x]),record.id,record.baby_id,...names.map(x=>record[x]??null));
+ if(typeof env.DB.batch!=='function'){
+  const r=await stmt.run();return r.meta.changes?'已更新'+labelForKind[kind]+'（编号 '+short(record.id)+'）。':'记录已发生变化';
+ }
+ const opId=await auditChange(env,{sourceId:options.messageId,babyId:record.baby_id,kind,recordId:record.id,
+   action:'update',before:operationSnapshot(kind,record),after:snapshotChanges(kind,record,changes),statement:stmt});
+ if(opId&&options.thread)options.thread.lastOperation={babyId:record.baby_id,opId,expiresAt:(options.at||Date.now())+1200000};
+ return opId?'已更新'+labelForKind[kind]+'（编号 '+short(record.id)+'）。':'记录已发生变化，请重新查询';
 }
 function measurement(args){
  const fields=[['weight','weight',0.1,150],['height','height',10,250],['headCircumference','head_circumference',10,100]];
@@ -130,8 +137,13 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    if(args.birthday!==undefined){if(!validDate(args.birthday))throw Error('生日日期不正确');changes.birthday=args.birthday}
     if(args.birthTime!==undefined){if(typeof args.birthTime!=='string'||args.birthTime!==''&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(args.birthTime))throw Error('出生时间应为 HH:mm');changes.birth_time=args.birthTime}
    if(!Object.keys(changes).length)return '请说明要修改的字段';
-   await env.DB.prepare('UPDATE babies SET '+Object.keys(changes).map(x=>x+'=?').join(',')+' WHERE id=?').bind(...Object.values(changes),baby.id).run();
-   return '已更新 '+baby.name+' 的宝宝档案。';
+   const keys=Object.keys(changes),stmt=env.DB.prepare('UPDATE babies SET '+keys.map(x=>x+'=?').join(',')+
+    ' WHERE id=? AND '+keys.map(x=>x+' IS ?').join(' AND ')).bind(...Object.values(changes),baby.id,...keys.map(x=>baby[x]??null));
+   if(typeof env.DB.batch!=='function'){await stmt.run();return '已更新 '+baby.name+' 的宝宝档案。'}
+   const opId=await auditChange(env,{sourceId:messageId,babyId:baby.id,kind:'baby',recordId:baby.id,
+    action:'update',before:operationSnapshot('baby',baby),after:snapshotChanges('baby',baby,changes),statement:stmt});
+   if(opId&&options.thread)options.thread.lastOperation={babyId:baby.id,opId,expiresAt:at+1200000};
+   return opId?'已更新 '+baby.name+' 的宝宝档案。':'宝宝资料发生变化，请重新查询';
   }
   if(action==='list_growth'||action==='list_milestones'||action==='list_media'){
    return await listItems(env,baby,action==='list_growth'?'growth':action==='list_milestones'?'milestones':'media',args);
@@ -175,7 +187,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
      if(args.favorite!==undefined){if(typeof args.favorite!=='boolean')throw Error('收藏状态必须为是或否');changes.favorite=args.favorite?1:0}
     }
     if(args.newDay!==undefined){if(!validDate(args.newDay))throw Error('新日期不正确');changes.day=args.newDay}
-    return await update(env,kind,row,changes);
+    return await update(env,kind,row,changes,{messageId,thread:options.thread,at});
    }
    if(action==='delete_'+(kind==='milestones'?'milestone':kind)){
     if(!/删除|删掉|移入回收站|移到回收站/.test(originalText))return '请明确说“删除”并指定日期或编号';
