@@ -63,8 +63,6 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   if(call?.type!=='function'||!names.has(call.function?.name)||typeof call.function.arguments!=='string')
    return [...results,'出现不受支持的工具操作，剩余操作未执行。'].join('\n');
   const action=call.function.name,kind=KINDS[action]||null,sourceId=messageId+':step:'+(stepOffset+i);
-  let args;try{args=JSON.parse(call.function.arguments)}catch{return [...results,'模型参数不是合法 JSON，后续操作未执行。'].join('\n')}
-  if(!args||typeof args!=='object'||Array.isArray(args))return [...results,'模型参数格式不正确，后续操作未执行。'].join('\n');
   // Claims and results are always scoped by the server-selected baby, not a model babyId.
   let args;try{args=JSON.parse(call.function.arguments)}catch{return [...results,'模型参数不是合法 JSON，后续操作未执行。'].join('\n')}
   if(!args||typeof args!=='object'||Array.isArray(args))return [...results,'模型参数格式不正确，后续操作未执行。'].join('\n');
