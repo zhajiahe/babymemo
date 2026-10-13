@@ -194,6 +194,40 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    }
    return sections.join('\n')||'回收站暂无内容';
   }
+  if(action==='search_records'){
+   const kind=args.kind,table=tableForKind[kind];if(!table)return '请指定查询的记录类型';
+   if(args.startDay&&!validDay(args.startDay)||args.endDay&&!validDay(args.endDay)||
+     args.startDay&&args.endDay&&args.startDay>args.endDay)return '查询日期范围不合法';
+   const cols=kind==='growth'?'notes':kind==='milestones'?"title||' '||description":'title';
+   const clauses=['baby_id=?','deleted_at IS NULL'],values=[baby.id];
+   if(args.startDay){clauses.push('day>=?');values.push(args.startDay)}
+   if(args.endDay){clauses.push('day<=?');values.push(args.endDay)}
+   if(args.keyword!==undefined){
+    const word=cleanText(args.keyword,80);if(!word)return '请输入要查找的关键词';
+    clauses.push('('+cols+') LIKE ?');values.push('%'+word.replace(/[%_]/g,'')+'%');
+   }
+   const rows=await env.DB.prepare('SELECT * FROM '+table+' WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC LIMIT ?')
+    .bind(...values,maxLimit(args)).all();
+   return rows.results.length?baby.name+' 的查询结果：\n'+rows.results.map(x=>listLine(kind,x)).join('\n'):'没有找到符合条件的记录';
+  }
+  if(action==='growth_summary'){
+   if(!validDay(args.startDay)||!validDay(args.endDay)||args.startDay>args.endDay)return '请指定有效日期范围';
+   const rows=await env.DB.prepare('SELECT day,weight,height,head_circumference FROM growth_records WHERE baby_id=? AND deleted_at IS NULL AND day>=? AND day<=? ORDER BY day ASC,created_at ASC LIMIT 500')
+    .bind(baby.id,args.startDay,args.endDay).all();
+   if(!rows.results.length)return '这段时间还没有测量记录';
+   const metric=(name,unit)=>{const xs=rows.results.filter(x=>typeof x[name]==='number');
+     return xs.length?name+'：'+xs[0][name]+unit+' → '+xs.at(-1)[name]+unit+'，变化 '+Number((xs.at(-1)[name]-xs[0][name]).toFixed(2))+unit:'';};
+   return baby.name+' '+args.startDay+' 至 '+args.endDay+'，共 '+rows.results.length+' 条测量\n'+
+    [metric('weight','kg'),metric('height','cm'),metric('head_circumference','cm')].filter(Boolean).join('\n');
+  }
+  if(action==='update_recent_media'){
+   const batch=options.thread?.lastMedia;
+   if(!batch||batch.babyId!==baby.id||batch.expiresAt<=at||!Array.isArray(batch.ids))return '没有可确认的最近照片批次';
+   if(!/照片|图片|视频|这几张|刚才/.test(originalText)||!validDay(args.newDay)||
+      explicitDay(originalText,at,baby.time_zone)!==args.newDay)return '请明确指定刚发送的照片和新日期';
+   const results=await env.DB.batch(batch.ids.slice(0,4).map(id=>env.DB.prepare('UPDATE media SET day=? WHERE id=? AND baby_id=? AND deleted_at IS NULL').bind(args.newDay,id,baby.id)));
+   return '已更新最近 '+results.reduce((n,r)=>n+(r.meta?.changes||0),0)+' 项照片或视频的日期。';
+  }
   if(action==='restore_trash'){
    if(!/恢复|还原|找回/.test(originalText))return '请明确说“恢复”并指定记录编号';
    if(!tableForKind[args.kind])throw Error('请说明恢复的是测量、事件或相册');
