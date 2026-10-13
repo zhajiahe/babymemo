@@ -4,7 +4,7 @@
 
 ## 微信 Harness 新场景测试（设计中）
 
-新增的真实场景问题编号 H-01～H-22、待实现的自动化案例 T-001～T-024，分别见 [微信 Harness 场景审查](wechat-harness-review.md) 与 [Harness 自动化测试计划](wechat-harness-test-plan.md)。**这两份文档是未来改造和测试设计，不代表新增用例已经加入本矩阵中的现有 CI 或已经通过。** 当前已有的单元测试与模拟 E2E 覆盖范围仍以本文件下文为准。
+新增的真实场景问题编号 H-01～H-22、待实现的自动化案例 T-001～T-024，分别见 [微信 Harness 场景审查](wechat-harness-review.md) 与 [Harness 自动化测试计划](wechat-harness-test-plan.md)。部分场景已经实现，详见 [Harness 实施对照](wechat-harness-implementation.md)。**原规划的 T-001～T-024 不等于全部已有独立断言或已经通过；应以实际测试名称和 CI 结果为准。** 当前已有的单元测试与模拟 E2E 覆盖范围仍以本文件下文为准。
 
 ## 自动化入口
 
