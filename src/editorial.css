@@ -98,7 +98,10 @@ h1,h2,h3 { letter-spacing:normal; }
  .photo-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
 @media(max-width:800px) {
- .topbar { display:none; }
+ .topbar { display:flex; min-height:54px; height:auto; padding:10px 16px; }
+  .topbar .crumb { min-width:0; width:100%; }
+  .topbar .space-name { font-size:15px; line-height:1.45; overflow-wrap:anywhere; }
+  .topbar .crumb>svg,.topbar .crumb>strong,.topbar .top-right { display:none; }
  .page { padding:22px 16px 26px; }
  .page-heading { margin-bottom:18px; }
  .page-heading h1 { font-size:27px; }
