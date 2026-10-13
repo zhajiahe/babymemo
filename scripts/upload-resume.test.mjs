@@ -39,7 +39,9 @@ test('server endpoints preserve private access and original media',()=>{
  assert.match(migration,/ALTER TABLE media_uploads ADD COLUMN fingerprint/);
 });
 test('frontend reselects files and does not automatically cancel recoverable sessions',()=>{
- assert.match(ui,/pickMatchingUpload\(queue/);
+ assert.match(ui,/pickMatchingUpload\(\[item\]/);
+ assert.match(ui,/!reserved\.has\(item\.id\)/);
+ assert.match(ui,/const queue=await refreshPending\(\)/);
  assert.match(ui,/remainingPartNumbers\(total/);
  assert.match(ui,/重新选择同一文件/);
  assert.match(ui,/async function discard\(id:string\)/);
