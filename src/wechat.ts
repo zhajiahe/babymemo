@@ -126,11 +126,17 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
    await env.DB.prepare('INSERT OR IGNORE INTO wechat_agent_rounds(message_id,round_index,assistant_cipher,created_at) VALUES(?,?,?,?)')
     .bind(messageId,round,await encryptSecret(env,JSON.stringify(assistant)),new Date().toISOString()).run();
   },
-  execute:(call:any,stepOffset:number)=>runWechatPlan(env,baby,[call],{
-   messageId,text:command,groundedText:context.groundedText,at,thread,stepOffset,
-   encryptReply:(value:string)=>encryptSecret(env,value),
-   decryptReply:(value:string)=>decryptSecret(env,value)
-  })
+  execute:async(call:any,stepOffset:number)=>{
+   const content=await runWechatPlan(env,baby,[call],{
+    messageId,text:command,groundedText:context.groundedText,at,thread,stepOffset,
+    encryptReply:(value:string)=>encryptSecret(env,value),
+    decryptReply:(value:string)=>decryptSecret(env,value)
+   });
+   // Failed/denied mutations cannot be followed by further writes in the same
+   // user message, even when the model returned multiple tool calls at once.
+   const mutating=/^(?:update_|create_|delete_|restore_)/.test(call.function.name);
+   return {content,halt:mutating&&!/^(?:已保存|已更新|已将|已恢复|此前已成功)/.test(content)};
+  }
  });
 }
 // The photo itself has no baby name. Use the caption when present, otherwise
