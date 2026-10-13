@@ -2,7 +2,7 @@ import JSONBig from 'json-bigint';
 import type { Env, Baby } from './types';
 import { decryptSecret, encryptSecret, setting, resolveOpenRouterKey } from './crypto';
 import { wechatTools, wechatHelp, runWechatTool } from './wechat-harness.mjs';
-import {WechatPhotoError,mediaItems,persistWeChatMedia} from './wechat-media.mjs';
+import {WechatPhotoError,mediaItems,persistWeChatMedia,wechatMediaErrorCode} from './wechat-media.mjs';
 import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './wechat-memory.mjs';
@@ -153,7 +153,8 @@ export class WechatSession {
     if(path==='/status'){
       return Response.json({enabled:await setting(this.env,'wechat_enabled')==='true',connected:!!await setting(this.env,'wechat_token'),lastPoll:await this.ctx.storage.get('lastPoll')||null,
         lastError:await this.ctx.storage.get('lastError')||null,lastMessage:await this.ctx.storage.get('lastMessage')||null,
-        lastProcessing:await this.ctx.storage.get('lastProcessing')||null});
+        lastProcessing:await this.ctx.storage.get('lastProcessing')||null,
+        lastMediaError:await this.ctx.storage.get('lastMediaError')||null});
     }
     if(request.method!=='POST')return new Response('Not found',{status:404});
     if(path==='/start'){
@@ -167,7 +168,7 @@ export class WechatSession {
     }
     if(path==='/reset'){
       await this.ctx.storage.deleteAlarm();
-      await Promise.all(['cursor','lastPoll','lastError','lastMessage','conversation'].map(key=>this.ctx.storage.delete(key)));
+      await Promise.all(['cursor','lastPoll','lastError','lastMessage','lastMediaError','conversation'].map(key=>this.ctx.storage.delete(key)));
       return Response.json({ok:true});
     }
     return new Response('Not found',{status:404});
@@ -208,12 +209,16 @@ export class WechatSession {
             if(clear)reply='已清除本次微信会话的短期上下文和宝宝选择。';
             else if(hasMedia){
               reply=await handleWechatPhotoMessage(this.env,raw,unique,thread);
+              if(reply.startsWith('已保存')||reply.startsWith('这些照片或视频已经保存过'))await this.ctx.storage.delete('lastMediaError');
               if(reply.startsWith('已保存')&&/记(?:录|下)|里程碑|成长瞬间/.test(text)){
                const follow=await handleWechatCommand(this.env,text,unique+':caption',thread,messageTime(raw));
                reply+='\n'+follow;
               }
             }else reply=await handleWechatCommand(this.env,text,unique,thread,messageTime(raw));
           }catch(e){
+            if(hasMedia)await this.ctx.storage.put('lastMediaError',{
+              code:wechatMediaErrorCode(e),attempt:(row?.photo_attempts||0)+1,at:new Date().toISOString()
+            });
             // Protocol-invalid or expired photos can be acknowledged with a helpful
             // error. Network/R2/D1 failures are retried with the original cursor.
             if(hasMedia&&!(e instanceof WechatPhotoError)){
