@@ -39,6 +39,7 @@ export function RecordView({baby,kind,items,history,historyLimited,busy,setBusy,
 }
 export function GrowthChart({items,limited}:{items:RecordItem[];limited?:boolean}){
  const [metric,setMetric]=useState<'weight'|'height'>('weight');
+ const [selectedId,setSelectedId]=useState<string|null>(null);
  const points=items.filter(x=>typeof x[metric]==='number').slice().sort((a,b)=>a.day.localeCompare(b.day));
  const values=points.map(p=>Number(p[metric]));
  const low=values.length?Math.min(...values):0,high=values.length?Math.max(...values):1;
@@ -48,6 +49,27 @@ export function GrowthChart({items,limited}:{items:RecordItem[];limited?:boolean
  const earliest=dates[0]??0,latest=dates.at(-1)??earliest,span=Math.max(1,latest-earliest);
  const x=(i:number)=>points.length===1?(left+right)/2:left+(right-left)*(dates[i]-earliest)/span;
  const y=(v:number)=>bottom-(v-min)/(max-min)*(bottom-top);
- const poly=points.map((p,i)=>`${x(i)},${y(Number(p[metric]))}`).join(' ');
- return <Card className="growth-chart"><div className="section-title"><h3>成长趋势</h3><div className="chart-tabs"><button className={metric==='weight'?'active':''} onClick={()=>setMetric('weight')}>体重 · kg</button><button className={metric==='height'?'active':''} onClick={()=>setMetric('height')}>身高 · cm</button></div></div>{!points.length?<p className="empty">记录测量数据后，这里会显示变化趋势。</p>:<svg role="img" aria-label={`${metric==='weight'?'体重':'身高'}趋势，${points.length} 个测量点`} viewBox="0 0 720 235" className="growth-svg"><line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#e8e8ed"/>{[0,1,2,3].map(step=>{const value=min+(max-min)*step/3;const yy=y(value);return <g key={step}><line x1={left} x2={right} y1={yy} y2={yy} stroke="#edf0f3" strokeDasharray="3 5"/><text x={left-10} y={yy+4} textAnchor="end" fontSize={12} fill="#87919f">{value.toFixed(1)}</text></g>})}{points.length>1&&<polyline points={poly} fill="none" stroke="#dd8068" strokeWidth={3} strokeLinejoin="round" strokeLinecap="round"/>}{points.map((p,i)=><circle key={p.id} cx={x(i)} cy={y(Number(p[metric]))} r={4} fill="#df826c" stroke="#fff" strokeWidth={2}><title>{p.day}：{Number(p[metric])}{metric==='weight'?' kg':' cm'}</title></circle>)}<text x={left} y={226} fill="#8993a0" fontSize={11}>{points[0].day}</text><text x={right} y={226} fill="#8993a0" fontSize={11} textAnchor="end">{points.at(-1)?.day}</text></svg>}<p className="hint">横轴按真实测量日期绘制，展示历史记录（最多 2000 条）。{limited?'历史数据达到查询上限。':''}</p></Card>;
+ const poly=points.map((p,i)=>String(x(i))+','+String(y(Number(p[metric])))).join(' ');
+ const selected=points.find(p=>p.id===selectedId)||points.at(-1);
+ const unit=metric==='weight'?'kg':'cm';
+ const metricName=metric==='weight'?'体重':'身高';
+ return <Card className="growth-chart">
+  <div className="section-title"><h3>成长趋势</h3><div className="chart-tabs"><button type="button" className={metric==='weight'?'active':''} aria-pressed={metric==='weight'} onClick={()=>{setMetric('weight');setSelectedId(null)}}>体重 · kg</button><button type="button" className={metric==='height'?'active':''} aria-pressed={metric==='height'} onClick={()=>{setMetric('height');setSelectedId(null)}}>身高 · cm</button></div></div>
+  {!points.length?<p className="empty">记录测量数据后，这里会显示变化趋势。</p>:<>
+   <div className="growth-latest"><span>{selectedId&&selected?.id===selectedId?'选中测量':'最近一次测量'}</span><strong>{Number(selected?.[metric])} <small>{unit}</small></strong><time>{selected?.day}</time></div>
+   <svg role="img" aria-label={metricName+'趋势，'+points.length+' 个测量点，点击数据点查看详细数值'} viewBox="0 0 720 235" className="growth-svg">
+    <line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#e8e8ed"/>
+    {[0,1,2,3].map(step=>{const value=min+(max-min)*step/3;const yy=y(value);return <g key={step}><line x1={left} x2={right} y1={yy} y2={yy} stroke="#edf0f3" strokeDasharray="3 5"/><text x={left-10} y={yy+4} textAnchor="end" fontSize={12} fill="#87919f">{value.toFixed(1)}</text></g>})}
+    {points.length>1&&<polyline points={poly} fill="none" stroke="#dd8068" strokeWidth={3} strokeLinejoin="round" strokeLinecap="round"/>}
+    {points.map((p,i)=><g key={p.id} role="button" tabIndex={0} aria-label={p.day+'：'+Number(p[metric])+' '+unit} onClick={()=>setSelectedId(p.id)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setSelectedId(p.id)}}}>
+     <circle cx={x(i)} cy={y(Number(p[metric]))} r={15} fill="transparent"/>
+     <circle cx={x(i)} cy={y(Number(p[metric]))} r={selected?.id===p.id?6:4} fill="#df826c" stroke="#fff" strokeWidth={2}/>
+     <title>{p.day+'：'+Number(p[metric])+' '+unit}</title>
+    </g>)}
+    <text x={left} y={226} fill="#8993a0" fontSize={11}>{points[0].day}</text><text x={right} y={226} fill="#8993a0" fontSize={11} textAnchor="end">{points.at(-1)?.day}</text>
+   </svg>
+   <p className="chart-detail" aria-live="polite">点击曲线上的点，可查看对应测量日期与数值。</p>
+  </>}
+  {limited&&<p className="hint">历史记录较多，当前展示最近 2000 条。</p>}
+ </Card>;
 }
