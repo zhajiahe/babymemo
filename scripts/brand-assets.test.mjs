@@ -10,7 +10,7 @@ test('every generated brand bitmap has the required dimensions',()=>{
 test('transparent source and favicon, opaque iOS and maskable variants',()=>{
  const src=bytes('brand/baby-journal-source.png'); assert.deepEqual(size(src),[192,192]);
  const png=bytes('icon-512.png');assert.equal(png[25],6,'generated PNG uses RGBA');
- assert.match(bytes('favicon.svg').toString('utf8'),/data:image\\/png;base64/);
+ assert.match(bytes('favicon.svg').toString('utf8'),/data:image\/png;base64/);
  assert.match(bytes('brand/wordmark.svg').toString('utf8'),/BabyMemo/);
  const m=JSON.parse(bytes('site.webmanifest').toString('utf8'));
  assert.ok(m.icons.some(i=>i.purpose==='maskable'&&i.sizes==='512x512'));
