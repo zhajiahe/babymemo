@@ -6,6 +6,7 @@ import {WechatPhotoError,mediaItems,persistWeChatMedia,wechatMediaErrorCode} fro
 import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './wechat-memory.mjs';
+import {wechatMessageText,hasWechatVoice} from './wechat-message.mjs';
 import {messageTime,dayInZone} from './wechat-policy.mjs';
 import {runWechatPlan,quickCommand,isCommittedMutationReply} from './wechat-orchestrator.mjs';
 import {wechatSystemPrompt,wechatFinalMessages} from './wechat-prompt.mjs';
@@ -143,9 +144,7 @@ async function resolveWechatMediaBaby(env:Env,raw:Json,thread:any=null,targetBab
   const babies=await env.DB.prepare('SELECT id,name,birthday,time_zone FROM babies ORDER BY created_at').all<Baby>();
   if(!babies.results.length)return '请先在 BabyMemo 网页创建宝宝档案，再发送照片。';
   if(targetBabyId)return babies.results.find(b=>b.id===targetBabyId)||'目标宝宝已不存在，照片或视频未保存。';
-  const caption=(Array.isArray(raw.item_list)?raw.item_list:[])
-   .filter((item:any)=>item?.type===1&&typeof item?.text_item?.text==='string')
-   .map((item:any)=>item.text_item.text).join(' ').trim();
+  const caption=wechatMessageText(raw);
   const found=babies.results.filter(b=>b.name&&caption.includes(b.name));
   if(found.length>1)return '这张照片的文字中提到了多位宝宝，请每次只指定一位宝宝。';
   let baby:Baby|undefined=found[0];
@@ -210,7 +209,7 @@ export class WechatSession {
       const ids=await savedWechatMediaIds(env,task.raw,task.babyId,task.sourceId);
       thread.pendingMedia=null;
       thread.lastMedia={babyId:task.babyId,ids,expiresAt:task.receivedAt+1200000};
-      const text=task.raw.item_list.filter((i:any)=>i?.type===1&&typeof i.text_item?.text==='string').map((i:any)=>i.text_item.text).join('\n').trim();
+      const text=wechatMessageText(task.raw);
       const c=await getWechatConnection(env,task.connectionId);
       if(/记(?:录|下)|里程碑|成长瞬间/.test(text)&&c?.enabled===1&&await mediaTaskId(c.token_cipher)===task.credentialHash&&generation===await ctx.storage.get('media-generation')){
        const checked=await workerBot(env,task.connectionId).fetch('https://bot.internal/media/context',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch:task.epoch,version:task.version,babyId:task.babyId})});
@@ -326,11 +325,11 @@ export class WechatSession {
       for(const raw of (Array.isArray(response.msgs)?response.msgs:[])){
         if(!raw||raw.message_type!==1||(raw.message_state!==undefined&&raw.message_state!==0&&raw.message_state!==2)||raw.group_id||raw.from_user_id!==userId||raw.to_user_id&&raw.to_user_id!==botId)continue;
         if(!Array.isArray(raw.item_list))continue;
-        const text=raw.item_list.filter((i:any)=>i?.type===1&&typeof i?.text_item?.text==='string').map((i:any)=>i.text_item.text).join('\n').trim();
+        const text=wechatMessageText(raw),hasVoice=hasWechatVoice(raw);
         const msgid=String(raw.message_id||raw.msg_id||'');
         const hasMedia=mediaItems(raw).length>0;
          const processingStarted=Date.now();
-        if((!text&&!hasMedia)||!msgid||text.length>3000)continue;
+        if((!text&&!hasMedia&&!hasVoice)||!msgid||text.length>3000)continue;
         const unique=botId+':'+msgid;
         await this.env.DB.prepare("INSERT OR IGNORE INTO wechat_messages(message_id,state,created_at) VALUES(?,'processing',?)").bind(unique,new Date().toISOString()).run();
         const row=await this.env.DB.prepare('SELECT state,reply_text,client_id,photo_attempts FROM wechat_messages WHERE message_id=?').bind(unique)
@@ -356,6 +355,7 @@ export class WechatSession {
         if(!reply){
           try{
             if(clear)reply='已清除本次微信会话的短期上下文和宝宝选择。';
+            else if(!text&&!hasMedia&&hasVoice)reply='收到语音消息，但微信没有附带文字转写。请在微信里转成文字后发送；暂不识别语音音频。';
             else if(hasMedia){
               const baby=await resolveWechatMediaBaby(this.env,raw,thread);
               if(typeof baby==='string')reply=baby;
@@ -395,14 +395,14 @@ export class WechatSession {
         if(clear){await this.ctx.storage.put('conversationEpoch',crypto.randomUUID());await this.ctx.storage.delete('mediaResult')}
         // Persist operational context before transport acknowledgement; replay reuses it.
         if(clear)await this.ctx.storage.delete('conversation');
-        else if(thread.selectedBabyId||thread.babyId){
+        else if((thread.selectedBabyId||thread.babyId)&&(text||hasMedia)){
           const next=appendTurn(thread,hasMedia?'[微信图片或视频]':text,reply,thread.selectedBabyId||thread.babyId);
           await this.ctx.storage.put('conversation',next);
         }
         await ilink(base,'ilink/bot/sendmessage',{msg:{from_user_id:'',to_user_id:userId,client_id:clientId,message_type:2,message_state:2,context_token:raw.context_token,item_list:[{type:1,text_item:{text:reply.slice(0,1800)}}]},base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token);
         await this.env.DB.prepare("UPDATE wechat_messages SET state='done' WHERE message_id=?").bind(unique).run();
         await this.ctx.storage.put('lastMessage',new Date().toISOString());
-        await this.ctx.storage.put('lastProcessing',{kind:hasMedia?'media':'text',durationMs:Date.now()-processingStarted,at:new Date().toISOString()});
+        await this.ctx.storage.put('lastProcessing',{kind:hasMedia?'media':hasVoice?'voice':'text',durationMs:Date.now()-processingStarted,at:new Date().toISOString()});
       }
       // Acknowledgement advances only after all supported messages are durable.
       if(typeof response.get_updates_buf==='string')await this.ctx.storage.put('cursor',response.get_updates_buf);
