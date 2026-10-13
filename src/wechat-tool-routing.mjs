@@ -2,6 +2,11 @@
 // WeChat query. Never force a mutating tool or guess record identifiers.
 const WRITE_INTENT=/删除|删掉|移除|撤销|修改|更正|更改|更新|改成|改为|改一下|设为|标记|新增|添加|补充|记下|记入|帮我记|保存|恢复|还原|创建|设置|收藏/;
 const QUERY_START=/^(?:请|帮我|给我)?\s*(?:查|查询|查一下|查看|看看|列出|找一下|找找|找出|给我看)/;
+// Capability questions need a menu, not model tool selection. Keep this anchored
+// so a mixed request containing a real operation still reaches the normal path.
+export function isWechatHelpCommand(text){
+ return /^(?:(?:你好|您好|嗨|hello|hi)[，,！!。\s]*)?(?:帮助|使用说明|菜单|help|(?:你|您)(?:能|可以)(?:帮我)?(?:做什么|干什么)|你有什么功能|有哪些功能|有什么功能)[？?!！。\s]*$/i.test(String(text||'').trim());
+}
 export function readOnlyFallbackTool(text){
  const t=String(text||'').trim();
  if(!t||t.length>350||!QUERY_START.test(t)||WRITE_INTENT.test(t))return null;

@@ -33,6 +33,8 @@ jobs:
       - run: npm run test:e2e
       - name: Verify deploy-managed OpenRouter Key flow (isolated)
         run: E2E_DEPLOY_KEY=1 npm run test:e2e
+      - name: Verify WeChat message processing in the Worker runtime (isolated)
+        run: node scripts/wechat-worker-e2e.mjs
 
   browser-e2e:
     name: Browser E2E (Chromium)

@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readOnlyFallbackTool,retryReadOnlyTool} from '../src/wechat-tool-routing.mjs';
+import {isWechatHelpCommand,readOnlyFallbackTool,retryReadOnlyTool} from '../src/wechat-tool-routing.mjs';
+test('greeting and capability questions return help without swallowing operations',()=>{
+ for(const text of ['你好，你可以做什么','您好，你能帮我做什么？','你能做什么','你可以做什么？','你有什么功能','帮助','菜单','help'])
+  assert.equal(isWechatHelpCommand(text),true,text);
+ for(const text of ['你好，记录今天体重 10.5kg','你可以做什么，然后删除昨天的记录','帮助并删除记录','查询最近五条体重记录'])
+  assert.equal(isWechatHelpCommand(text),false,text);
+});
 test('read only fallback classifies explicit queries without allowing writes',()=>{
  const samples=[['查询小好最近五次体重','list_growth'],['查询小好的成长记录','list_growth'],['查看宝宝相册照片','list_media'],['查一下里程碑','list_milestones'],['看看回收站','list_trash'],['查询宝宝档案','get_baby'],
  ['删除昨天的体重',null],['查询后删除昨天的体重',null],['不要删除昨天的照片',null],
