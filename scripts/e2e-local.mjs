@@ -307,6 +307,14 @@ async function e2e() {
     assert.equal(state.data.openrouter.managedByDeployment,false);
     assert.equal(JSON.stringify(state.data).includes('sk-or-local-fake'),false);
   });
+  await step('browser upload performance metric endpoint is authenticated and excludes user identifiers',async()=>{
+    const metric={stage:'client',size:1048576,durationMs:1200,status:'ok'};
+    assert.equal((await json('/api/upload/metrics',{method:'POST',anonymous:true,body:metric})).status,401);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:metric,headers:{Origin:'https://attacker.invalid'}})).status,403);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:{...metric,stage:'filename'}})).status,400);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:{...metric,durationMs:Infinity}})).status,400);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:metric})).status,200);
+  });
   await step('direct photo fast path is private, idempotent and does not create multipart sessions',async()=>{
     const id='2f0e90a1-bb1a-4f3f-8090-99f26a000001';
     const sample=Uint8Array.from([255,216,255,224,0,16,74,70,73,70,73,255,217]);
