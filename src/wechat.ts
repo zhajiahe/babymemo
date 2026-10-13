@@ -102,7 +102,8 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
   if(thread?.pending)return '尚缺少明确的数值、单位或日期，请继续补充；发送“取消”可终止这次任务。';
   return '没能确定具体操作。请补充宝宝、日期、数值或动作。\n\n'+wechatHelp;
  }
- return runWechatPlan(env,baby,calls,{messageId,text:command,groundedText:context.groundedText,at,thread});
+ return runWechatPlan(env,baby,calls,{messageId,text:command,groundedText:context.groundedText,at,thread,
+  encryptReply:(value:string)=>encryptSecret(env,value),decryptReply:(value:string)=>decryptSecret(env,value)});
 }
 // The photo itself has no baby name. Use the caption when present, otherwise
 // an explicitly configured default baby; never silently choose first of many.
