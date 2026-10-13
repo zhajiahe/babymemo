@@ -3,7 +3,9 @@ export interface AgentLoopOptions {
  messages:any[]; tools:any[];
  complete:(options:{messages:any[];tools:any[];round:number})=>Promise<any>;
  execute:(call:AgentDecision['tool_calls'][number],stepOffset:number,round:number)=>Promise<string|{content:string;halt?:boolean;committed?:boolean}>|string|{content:string;halt?:boolean;committed?:boolean};
- finalize?:(options:{messages:any[];reason:string})=>Promise<any>;
+ finalize?:(options:{messages:any[];observations:Array<{name:string;content:string}>;reason:string;committedKinds:Set<string>;failedWrite:boolean})=>Promise<any>;
+ validateFinal?:(options:{content:string;observations:Array<{name:string;content:string}>;committedKinds:Set<string>;failedWrite:boolean})=>boolean;
+ fallbackReply?:(options:{observations:Array<{name:string;content:string}>;committedKinds:Set<string>;failedWrite:boolean})=>string|null;
  loadDecision?:(round:number)=>Promise<AgentDecision|null>;
  saveDecision?:(round:number,assistant:AgentDecision)=>Promise<void>;
  now?:()=>number;

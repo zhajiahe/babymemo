@@ -68,21 +68,28 @@ function render(results,finalText='',suffix='',committedKinds=new Set(),failedWr
  return text.slice(0,1500)||'我在听。想让我把刚才的内容记入日记，可以说“记下来”。';
 }
 export async function runWechatAgentLoop({
- messages,tools,complete,execute,finalize=null,loadDecision=async()=>null,saveDecision=async()=>{},
+ messages,tools,complete,execute,finalize=null,validateFinal=null,fallbackReply=null,loadDecision=async()=>null,saveDecision=async()=>{},
  now=Date.now,limits=DEFAULT_AGENT_LIMITS
 }){
- const transcript=[...messages],results=[],committedKinds=new Set();
+ const transcript=[...messages],results=[],observations=[],committedKinds=new Set();
  let failedWrite=false;
  const started=now();
+ const replyIsValid=content=>credibleReply(String(content||'').trim(),committedKinds,failedWrite)&&
+  (typeof validateFinal!=='function'||validateFinal({content:String(content||''),observations,committedKinds,failedWrite})===true);
  const finalResult=(content='',suffix='')=>render(results,content,suffix,committedKinds,failedWrite);
+ const safeFallback=()=>typeof fallbackReply==='function'?fallbackReply({observations,committedKinds,failedWrite}):null;
  async function finishAfterTools(reason,suffix=''){
-  if(!suffix&&results.length&&typeof finalize==='function'&&now()-started<limits.deadlineMs){
+  if(!suffix&&observations.length&&typeof finalize==='function'&&now()-started<limits.deadlineMs){
    try{
-    const response=await finalize({messages:transcript,reason});
+    const response=await finalize({messages:transcript,observations,reason,committedKinds,failedWrite});
     const final=assistantMessage(response?.choices?.[0]?.message);
-    if(!final.tool_calls.length&&credibleReply(String(final.content||'').trim(),committedKinds,failedWrite))
+    if(!final.tool_calls.length&&replyIsValid(final.content))
      return finalResult(final.content);
-   }catch{/* Real tool observations remain the fallback. */}
+   }catch{/* Never hide a committed write or fabricate a result. */}
+  }
+  if(!suffix){
+   const factual=safeFallback();
+   if(factual)return factual;
   }
   return finalResult('',suffix);
  }
@@ -107,7 +114,13 @@ export async function runWechatAgentLoop({
    await saveDecision(round,assistant);
   }
   transcript.push(assistant);
-  if(!assistant.tool_calls.length)return finalResult(assistant.content);
+  if(!assistant.tool_calls.length){
+   // A completed read followed by an empty/generic/off-topic assistant message
+   // must not dump the entire raw profile onto the WeChat chat surface.
+   if(observations.length&&!replyIsValid(assistant.content))
+    return finishAfterTools('inadequate_final');
+   return finalResult(assistant.content);
+  }
   if(assistant.tool_calls.length>limits.perRound || totalCalls+assistant.tool_calls.length>limits.tools)
    return finalResult('','本次操作达到工具调用上限，剩余步骤未执行。');
   for(const call of assistant.tool_calls){
@@ -125,6 +138,7 @@ export async function runWechatAgentLoop({
    // get_runtime_context is an internal observation, never user-facing text.
    // The model may still use its complete JSON on the following ReAct round.
    if(call.function.name!=='get_runtime_context')results.push(result);
+   observations.push({name:call.function.name,content:result});
    transcript.push({role:'tool',tool_call_id:call.id,content:result.slice(0,3000)});
    if(halt)return finishAfterTools('tool_rejected');
   }
