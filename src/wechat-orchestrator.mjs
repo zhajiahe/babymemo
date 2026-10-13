@@ -75,7 +75,7 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   }
   if(success&&kind&&thread){
    const after=action.startsWith('create_')?await createdBySource(env,kind,baby.id,sourceId):
-     action==='update_recent_media'?null:await recordFor(env,kind,baby.id,args);
+     action==='update_recent_media'?null:await recordFor(env,kind,baby.id,before?{id:before.id}:args);
    if(after){
     const opId=await auditChange(env,{sourceId:sourceId+':audit',babyId:baby.id,kind,recordId:after.id,action,
      before:operationSnapshot(kind,before),after:operationSnapshot(kind,after)});
@@ -106,6 +106,12 @@ export async function quickCommand(env,baby,text,thread,at=Date.now()){
  if(isUndo(text)){
   const op=thread?.lastOperation;
   if(!op||op.babyId!==baby.id||op.expiresAt<=at)return '没有有效的最近操作可以撤销';
+  if(Array.isArray(op.opIds)){
+   const messages=[];
+   for(const id of op.opIds)messages.push(await undoOperation(env,baby.id,id));
+   if(messages.every(x=>x.startsWith('已撤销')))thread.lastOperation=null;
+   return messages.join('\n');
+  }
   const reply=await undoOperation(env,baby.id,op.opId);
   if(reply.startsWith('已撤销'))thread.lastOperation=null;
   return reply;
