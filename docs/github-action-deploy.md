@@ -2,7 +2,7 @@
 
 本文适用于自己的 `zhajiahe/babymemo` 仓库。工作流位于 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)，显示名称为 **Deploy BabyMemo to Cloudflare**。支持两种发布方式：**`main` 的完整 CI（包括本地 Worker E2E 和 Chromium 浏览器 E2E）通过后自动发布**，或在 Actions 里手动点击 **Run workflow**（默认 Dry Run，不修改生产）。PR 检查不会触发发布。
 
-BabyMemo 运行于 Cloudflare Workers + D1 + R2 + Durable Objects，前端 React/Vite、服务端 Hono；无需 VPS。首次初始化使用家庭管理员名称和密码。AI 仅使用网页内配置的 OpenRouter；微信 Bot 为可选的 iLink 集成。
+BabyMemo 运行于 Cloudflare Workers + D1 + R2 + Durable Objects，前端 React/Vite、服务端 Hono；无需 VPS。首次初始化使用家庭管理员名称和密码。OpenRouter 支持 GitHub Actions Secret 或网页加密配置；微信 Bot 为可选的 iLink 集成。
 
 > **生产变更已通过启用自动发布得到部署者授权。** 合并到 `main` 且 CI 全部通过，会自动迁移远端 D1 并发布 Worker；请在合并前确认数据库备份、目标账号及影响范围。手动 Dry Run 仍只检查，不发布，但会读取目标账号的 D1/R2。MyBaby 旧站的 Neon / Vercel / R2 不会被本工作流迁移，切勿把新空数据库当作旧站数据。
 
@@ -61,18 +61,18 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 1. 检查 Cloudflare Token、Account ID 是否存在。
 2. `npm run provision:remote`：根据 [`wrangler.jsonc`](../wrangler.jsonc) 查找或创建 D1 `babymemo`、R2 `babymemo-media`，并将解析出的 `database_id` 写入**本次 Actions 工作目录**，不会回写 GitHub。
 3. `npm run verify`：执行 TypeScript 检查、单元测试与 Vite 构建。
-4. `node scripts/reconcile-birth-time.mjs` 先只读检查 `babies.birth_time` 与 D1 迁移历史：仅当字段已经存在、形状完全匹配且前置迁移已记录时，补记 `0012_birth_time.sql`；绝不重建字段或删除数据。然后 `npx wrangler d1 migrations apply DB --remote` 继续运行真正尚未执行的迁移。
+4. `node scripts/reconcile-birth-time.mjs` 先只读检查 `babies.birth_time` 与 D1 迁移历史：仅当字段已存在、文本类型与默认值兼容且前置迁移已记录时，补记 `0012_birth_time.sql`；绝不重建字段或删除数据。然后 `npx wrangler d1 migrations apply DB --remote` 继续运行真正尚未执行的迁移。
 5. `npx wrangler deploy --keep-vars`：发布 Worker、静态资源以及 `WechatSession` Durable Object 绑定，并保留控制台变量。若 GitHub Actions 已配置 `OPENROUTER_API_KEY`，则通过临时 0600 权限 JSON 文件与 `--secrets-file` 在同一次发布中写入 Worker Secret；文件执行后删除，日志不打印密钥。
 6. **仅手动正式发布**：验证并同步 GitHub Secrets 中的 `SESSION_SECRET`、`DATA_KEY` 到 Worker。**CI 自动发布绝不重新写入这两项密钥**，保持 Cloudflare Worker 中既有值；必须确保首次安装时已经通过手动发布或控制台配置好密钥。
 7. `npm run smoke:check`：检查 `/api/health`（包含 D1 可用性）和 `/api/bootstrap/status`（只验证两项 Secret 是否配置，不泄露其值）。
 
-**重要：** 当前仓库的 `npm run deploy` 脚本与上述工作流的顺序不同（先发布，再迁移）。生产环境建议使用此工作流，或严格按 [Agent Runbook](./agent-deploy.md) 给出的迁移优先顺序逐条执行。
+**重要：** `npm run deploy` 现按“构建 → 检查或创建 D1/R2 → 核验 0012 迁移历史 → 增量迁移 → 发布 Worker”的顺序执行，适用于显式的模板部署。GitHub Actions 自动发布则**只检查已有资源，不自动创建生产数据库**，应优先使用受控工作流。
 
 ## 4. 第一次初始化
 
 正式工作流通过后，打开部署后的 Worker 首页（`/`）；BabyMemo 会根据 `GET /api/bootstrap/status` 自动显示初始化表单，**没有单独的 `/setup` 路由**。
 
-在浏览器 HTTPS 页面中填写：家庭管理员名称、家庭登录密码（至少 10 位）、宝宝名字、出生日期、性别和家庭时区；过敏信息可选。完成后进入家庭空间。
+在浏览器 HTTPS 页面中填写：家庭管理员名称、家庭登录密码（至少 6 位）、宝宝名字、出生日期、性别和家庭时区；过敏信息可选。完成后进入家庭空间。
 
 **注意：** 公开的新实例在初始化前可能被其他访客抢先注册管理员；请立即完成，或提前使用 Cloudflare Access 限制访问。
 
@@ -133,4 +133,4 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 
 ## 迁移记录修复说明（0012）
 
-如果线上 `babies.birth_time` 已经由其他发布或人工操作创建，但 `d1_migrations` 未记录 `0012_birth_time.sql`，旧流程会报 `duplicate column name: birth_time`。新版部署先只读检查列类型、NOT NULL、默认值和 `0011_wechat_photo.sql` 记录，符合条件时仅向 `d1_migrations` 添加对应的迁移名称，再由 Wrangler 正常处理其他迁移。若不符合精确条件，部署会明确失败，禁止直接删列、重建数据库或手动跳过整批迁移。修复不等同于生产数据备份。
+如果线上 `babies.birth_time` 已经由其他发布或人工操作创建，但 `d1_migrations` 未记录 `0012_birth_time.sql`，旧流程会报 `duplicate column name: birth_time`。新版部署先只读检查文本类型、可空性、默认值和 `0011_wechat_photo.sql` 记录，符合条件时仅向 `d1_migrations` 添加对应的迁移名称，再由 Wrangler 正常处理其他迁移。兼容历史可空文本定义，但拒绝非文本字段、非空默认值及主键结构异常；若不符合条件，部署会明确失败，禁止直接删列、重建数据库或手动跳过整批迁移。修复不等同于生产数据备份。

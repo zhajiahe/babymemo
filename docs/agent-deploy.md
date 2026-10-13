@@ -105,7 +105,7 @@ npx wrangler deploy --keep-vars
 npm run smoke:check
 ```
 
-`npm run deploy` 已调整为“构建 → 解析 D1 ID → 核验与必要时修复 0012 迁移历史 → 远端增量迁移 → 发布 Worker”。需要使用 `OPENROUTER_API_KEY` 的管理员，请优先通过 GitHub Actions Secret 与发布工作流原子上传；运行普通 Wrangler 命令不会自动从 GitHub 读取该 Secret。
+`npm run deploy` 已调整为“构建 → 检查/创建 D1、R2 → 核验与必要时修复 0012 迁移历史 → 远端增量迁移 → 发布 Worker”，这是一个**真正会修改云端**的命令，不可作为只读检查。需要使用 `OPENROUTER_API_KEY` 的管理员，请优先通过 GitHub Actions Secret 与发布工作流原子上传；运行普通 Wrangler 命令不会自动从 GitHub 读取该 Secret。
 
 `smoke:check` 会使用 `BABYMEMO_PUBLIC_URL`（如果配置）作为目标站点；否则通过 `CLOUDFLARE_API_TOKEN` 与 `CLOUDFLARE_ACCOUNT_ID` 查询当前账号的 workers.dev 子域。手动运行时可在**自己的终端**只为本次检查设置一个公开地址：
 
@@ -118,7 +118,7 @@ npm run smoke:check
 
 ## 5. 浏览器初始化与验收
 
-首次安装由部署者亲自在 **HTTPS 首页 `/`** 的初始化界面完成，无需额外密钥。**公开空实例存在被抢先注册风险**，建议部署后立即完成初始化，或先通过 Cloudflare Access 限制访问；**不是** `/setup`。填写家庭管理员名称、至少 10 位的家庭密码、宝宝姓名、生日、性别、时区和可选过敏信息。
+首次安装由部署者亲自在 **HTTPS 首页 `/`** 的初始化界面完成，无需额外密钥。**公开空实例存在被抢先注册风险**，建议部署后立即完成初始化，或先通过 Cloudflare Access 限制访问；**不是** `/setup`。填写家庭管理员名称、至少 6 位的家庭密码、宝宝姓名、生日、性别、时区和可选过敏信息。
 
 Agent 可以进行不携带秘密的只读 HTTP 检查：
 

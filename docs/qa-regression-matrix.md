@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | `npm run test:unit` | Node，离线 | 微信工具和记忆、OpenRouter 429/5xx 重试、微信加密媒体、上传最终化和回收、备份包完整性 |
 | `npm run test:e2e` | 本地 Wrangler + 独立 D1/R2/DO | 认证与 CSRF、同请求并发幂等、多宝宝隔离、私有媒体读写、视频分片、Range、删除和恢复 |
-| `BROWSER_E2E=1 npm run test:e2e` | Chromium / WebKit | 登录持久性、添加宝宝、上传与补缩略图、编辑及删除、多视口、草稿隔离、可访问性基础断言 |
-| GitHub Actions `Check BabyMemo` | 四个隔离 Job | 检查和构建、Worker E2E、Chromium、Linux WebKit；截图保存在 Artifacts |
+| `BROWSER_E2E=1 npm run test:e2e` | Chromium / WebKit | 登录持久性、添加宝宝、上传与私有相册、编辑及删除、多视口、草稿隔离、可访问性基础断言 |
+| GitHub Actions `Check BabyMemo` | 四个隔离 Job | 检查和构建、Worker E2E（包括部署 Key 模拟）、Chromium、Linux WebKit；截图保存在 Artifacts |
 
 CI 使用自动生成的本地测试密钥与临时 D1/R2 存储，不连接生产 Cloudflare 资源。截图只含虚构数据。
 
