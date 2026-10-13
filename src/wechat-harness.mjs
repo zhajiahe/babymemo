@@ -47,7 +47,7 @@ const listLine=(kind,r)=>{
  kind==='milestones'?[r.title||'',r.description||'']:[r.mime||''];
  return short(r.id)+' · '+r.day+' · '+bits.filter(Boolean).join('，');
 };
-function groundedTarget(args,text,baby){
+function groundedTarget(args,text,baby,at=Date.now()){
  if(typeof text!=='string')return false;
  if(args.id!==undefined)return typeof args.id==='string'&&text.toLowerCase().includes(args.id.slice(0,8).toLowerCase());
  if(!validDate(args.day))return false;
@@ -57,7 +57,7 @@ function groundedTarget(args,text,baby){
  if(full.test(text)||partial.test(text)||text.includes(args.day))return true;
  const tz=baby.time_zone||'Asia/Shanghai';
  let current;
- try{current=new Date().toLocaleDateString('sv-SE',{timeZone:tz})}catch{current=new Date().toISOString().slice(0,10)}
+ current=dayInZone(at,tz)
  const dt=new Date(current+'T00:00:00Z');
  for(const [expression,offset] of [['今天',0],['今日',0],['昨天',-1],['昨日',-1],['前天',-2]]){
   if(!text.includes(expression))continue;
@@ -182,7 +182,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    if(action==='update_'+(kind==='milestones'?'milestone':kind)){
     if(!/修改|更正|更改|更新|改成|改为|改一下|设为|标记/.test(originalText))return '请明确说明修改操作';
     if(args.id===undefined&&args.day===undefined)return '请指定记录日期或编号，避免改错记录';
-    if(!groundedTarget(args,originalText,baby))return '请在消息中明确指出要修改的日期或记录编号，避免改错记录';
+    if(!groundedTarget(args,originalText,baby,at))return '请在消息中明确指出要修改的日期或记录编号，避免改错记录';
     const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
     const row=await findTarget(env,baby.id,kind,args);
     const changes={};
@@ -199,7 +199,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
    }
    if(action==='delete_'+(kind==='milestones'?'milestone':kind)){
     if(!/删除|删掉|移入回收站|移到回收站/.test(originalText))return '请明确说“删除”并指定日期或编号';
-    if(!groundedTarget(args,originalText,baby))return '请在消息中写明需要删除的日期或记录编号，避免误删';
+    if(!groundedTarget(args,originalText,baby,at))return '请在消息中写明需要删除的日期或记录编号，避免误删';
     const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
     const row=await findTarget(env,baby.id,kind,args);
     const deletedAt=new Date().toISOString();
@@ -279,7 +279,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
   if(action==='restore_trash'){
    if(!/恢复|还原|找回/.test(originalText))return '请明确说“恢复”并指定记录编号';
    if(!tableForKind[args.kind])throw Error('请说明恢复的是测量、事件或相册');
-   if(!groundedTarget(args,originalText,baby))return '请在消息中写明恢复记录的日期或编号';
+   if(!groundedTarget(args,originalText,baby,at))return '请在消息中写明恢复记录的日期或编号';
    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const row=await findTarget(env,baby.id,args.kind,args,true);
    const stmt=env.DB.prepare('UPDATE '+tableForKind[args.kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL').bind(row.id,baby.id);

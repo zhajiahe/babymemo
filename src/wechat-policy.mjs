@@ -65,14 +65,34 @@ function normalized(m,kind){
  if(kind==='height')return m.unit==='米'||m.unit==='m'?m.num*100:m.num;
  return m.num;
 }
+// Height and head circumference share cm units. A matching number alone never
+// authorises writing the *other* field; the closest measurement label must agree.
+function semanticMeasurementGrounded(text,kind,target){
+ if(kind==='weight')return true;
+ const labels=[...String(text).matchAll(/身高|身长|个子|头围/g)];
+ const matchedKind=word=>word==='头围'?'headCircumference':'height';
+ const values=kind==='height'
+  ? /(\d+(?:\.\d+)?)\s*(cm|厘米|公分|米|m)/gi
+  : /(\d+(?:\.\d+)?)\s*(cm|厘米|公分)/gi;
+ for(const m of String(text).matchAll(values)){
+  if(Math.abs(normalized({num:Number(m[1]),unit:m[2].toLowerCase()},kind)-target)>=0.011)continue;
+  const prior=labels.filter(x=>x.index<=m.index).at(-1);
+  if(prior&&m.index-prior.index-prior[0].length<=16){
+   if(matchedKind(prior[0])===kind)return true;
+   continue;
+  }
+  const next=labels.find(x=>x.index>=m.index+m[0].length);
+  if(next&&next.index-m.index-m[0].length<=6&&matchedKind(next[0])===kind)return true;
+ }
+ return false;
+}
 export function measurementGrounded(args,text){
  const present=[['weight','weight'],['height','height'],['headCircumference','headCircumference']].filter(([key])=>args[key]!==undefined);
  if(!present.length)return true;
  for(const [key,kind] of present){
   const got=asNum(args[key]);if(got===null)return false;
   const choices=mentions(text,kind).filter(m=>Math.abs(normalized(m,kind)-got)<0.011);
-  if(!choices.length)return false;
-  // Two values for the same kind cannot be assigned safely without disambiguation.
+  if(!choices.length||!semanticMeasurementGrounded(text,kind,got))return false;
   const distinct=new Set(mentions(text,kind).map(m=>normalized(m,kind).toFixed(2)));
   if(distinct.size>1 && !/(?:更正|不是|改成|改为|而不是)/.test(text)){
    const word=kind==='weight'?'(?:体重|重量)':kind==='height'?'(?:身高|身长)':'头围';
@@ -81,6 +101,16 @@ export function measurementGrounded(args,text){
   }
  }
  return true;
+}
+// New dates must be grounded AFTER the change verb. The first date in the
+// utterance normally identifies the old record, not the new date.
+export function newDayGrounded(newDay,text,at,tz){
+ if(!validDay(newDay)||typeof text!=='string')return false;
+ const verb=/(?:改成|改为|改到|改至|更正为|设成|设为|调整到|调整为|修改为|修改成|日期为)/g;
+ for(const match of text.matchAll(verb)){
+  if(explicitDay(text.slice(match.index+match[0].length),at,tz)===newDay)return true;
+ }
+ return false;
 }
 export function guardAction(action,args,text,baby,at=Date.now()){
  if(!MUTATING_ACTIONS.has(action))return null;
@@ -92,10 +122,10 @@ export function guardAction(action,args,text,baby,at=Date.now()){
  if((action==='create_growth'||action==='update_growth')&&!measurementGrounded(args,text))
   return '测量数值或单位与原消息不一致，请明确单位和数值后再记录。';
  if(action.startsWith('update_')||action.startsWith('delete_')||action==='restore_trash'){
-  if(action!=='update_baby'&&!groundingOfDate(args,text,baby?.time_zone||'Asia/Shanghai',at))
+  if(action!=='update_baby'&&action!=='update_recent_media'&&!groundingOfDate(args,text,baby?.time_zone||'Asia/Shanghai',at))
    return '请明确指出原记录日期或查询后的记录编号，未执行修改。';
  }
- if((action==='update_media'||action==='update_recent_media')&&args?.newDay&&(!validDay(args.newDay)||explicitDay(text,at,baby?.time_zone||'Asia/Shanghai')!==args.newDay))return '照片新日期缺乏原文依据，未修改。';
+ if(['update_media','update_recent_media','update_milestone'].includes(action)&&args?.newDay&&!newDayGrounded(args.newDay,text,at,baby?.time_zone||'Asia/Shanghai'))return '新日期缺乏原文中修改目标的明确依据，未修改。';
  if(action==='update_baby'){
   if(args.birthday&&explicitDay(text,at,baby?.time_zone||'Asia/Shanghai')!==args.birthday)return '出生日期缺乏原文依据，未修改。';
   if(args.allergies&&!String(text).includes(String(args.allergies).trim()))return '过敏信息缺乏原文依据，未修改。';
