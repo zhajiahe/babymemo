@@ -61,7 +61,7 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 1. 检查 Cloudflare Token、Account ID 是否存在。
 2. `npm run provision:remote`：根据 [`wrangler.jsonc`](../wrangler.jsonc) 查找或创建 D1 `babymemo`、R2 `babymemo-media`，并将解析出的 `database_id` 写入**本次 Actions 工作目录**，不会回写 GitHub。
 3. `npm run verify`：执行 TypeScript 检查、单元测试与 Vite 构建。
-4. `node scripts/reconcile-birth-time.mjs` 先只读检查 `babies.birth_time` 与 D1 迁移历史：仅当字段已经存在、形状完全匹配且前置迁移已记录时，补记 `0012_birth_time.sql`；绝不重建字段或删除数据。然后 `npx wrangler d1 migrations apply DB --remote` 继续运行真正尚未执行的迁移。
+4. `node scripts/reconcile-birth-time.mjs` 先只读检查 `babies.birth_time` 与 D1 迁移历史：仅当字段已经存在、满足文本类型兼容性（允许历史可空定义）、且前置迁移已记录时，补记 `0012_birth_time.sql`；绝不重建字段或删除数据。然后 `npx wrangler d1 migrations apply DB --remote` 继续运行真正尚未执行的迁移。
 5. `npx wrangler deploy --keep-vars`：发布 Worker、静态资源以及 `WechatSession` Durable Object 绑定，并保留控制台变量。若 GitHub Actions 已配置 `OPENROUTER_API_KEY`，则通过临时 0600 权限 JSON 文件与 `--secrets-file` 在同一次发布中写入 Worker Secret；文件执行后删除，日志不打印密钥。
 6. **仅手动正式发布**：验证并同步 GitHub Secrets 中的 `SESSION_SECRET`、`DATA_KEY` 到 Worker。**CI 自动发布绝不重新写入这两项密钥**，保持 Cloudflare Worker 中既有值；必须确保首次安装时已经通过手动发布或控制台配置好密钥。
 7. `npm run smoke:check`：检查 `/api/health`（包含 D1 可用性）和 `/api/bootstrap/status`（只验证两项 Secret 是否配置，不泄露其值）。
@@ -133,4 +133,4 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 
 ## 迁移记录修复说明（0012）
 
-如果线上 `babies.birth_time` 已经由其他发布或人工操作创建，但 `d1_migrations` 未记录 `0012_birth_time.sql`，旧流程会报 `duplicate column name: birth_time`。新版部署先只读检查列类型、NOT NULL、默认值和 `0011_wechat_photo.sql` 记录，符合条件时仅向 `d1_migrations` 添加对应的迁移名称，再由 Wrangler 正常处理其他迁移。若不符合精确条件，部署会明确失败，禁止直接删列、重建数据库或手动跳过整批迁移。修复不等同于生产数据备份。
+如果线上 `babies.birth_time` 已经由其他发布或人工操作创建，但 `d1_migrations` 未记录 `0012_birth_time.sql`，旧流程会报 `duplicate column name: birth_time`。新版部署先只读检查文本类型兼容性、默认值和 `0011_wechat_photo.sql` 记录，符合条件时仅向 `d1_migrations` 添加对应的迁移名称，再由 Wrangler 正常处理其他迁移。若不符合精确条件，部署会明确失败，禁止直接删列、重建数据库或手动跳过整批迁移。修复不等同于生产数据备份。

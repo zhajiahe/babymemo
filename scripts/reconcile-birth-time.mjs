@@ -4,8 +4,8 @@
  * but Wrangler never recorded 0012_birth_time.sql.
  *
  * This script never alters babies or touches family records. It records that
- * one migration ONLY after verifying the exact declared column shape and
- * the preceding migration. All other drifts fail closed.
+ * one migration ONLY after verifying a compatible existing TEXT-affinity
+ * column and the preceding migration. Other drifts fail closed.
  */
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -26,10 +26,17 @@ export function reconciliationDecision({tables,columns,applied}){
     if(applied.includes(TARGET))throw Error('MIGRATION_MARKED_WITHOUT_COLUMN');
     return 'apply';
   }
-  const type=String(exists.type||'').toUpperCase();
-  // SQLite PRAGMA represents the empty-string SQL default as two quotes.
-  if(type!=='TEXT'||Number(exists.notnull)!==1||exists.dflt_value!=="''")
-    throw Error('BIRTH_TIME_SCHEMA_MISMATCH: expected TEXT NOT NULL DEFAULT empty string');
+  const type=String(exists.type||'').toUpperCase().trim();
+  // Earlier deployments could have created a nullable TEXT birth_time before
+  // 0012 existed. Every application INSERT explicitly provides birth_time;
+  // both nullable/no-default and NOT NULL/empty-default are compatible here.
+  const textAffinity=/(?:TEXT|CHAR|CLOB)/.test(type);
+  const nullable=[0,1].includes(Number(exists.notnull));
+  const defaultIsEmpty=[null,undefined,"''",'""'].includes(exists.dflt_value);
+  if(!textAffinity||!nullable||!defaultIsEmpty||Number(exists.pk||0)!==0){
+    const shape=JSON.stringify({type,notnull:exists.notnull,default:exists.dflt_value,pk:exists.pk});
+    throw Error('BIRTH_TIME_SCHEMA_MISMATCH: incompatible existing birth_time column '+shape);
+  }
   if(!hasHistory)throw Error('MISSING_MIGRATION_HISTORY: refusing to create history automatically');
   if(applied.includes(TARGET))return 'verified';
   if(!applied.includes(PREVIOUS))
