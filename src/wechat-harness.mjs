@@ -18,7 +18,7 @@ export const wechatTools=[
  tool('update_milestone','修改某条成长事件标题/描述/日期',{...selector,newDay:day,title:str,description:str}),
  tool('delete_milestone','把唯一一条成长事件移入 30 天回收站，必须有删除意图',selector),
  tool('list_media','列出相册里的照片和视频（仅元数据），支持日期筛选',{day,limit:{type:'integer',minimum:1,maximum:10}}),
- tool('update_media','修改日期或收藏一项相册内容',{...selector,newDay:day,favorite:{type:'boolean'}}),
+ tool('update_media','修改相册内容的拍摄日期',{...selector,newDay:day}),
  tool('delete_media','把一项相册内容移入 30 天回收站，必须有删除意图',selector),
  tool('list_trash','查看当前宝宝的回收站',{kind:{type:'string',enum:['growth','milestones','media']}}),
  tool('restore_trash','从回收站中恢复一项内容',{kind:{type:'string',enum:['growth','milestones','media']},...selector},['kind'])
@@ -38,7 +38,7 @@ const dateText=(x)=>x.day;
 const maxLimit=(args)=>Number.isInteger(args.limit)?Math.min(10,Math.max(1,args.limit)):5;
 const listLine=(kind,r)=>{
  const bits=kind==='growth'?[r.weight!=null?'体重 '+r.weight+' kg':'',r.height!=null?'身高 '+r.height+' cm':'',r.head_circumference!=null?'头围 '+r.head_circumference+' cm':'',r.notes||'']:
- kind==='milestones'?[r.title||'',r.description||'']:[r.mime||'',r.favorite?'已收藏':''];
+ kind==='milestones'?[r.title||'',r.description||'']:[r.mime||''];
  return short(r.id)+' · '+r.day+' · '+bits.filter(Boolean).join('，');
 };
 function groundedTarget(args,text,baby){
@@ -151,7 +151,7 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
   }
   for(const kind of ['growth','milestones','media']){
    if(action==='update_'+(kind==='milestones'?'milestone':kind)){
-    if(!/修改|更正|更改|更新|改成|改为|改一下|设为|标记|收藏|取消收藏/.test(originalText))return '请明确说明修改操作';
+    if(!/修改|更正|更改|更新|改成|改为|改一下|设为|标记/.test(originalText))return '请明确说明修改操作';
     if(args.id===undefined&&args.day===undefined)return '请指定记录日期或编号，避免改错记录';
     if(!groundedTarget(args,originalText,baby))return '请在消息中明确指出要修改的日期或记录编号，避免改错记录';
     const row=await findTarget(env,baby.id,kind,args);
@@ -162,7 +162,6 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
      if(args.description!==undefined){if(typeof args.description!=='string'||args.description.length>3000)throw Error('事件描述不能超过 3000 字');changes.description=args.description}
     }else{
      if(args.title!==undefined){const title=cleanText(args.title,200);if(!title)throw Error('媒体名称不能为空');changes.title=title}
-     if(args.favorite!==undefined){if(typeof args.favorite!=='boolean')throw Error('收藏状态必须为是或否');changes.favorite=args.favorite?1:0}
     }
     if(args.newDay!==undefined){if(!validDate(args.newDay))throw Error('新日期不正确');changes.day=args.newDay}
     return await update(env,kind,row,changes);
