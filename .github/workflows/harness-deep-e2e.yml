@@ -15,7 +15,7 @@ on:
         options: ["240", "1200", "3000"]
         default: "240"
       live_cases:
-        description: "Only used in live mode; number of paid API calls"
+        description: "Only used in live mode; number of synthetic tasks (may each use multiple API calls)"
         type: choice
         options: ["1", "5", "16", "30", "60"]
         default: "5"
