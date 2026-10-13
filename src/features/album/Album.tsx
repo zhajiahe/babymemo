@@ -61,7 +61,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
      setProgress(file.name+' · 正在检查分片');
      const fingerprint=await fingerprintFile(file);
      const existing=pickMatchingUpload(queue,{title:file.name.slice(0,120),size:file.size,mime,fingerprint}) as PendingUpload|undefined;
-     const session=existing||await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:autoDate?await bestEffortFileDay(file,uploadDay):uploadDay,title:file.name,mime,size:file.size,fingerprint});
+     const session=existing||await post<{id:string;chunkSize:number}>('/api/upload/start',{babyId:baby.id,day:autoDate?await bestEffortFileDay(file,uploadDay,baby.time_zone):uploadDay,title:file.name,mime,size:file.size,fingerprint});
      uploadId=session.id;
      const chunkSize=8388608;
      const total=Math.ceil(file.size/chunkSize);
@@ -153,6 +153,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  </div>
  {showUploader&&<Card className="upload-card"><div id="album-upload-panel" className="album-upload-panel"><CloudUpload size={30}/><h3>上传照片或视频</h3><p className="muted">可一次选择多张照片或视频。网络中断后重新选择原文件即可续传。</p>
   <div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用拍摄日期</label><label>默认日期 <input type="date" value={uploadDay} max={today()} onChange={e=>setUploadDay(e.target.value)}/></label></div>
+  <p className="muted small">照片自带拍摄日期时会按原日期归档；缺少日期时使用默认日期。关闭自动日期即可手动指定。</p>
   <label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>
   {progress&&<p className="small" role="status">{progress}</p>}</div></Card>}
  {media.length?Array.from(new Set(media.map(item=>item.day.slice(0,7)))).map(month=>

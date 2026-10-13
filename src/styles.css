@@ -201,8 +201,11 @@
 .wechat-member-list{display:grid;gap:10px;margin:12px 0 20px}
 .wechat-member-row{display:flex;gap:14px;justify-content:space-between;align-items:center;padding:14px 16px;border:1px solid var(--bm-border-soft);border-radius:12px;background:var(--bm-surface)}
 .wechat-member-info{min-width:0}.wechat-member-info strong{font-size:14px}.wechat-member-info p{margin:5px 0 0}
-.wechat-member-row .wechat-actions{justify-content:flex-end}.wechat-member-row .wechat-actions button{min-height:40px}
-.wechat-member-status{margin:12px 0}.wechat-member-status strong{font-size:13px}
+.wechat-member-row .wechat-actions{justify-content:flex-end}.wechat-member-row .wechat-actions button{min-height:44px;min-width:44px}
+.wechat-run-state{display:inline-block;margin-left:10px;font-size:12px;font-weight:650;color:var(--bm-muted)}
+.wechat-run-state.active{color:var(--bm-success)}.wechat-run-state.warning{color:var(--bm-error)}
+.wechat-member-status{margin:12px 0;padding:16px;border:1px solid var(--bm-border);border-radius:10px;background:var(--bm-surface-soft);font-size:13px}.wechat-member-status strong{font-size:13px}
+.wechat-status-details{display:flex;flex-wrap:wrap;gap:18px;margin-bottom:0}.wechat-status-details div{display:grid;gap:4px}.wechat-status-details dt{color:var(--bm-muted)}.wechat-status-details dd{margin:0}
 .wechat-add{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--bm-border-soft)}
 .wechat-add .field{flex:1;min-width:min(100%,240px)}
 @media(max-width:650px){.wechat-member-row{align-items:stretch;flex-direction:column}.wechat-member-row .wechat-actions{justify-content:flex-start}.wechat-add{flex-direction:column;align-items:stretch}.wechat-add .field{width:100%}}

@@ -5,7 +5,7 @@ const MAX_TURNS=4;
 const bounded=(s,n)=>typeof s==='string'?s.slice(0,n):'';
 const copy=(o)=>o&&typeof o==='object'&&!Array.isArray(o)?structuredClone(o):null;
 export function getActiveThread(saved,botId,userId,now=Date.now()){
- const fresh={botId,userId,turns:[],babyId:'',pending:null,lastQuery:null,lastMedia:null,lastOperation:null};
+ const fresh={botId,userId,turns:[],babyId:'',pending:null,lastQuery:null,lastMedia:null,lastOperation:null,pendingMedia:null};
  if(!saved||saved.botId!==botId||saved.userId!==userId||
     !Number.isFinite(saved.expiresAt)||saved.expiresAt<=now)return fresh;
  const within=(o)=>o&&Number.isFinite(o.expiresAt)&&o.expiresAt>now&&o.expiresAt<=now+CONTEXT_TTL_MS;
@@ -15,13 +15,14 @@ export function getActiveThread(saved,botId,userId,now=Date.now()){
    pending:within(saved.pending)?copy(saved.pending):null,
    lastQuery:within(saved.lastQuery)?copy(saved.lastQuery):null,
    lastMedia:within(saved.lastMedia)?copy(saved.lastMedia):null,
-   lastOperation:within(saved.lastOperation)?copy(saved.lastOperation):null};
+   lastOperation:within(saved.lastOperation)?copy(saved.lastOperation):null,
+   pendingMedia:within(saved.pendingMedia)?copy(saved.pendingMedia):null};
 }
 export function appendTurn(thread,user,reply,babyId,now=Date.now()){
  return {botId:thread.botId,userId:thread.userId,babyId:bounded(babyId||thread.babyId,80),
    expiresAt:now+CONTEXT_TTL_MS,turns:[...(thread.turns||[]),{user:bounded(user,600),reply:bounded(reply,1200),babyId:bounded(babyId,80)}].slice(-MAX_TURNS),
    pending:thread.pending||null,lastQuery:thread.lastQuery||null,
-   lastMedia:thread.lastMedia||null,lastOperation:thread.lastOperation||null};
+   lastMedia:thread.lastMedia||null,lastOperation:thread.lastOperation||null,pendingMedia:thread.pendingMedia||null};
 }
 export function isClearContext(text){return /^(清除(?:会话|上下文|记忆)|忘记(?:刚才|上下文)|重置(?:对话|会话)|新话题)[。!！]?$/i.test(text.trim())}
 export function recordQuery(thread,babyId,kind,ids,now=Date.now(),sourceMessageId=''){

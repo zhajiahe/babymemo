@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
+import {exifJpeg} from './fixtures/media-exif.mjs';
 
 const root = process.cwd();
 const dir = mkdtempSync(join(tmpdir(), 'babymemo-e2e-'));
@@ -537,7 +538,7 @@ async function browserE2e(){
   const {mkdirSync}=await import('node:fs');
   const evidence=join(root,'e2e-artifacts');
   mkdirSync(evidence,{recursive:true});
-  const browser=await engine.launch(useWebKit?{headless:true}:{channel:'chrome',headless:true,args:['--no-sandbox']});
+  const browser=await engine.launch(useWebKit?{headless:true}:{...(process.env.BROWSER_EXECUTABLE_PATH?{executablePath:process.env.BROWSER_EXECUTABLE_PATH}:{channel:'chrome'}),headless:true,args:['--no-sandbox']});
   const errors=[];
   try{
     const context=await browser.newContext({viewport:{width:1280,height:860},...(useWebKit?{isMobile:true,hasTouch:true,deviceScaleFactor:2}:{})});
@@ -781,6 +782,31 @@ async function browserE2e(){
         'Reduced motion should suppress preview animations: '+transition);
       await page.emulateMedia({reducedMotion:'no-preference'});
       await page.screenshot({path:join(evidence,'mobile-album-post-regression.png'),fullPage:true});
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': original photo EXIF drives the saved date while preserving bytes',async()=>{
+      await page.locator('.mobile-nav button[aria-label="相册"]').click();
+      const encoded=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=16;canvas.height=16;canvas.getContext('2d').fillRect(0,0,16,16);return canvas.toDataURL('image/jpeg').split(',')[1]});
+      const image=Buffer.from(encoded,'base64');const original=Buffer.concat([image.subarray(0,2),Buffer.from(exifJpeg().subarray(2,76)),image.subarray(2)]);
+      const open=page.getByRole('button',{name:'添加照片或视频',exact:true}).first();await open.click();
+      const finished=page.waitForResponse(r=>/\/api\/upload\/[^/]+\/finish$/.test(r.url())&&r.request().method()==='POST');
+      await page.locator('input[type="file"]').setInputFiles({name:'capture-date-original.jpg',mimeType:'image/jpeg',buffer:original});await finished;
+      const state=await page.evaluate(async()=>{const state=await(await fetch('/api/state')).json();const media=await(await fetch('/api/media?babyId='+state.babies[0].id)).json();return {state,media}});
+      const saved=state.media.items.find(x=>x.title==='capture-date-original.jpg');assert.ok(saved);assert.equal(saved.day,'2020-09-03');
+      const bytes=await(await fetch(base+'/api/media/'+saved.id+'/content',{headers:{Cookie:sessionCookie}})).arrayBuffer();assert.ok(Buffer.from(bytes).equals(original));
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': family-facing WeChat status across mobile and desktop widths',async()=>{
+      const stamp=new Date().toISOString();const members=[{id:'status-normal',label:'测试爸爸',enabled:true},{id:'status-saving',label:'测试妈妈',enabled:true},{id:'status-expired',label:'测试外婆',enabled:false},{id:'status-paused',label:'测试爷爷',enabled:false}];
+      const statuses=Object.fromEntries(members.map(member=>[member.id,{connectionId:member.id,connected:true,enabled:member.enabled,lastPoll:stamp,lastMessage:stamp,lastError:member.id==='status-expired'?'WECHAT_AUTH_EXPIRED':null,media:{pending:member.id==='status-saving'?2:0,saving:member.id==='status-saving',retrying:false,lastError:null,lastCompleted:null}}]));
+      await page.route('**/api/state',async route=>{const response=await route.fetch();const data=await response.json();data.wechat.connections=members.map(member=>({...member,createdAt:stamp,updatedAt:stamp}));await route.fulfill({response,json:data})});
+      await page.route('**/api/settings/wechat/connections/*/status',async route=>{const id=new URL(route.request().url()).pathname.split('/').at(-2);await route.fulfill({json:statuses[id]})});
+      await page.reload();await page.locator('.mobile-nav button[aria-label="设置"]').click();await page.getByText('运行正常',{exact:true}).waitFor();
+      for(const label of ['媒体保存中','需要重新绑定','已暂停'])assert.equal(await page.getByText(label,{exact:true}).isVisible(),true);
+      assert.equal(await page.locator('.status-json').count(),0);
+      for(const width of [320,375,768,1280]){await page.setViewportSize({width,height:900});const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,'WeChat status overflow at '+width);if(width===320||width===1280)await page.screenshot({path:join(evidence,'wechat-status-'+width+'.png'),fullPage:true})}
+      const details=page.locator('.wechat-member-row').filter({hasText:'测试妈妈'});await details.getByRole('button',{name:'状态',exact:true}).click();assert.match(await page.locator('.wechat-status-details').textContent(),/2 条/);
+      statuses['status-saving'].media={pending:0,saving:false,retrying:false,lastError:{code:'WECHAT_CDN_HTTP_503',attempt:3,at:stamp},lastCompleted:null};
+      await details.getByRole('button',{name:'状态',exact:true}).click();await page.getByText('部分媒体保存失败',{exact:true}).waitFor();
+      await page.unroute('**/api/state');await page.unroute('**/api/settings/wechat/connections/*/status');
     });
     assert.deepEqual(errors,[],'Uncaught browser exceptions');
     console.log('All '+(useWebKit?'WebKit Safari-engine':'Chromium')+' browser tests passed.');

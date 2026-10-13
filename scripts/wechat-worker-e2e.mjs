@@ -10,6 +10,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {fileURLToPath} from 'node:url';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
+import {exifJpeg,exifHeic} from './fixtures/media-exif.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const dir=mkdtempSync(join(tmpdir(),'babymemo-wechat-worker-'));
@@ -19,6 +20,7 @@ const state=join(dir,'state');
 const key=Buffer.from('000102030405060708090a0b0c0d0e0f','hex');
 const jpeg=Buffer.from([255,216,255,224,0,16,74,70,73,70,0,1,255,217]);
 let worker,log='',passed=0;
+let savedCaptionWeightRecordId='';
 const env={...process.env,XDG_CONFIG_HOME:join(dir,'config'),WRANGLER_SEND_METRICS:'false',CI:'true',BROWSER:'none'};
 const encrypt=bytes=>{const c=createCipheriv('aes-128-ecb',key,null);return Buffer.concat([c.update(bytes),c.final()]).toString('base64')};
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -68,11 +70,11 @@ try{
   assert.match(r.reply,/localDay/);assert.equal(r.growth.length,2);
  });
  await step('negated delete cannot mutate local D1',async()=>{const r=await run({mode:'text',id:'negated-delete',text:'不要删除测试宝宝今天的体重',responses:[tool('delete_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})})]});assert.equal(r.growth.length,2);assert.doesNotMatch(r.reply,/已删除/)});
- await step('iLink photo -> AES -> local R2/D1 -> reply; duplicate ignored',async()=>{const r=await run({mode:'alarm',messages:[raw('photo-ok')],alarms:2,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 张照片/);assert.equal(r.media.length,1);assert.equal(r.downloads,1);assert.equal(r.sent,1);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:photo-ok').state,'done')});
+ await step('iLink photo -> durable acceptance -> AES -> local R2/D1 -> final reply; duplicate ignored',async()=>{const r=await run({mode:'alarm',messages:[raw('photo-ok')],alarms:2,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 张照片/);assert.equal(r.media.length,1);assert.equal(r.downloads,1);assert.equal(r.sent,2);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:photo-ok').state,'done')});
  await step('9 MiB encrypted video streams through real R2 multipart',async()=>{const bytes=Buffer.alloc(9*1024*1024,1);bytes.writeUInt32BE(24,0);bytes.write('ftypisom',4);const r=await run({mode:'alarm',messages:[raw('video-ok',5)],encryptedBase64:encrypt(bytes),expectedSHA256:sha(bytes)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 段视频/);assert.equal(r.media.length,2);assert.equal(r.originalMatches,true);assert.equal(r.media.find(x=>x.mime==='video/mp4').size,bytes.length)});
  await step('R2 commit survives failed D1 indexing; retry avoids CDN download',async()=>{const r=await run({mode:'alarm',messages:[raw('index-retry')],alarms:2,failIndexOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,3);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:index-retry').photo_attempts,1)});
- await step('failed reply transport retries persisted response/client ID without re-import',async()=>{const r=await run({mode:'alarm',messages:[raw('send-retry')],alarms:2,failSendOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,4);assert.equal(r.downloads,1);assert.equal(r.sent,2);assert.equal(r.clientIds[0],r.clientIds[1]);assert.equal(r.originalMatches,true)});
- await step('CDN failures retain sanitized diagnostics through idle polling until media succeeds',async()=>{const failed=await run({mode:'alarm',messages:[raw('cdn-failed')],alarms:3,cdnStatus:503});assert.match(failed.reply,/图片或视频下载\/入库多次失败/);assert.equal(failed.media.length,4);assert.equal(failed.downloads,3);assert.deepEqual(Object.keys(failed.status.lastMediaError).sort(),['at','attempt','code']);assert.equal(failed.status.lastMediaError.code,'WECHAT_CDN_HTTP_503');assert.equal(failed.status.lastMediaError.attempt,3);const idle=await run({mode:'alarm',messages:[],storage:failed.status});assert.equal(idle.status.lastError,null);assert.deepEqual(idle.status.lastMediaError,failed.status.lastMediaError);const ok=await run({mode:'alarm',messages:[raw('cdn-recovered')],storage:idle.status,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(ok.reply,/已保存/);assert.equal(ok.media.length,5);assert.equal(ok.status.lastMediaError,undefined);assert.equal(ok.originalMatches,true)});
+ await step('failed final reply retries persisted response/client ID without re-import',async()=>{const r=await run({mode:'alarm',messages:[raw('send-retry')],alarms:2,failFinalSendOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,4);assert.equal(r.downloads,1);assert.equal(r.sent,3);assert.equal(r.finalClientIds.length,2);assert.equal(r.finalClientIds[0],r.finalClientIds[1]);assert.equal(r.originalMatches,true)});
+ await step('CDN failures retain sanitized diagnostics through idle polling until media succeeds',async()=>{const failed=await run({mode:'alarm',messages:[raw('cdn-failed')],alarms:3,cdnStatus:503});assert.match(failed.reply,/图片或视频下载\/入库多次失败/);assert.equal(failed.media.length,4);assert.equal(failed.downloads,3);assert.deepEqual(Object.keys(failed.status.media.lastError).sort(),['at','attempt','code']);assert.equal(failed.status.media.lastError.code,'WECHAT_CDN_HTTP_503');assert.equal(failed.status.media.lastError.attempt,3);const idle=await run({mode:'alarm',messages:[],storage:failed.status,mediaStorage:failed.mediaStorage});assert.equal(idle.status.lastError,null);assert.deepEqual(idle.status.media.lastError,failed.status.media.lastError);const ok=await run({mode:'alarm',messages:[raw('cdn-recovered')],storage:idle.status,mediaStorage:idle.mediaStorage,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(ok.reply,/已保存/);assert.equal(ok.media.length,5);assert.equal(ok.status.media.lastError,null);assert.equal(ok.originalMatches,true)});
  await step('two WeChat accounts have independent cursors, sender filters and pause state',async()=>{
   const payload={mode:'multi',
    messagesA:[textFrom('same-message','synthetic-user','synthetic-bot','你好，你可以做什么'),textFrom('not-authorized','synthetic-user-2','synthetic-bot','你好，你可以做什么')],
@@ -88,6 +90,46 @@ try{
   assert.equal(r.messages.filter(x=>x.message_id==='synthetic-bot:same-message').length,1);
   assert.equal(r.messages.filter(x=>x.message_id==='synthetic-bot-2:same-message').length,1);
   assert.equal(r.messages.some(x=>x.message_id==='synthetic-bot:not-authorized'),false);
+ });
+ await step('same-batch text and a later D1 query finish while a CDN stream remains blocked',async()=>{
+  const r=await run({mode:'alarm',holdMedia:true,messages:[raw('slow-media'),textFrom('same-batch-help','synthetic-user','synthetic-bot','你好，你可以做什么')],followupMessages:[textFrom('query-while-saving','synthetic-user','synthetic-bot','查询测试宝宝最近五条体重记录')],responses:[tool('list_growth',{limit:5})],encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});
+  assert.equal(r.error,undefined);assert.equal(r.status.textWhileSaving.beforeDownloads,0);assert.ok(r.status.textWhileSaving.elapsedMs<3000);assert.ok(r.status.textWhileSaving.replies.some(x=>/10\.2/.test(x)));assert.ok(r.status.textWhileSaving.replies.some(x=>/正在保存/.test(x)));assert.equal(r.media.length,6);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.status.media.pending,0);
+ });
+ await step('reset during a slow save suppresses stale caption writes and replies',async()=>{
+  const media=raw('reset-in-flight');media.item_list.push({type:1,text_item:{text:'测试宝宝今天记录第一次走路里程碑'}});
+  const r=await run({mode:'alarm',holdMedia:true,resetDuringMedia:true,messages:[media],encryptedBase64:encrypt(jpeg)});
+  assert.equal(r.error,undefined);assert.equal(r.models,0);assert.equal(r.finalClientIds.length,0);assert.equal(r.status.media.pending,0);assert.equal(r.status.media.lastCompleted,null);
+ });
+ await step('queued media keeps its reception baby after defaults and text context change',async()=>{
+  const r=await run({mode:'alarm',holdMedia:true,addSecondBabyBeforeConsume:true,messages:[raw('pinned-baby')],followupMessages:[textFrom('switch-baby','synthetic-user','synthetic-bot','查询另一个宝宝最近五条体重记录')],responses:[tool('list_growth',{limit:5})],encryptedBase64:encrypt(jpeg)});
+  assert.equal(r.error,undefined);assert.equal(r.media.find(x=>x.source_message_id==='synthetic-bot:pinned-baby:image:0').baby_id,'synthetic-baby');assert.equal(r.status.media.pending,0);assert.doesNotMatch(JSON.stringify(r.mediaStorage),/synthetic-context|encrypt_query_param|synthetic-token/);
+ });
+ await step('JPEG capture date survives a failed D1 index and private R2 recovery',async()=>{
+  const bytes=exifJpeg(),message=raw('capture-date-jpeg');message.item_list.push({type:1,text_item:{text:'测试宝宝'}});
+  const r=await run({mode:'alarm',messages:[message],alarms:2,failIndexOnce:true,encryptedBase64:encrypt(bytes),expectedSHA256:sha(bytes)});
+  assert.equal(r.error,undefined);assert.equal(r.media.find(x=>x.source_message_id==='synthetic-bot:capture-date-jpeg:image:0').day,'2020-09-03');assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);
+ });
+ await step('HEIC capture date near the end of the original is read in the Worker runtime',async()=>{
+  const bytes=exifHeic(),message=raw('capture-date-heic');message.item_list.push({type:1,text_item:{text:'测试宝宝'}});
+  const r=await run({mode:'alarm',messages:[message],encryptedBase64:encrypt(bytes),expectedSHA256:sha(bytes)});
+  assert.equal(r.error,undefined);assert.equal(r.media.find(x=>x.source_message_id==='synthetic-bot:capture-date-heic:image:0').day,'2020-09-03');assert.equal(r.originalMatches,true);
+ });
+ await step('a later text context cannot be overwritten by an older media caption operation',async()=>{
+  const message=raw('caption-context-changed');message.item_list.push({type:1,text_item:{text:'测试宝宝今天记录第一次走路里程碑'}});
+  const r=await run({mode:'alarm',holdMedia:true,messages:[message],followupMessages:[textFrom('newer-query','synthetic-user','synthetic-bot','查询测试宝宝最近五条体重记录')],responses:[tool('list_growth',{limit:5})],encryptedBase64:encrypt(jpeg)});
+  assert.equal(r.error,undefined);assert.equal(r.models,2);assert.match(r.reply,/附文操作未执行/);
+ });
+ await step('an unchanged reception context executes the explicitly authorized caption after save',async()=>{
+  const message=raw('caption-context-current');message.item_list.push({type:1,text_item:{text:'测试宝宝今天记录体重 11.5kg'}});
+  const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const r=await run({mode:'alarm',messages:[message],responses:[tool('create_growth',{day,weight:11.5})],encryptedBase64:encrypt(jpeg)});
+  assert.equal(r.error,undefined);assert.equal(r.models,2,r.reply);assert.doesNotMatch(r.reply,/附文操作未执行/);assert.match(r.reply,/已保存/);
+  const record=r.growth.find(x=>x.source_message_id==='synthetic-bot:caption-context-current:caption:step:0');assert.equal(record.weight,11.5);savedCaptionWeightRecordId=record.id;
+ });
+ await step('a media caption query publishes trusted IDs for the next text follow-up',async()=>{
+  const message=raw('caption-query-reference-'+ 'a'.repeat(64)+'_%');message.item_list.push({type:1,text_item:{text:'测试宝宝查询今天成长记录'}});
+  const r=await run({mode:'alarm',alarms:2,messages:[message],followupMessages:[textFrom('caption-query-followup','synthetic-user','synthetic-bot','修改第一条体重为12kg')],responses:[tool('list_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})}),stop,tool('update_growth',{id:savedCaptionWeightRecordId.slice(0,8),weight:12}),stop],encryptedBase64:encrypt(jpeg)});
+  assert.equal(r.error,undefined);assert.equal(r.models,4,r.reply);assert.equal(r.growth.find(x=>x.id===savedCaptionWeightRecordId).weight,12,r.reply);
  });
  console.log(JSON.stringify({suite:'isolated WeChat Worker E2E',passed,failed:0,realExternalCalls:0,productionWrites:0}));
 }catch(error){console.error(error);process.exitCode=1}

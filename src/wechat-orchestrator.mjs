@@ -46,8 +46,10 @@ export async function runWechatPlan(env,baby,calls,{messageId,text,groundedText=
   // A transaction can commit before the message reply/step journal is persisted.
   // Do not replay an old edit over a newer record state after such a crash.
   if(['update_baby','update_growth','update_milestone','update_media','delete_growth','delete_milestone','delete_media','restore_trash','update_recent_media'].includes(action)){
-   const prior=await env.DB.prepare('SELECT id FROM wechat_operation_log WHERE baby_id=? AND (source_message_id=? OR source_message_id LIKE ?) LIMIT 1')
-     .bind(baby.id,sourceId,sourceId+':media:%').first();
+   // Media updates have at most four deterministic audit sources. Exact matching
+   // also supports long iLink IDs and treats %/_ in those IDs literally.
+   const prior=await env.DB.prepare('SELECT id FROM wechat_operation_log WHERE baby_id=? AND source_message_id IN (?,?,?,?,?) LIMIT 1')
+     .bind(baby.id,sourceId,...Array.from({length:4},(_,n)=>sourceId+':media:'+n)).first();
    if(prior){
     const recovered='此前已成功提交此操作（操作编号 '+prior.id.slice(0,8)+'），已跳过重复执行。';
     results.push(recovered);

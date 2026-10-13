@@ -1,4 +1,15 @@
-/** JPEG DateTimeOriginal extractor; best effort, never changes original media. */
+let parserPromise;
+function metadataParser(){
+ if(!parserPromise)parserPromise=import('exifr').then(({default:exifr})=>{
+  // The stock reader requires FileReader, which Workers does not expose.
+  const BlobReader=exifr.fileReaders.get('blob');
+  exifr.fileReaders.set('blob',class extends BlobReader {
+   async readWhole(){this.chunked=false;this._swapArrayBuffer(await this.input.arrayBuffer())}
+   async _readChunk(offset,length){return this.set(await this.input.slice(offset,length?offset+length:undefined).arrayBuffer(),offset,true)}
+  });return exifr;
+ });return parserPromise;
+}
+/** Metadata is read locally; original media and manually edited dates stay intact. */
 export function jpegCaptureDay(bytes){
   if(!(bytes instanceof Uint8Array)||bytes.length<18||bytes[0]!==255||bytes[1]!==216)return null;
   const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),n=bytes.length;
@@ -44,12 +55,64 @@ export function jpegCaptureDay(bytes){
   }
   return null;
 }
-export async function bestEffortFileDay(file,fallback){
-  let date=null;
-  if(file.type==='image/jpeg'||/\.jpe?g$/i.test(file.name)){
-    try{date=jpegCaptureDay(new Uint8Array(await file.slice(0,Math.min(file.size,262144)).arrayBuffer()))}catch{}
+export function validCaptureDay(value,timeZone='Asia/Shanghai'){
+ const match=typeof value==='string'&&/^(\d{4})[:-](\d{2})[:-](\d{2})(?:\s|T|$)/.exec(value);
+ if(!match)return null;
+ const day=match.slice(1).join('-'),date=new Date(day+'T00:00:00Z');
+ if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==day)return null;
+ const today=new Date().toLocaleDateString('sv-SE',{timeZone});
+ return day<=today?day:null;
+}
+const photoOptions={pick:['DateTimeOriginal'],reviveValues:false,translateValues:false,gps:false,interop:false,ifd1:false,xmp:false,icc:false,iptc:false,jfif:false,ihdr:false,makerNote:false,userComment:false,chunked:true,firstChunkSize:65536,chunkSize:65536,chunkLimit:16};
+export async function photoCaptureDay(input,timeZone='Asia/Shanghai'){
+ try{
+  const prefix=input instanceof Uint8Array?input:new Uint8Array(await input.slice(0,Math.min(input.size,262144)).arrayBuffer());
+  const day=validCaptureDay(jpegCaptureDay(prefix),timeZone);if(day)return day;
+  if(prefix.length>=12&&new TextDecoder().decode(prefix.subarray(0,4))==='RIFF'&&new TextDecoder().decode(prefix.subarray(8,12))==='WEBP'){
+   const length=input instanceof Uint8Array?input.length:input.size;
+   for(let offset=12,chunks=0;chunks<16&&offset+8<=length;chunks++){
+    const header=offset+8<=prefix.length?prefix.subarray(offset,offset+8):new Uint8Array(await input.slice(offset,offset+8).arrayBuffer());
+    const size=new DataView(header.buffer,header.byteOffset,8).getUint32(4,true),end=offset+8+size;if(end>length)break;
+    if(new TextDecoder().decode(header.subarray(0,4))==='EXIF'){
+     if(size>262144)return null;
+     let bytes=end<=prefix.length?prefix.subarray(offset+8,end):new Uint8Array(await input.slice(offset+8,end).arrayBuffer());
+     if(new TextDecoder().decode(bytes.subarray(0,6))==='Exif\0\0')bytes=bytes.subarray(6);
+     const metadata=await (await metadataParser()).parse(bytes,photoOptions);return validCaptureDay(metadata?.DateTimeOriginal,timeZone);
+    }
+    offset=end+(size%2);
+   }
+   return null;
   }
-  if(!date&&file.lastModified>0)date=new Date(file.lastModified).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
-  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
-  return date&&/^\d{4}-\d{2}-\d{2}$/.test(date)&&date<=today?date:fallback;
+  const metadata=await (await metadataParser()).parse(input,photoOptions);
+  return validCaptureDay(metadata?.DateTimeOriginal,timeZone);
+ }catch{return null}
+}
+// A lazy Blob for EXIF's supported Blob reader: all I/O stays in private R2.
+// HEIC metadata may sit near the end of an image, so a prefix alone is insufficient.
+class R2MetadataBlob extends Blob {
+ constructor(bucket,key,start,end,budget,type){super([],{type});this.bucket=bucket;this.key=key;this.start=start;this.end=end;this.budget=budget}
+ get size(){return this.end-this.start}
+ slice(start=0,end=this.size,type=this.type){
+  const offset=v=>Math.min(this.size,Math.max(0,v<0?this.size+v:v));
+  const a=offset(start),b=Math.max(a,offset(end));
+  return new R2MetadataBlob(this.bucket,this.key,this.start+a,this.start+b,this.budget,type);
+ }
+ async arrayBuffer(){
+  if(this.size>262144||this.budget.bytes+this.size>1048576||this.budget.reads>=16)throw Error('METADATA_READ_LIMIT');
+  this.budget.bytes+=this.size;this.budget.reads++;
+  if(!this.size)return new ArrayBuffer(0);
+  const object=await this.bucket.get(this.key,{range:{offset:this.start,length:this.size}});
+  if(!object)throw Error('METADATA_OBJECT_MISSING');
+  const bytes=await object.arrayBuffer();if(bytes.byteLength!==this.size)throw Error('METADATA_RANGE_MISMATCH');return bytes;
+ }
+}
+export async function r2PhotoCaptureDay(bucket,key,size,mime,timeZone='Asia/Shanghai'){
+ if(!mime?.startsWith('image/')||!Number.isSafeInteger(size)||size<1)return null;
+ return photoCaptureDay(new R2MetadataBlob(bucket,key,0,size,{bytes:0,reads:0},mime),timeZone);
+}
+export async function bestEffortFileDay(file,fallback,timeZone='Asia/Shanghai'){
+ const isPhoto=file.type.startsWith('image/')||/\.(?:heic|heif|jpe?g|png|webp|gif|tiff?)$/i.test(file.name);
+ if(isPhoto)return await photoCaptureDay(file,timeZone)||fallback;
+ if(file.lastModified>0){const day=validCaptureDay(new Date(file.lastModified).toLocaleDateString('sv-SE',{timeZone}),timeZone);if(day)return day}
+ return fallback;
 }

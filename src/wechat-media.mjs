@@ -2,6 +2,7 @@
 // Stream plaintext into 8 MiB R2 multipart pieces: a 50 MiB video never occupies
 // two 50 MiB buffers in a Cloudflare Worker. AES-ECB is iLink wire compatibility.
 import {createDecipheriv,createHash} from 'node:crypto';
+import {r2PhotoCaptureDay,validCaptureDay} from './media-date.mjs';
 export const MAX_WECHAT_MEDIA_BYTES=50*1024*1024;
 export const MAX_WECHAT_IMAGE_BYTES=MAX_WECHAT_MEDIA_BYTES; // backwards compatibility
 const MAX_ITEMS=4,PART=8*1024*1024,CDN='novac2c.cdn.weixin.qq.com';
@@ -211,7 +212,10 @@ export async function persistWeChatMedia(env,raw,baby,messageId,options={}){
    size=saved.size;mime=saved.mime;
   }
   if(typeof mime!=='string'||!mime.startsWith(kind+'/'))throw Error('WECHAT_MEDIA_MIME_MISMATCH');
-  const day=localDay(raw,baby);
+  // Read the privately stored original, including HEIC EXIF extents near EOF.
+  // Range reads are bounded; retries reuse R2 and never rewrite the original.
+  const captured=kind==='image'?await r2PhotoCaptureDay(env.MEDIA,objectKey,size,mime,baby.time_zone||'Asia/Shanghai'):null;
+  const day=validCaptureDay(captured,baby.time_zone||'Asia/Shanghai')||localDay(raw,baby);
   const caption=raw.item_list?.filter(x=>x?.type===1&&typeof x.text_item?.text==='string')
     .map(x=>x.text_item.text).join(' ').trim().slice(0,100);
   const title=caption||(kind==='video'?'微信视频 ':'微信照片 ')+day;
