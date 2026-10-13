@@ -13,6 +13,16 @@
 3. Cloudflare 官方已提供基于 Pi Durable 的 `PiHarness` 集成，但截至 2026-10-13 仍处于 Beta；其持久会话方案涉及 `agents`、`@earendil-works/pi-durable`、SQLite-backed DO 及生命周期的运维决策，不应在没有真实兼容性测试的情况下替换现有消息处理。
 4. OpenRouter 当前默认模型需要实际验证多轮 `tool_call_id`、`role:tool` 的契约与延迟；不能仅凭本地 Mock 声称线上模型具备完整能力。
 
+### 框架选型比较
+
+| 方案 | 当前的优势 | 当前不足/迁移成本 | 本轮结论 |
+| --- | --- | --- | --- |
+| 现有 OpenRouter + 独立 ReAct 核心 | 完全复用 D1/DO/iLink、已测的本地协议；模型仍可在网页配置 | 需要维护有界循环、日志与工具契约；不支持复杂的中断续跑 | **选择** |
+| [pi-agent-core](https://www.npmjs.com/package/@mariozechner/pi-agent-core) | 已有成熟模型/工具事件循环和自定义流适配 | 需要验证适配当前 OpenRouter REST/provider、Worker 打包、预算与存储接口 | 候选 PoC |
+| [Cloudflare Pi Harness](https://developers.cloudflare.com/agents/harnesses/pi/) + Pi Durable | DO SQLite 持久事件和崩溃唤醒、长时会话运行时 | 当前 Beta，涉及 agents + Pi Durable 生命周期迁移；不是只增加一个 npm 依赖 | 长任务阶段评估 |
+
+框架以**生产必要性**而非 feature 数量决策。PoC 必须用同一份离线 R 系列安全测试和至少 20 条人工合成真实模型样本对照，一次完成率、误写次数、p95 延迟、工具调用次数、冷启动与每请求成本都有数据之后才考虑切换。仓库不引入未验证的实验性运行时。
+
 **重新评估 pi-agent-core 的触发条件**：需要队列内后台长任务、跨重启续跑、steering/follow-up、流式事件或复杂工具插件生态时，专门做对照 PoC。要求证明 Cloudflare Worker/DO 兼容、OpenRouter 动态模型可选、不会破坏用户数据迁移、双账号隔离、幂等与成本预算。不能只比较 Demo。
 
 ## 二、端到端控制流
