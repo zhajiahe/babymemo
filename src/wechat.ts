@@ -4,6 +4,7 @@ import { decryptSecret, encryptSecret, setting, resolveOpenRouterKey } from './c
 import { wechatTools, wechatHelp, runWechatTool } from './wechat-harness.mjs';
 import {WechatPhotoError,mediaItems,persistWeChatMedia} from './wechat-media.mjs';
 import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.mjs';
+import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './wechat-memory.mjs';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
@@ -58,7 +59,7 @@ export function workerBot(env:Env):DurableObjectStub {
 // OpenRouter is exclusively the WeChat command interpreter; no website chat API.
 export async function testOpenRouterConnection(env:Env):Promise<boolean>{
   const key=await resolveOpenRouterKey(env);if(!key)throw Error('OPENROUTER_KEY_MISSING');
-  const model=await setting(env,'openrouter_model')||'openai/gpt-4.1-mini';
+  const model=await setting(env,'openrouter_model')||DEFAULT_OPENROUTER_MODEL;
   const result=await openRouterCompletion({key,model,messages:[{role:'user',content:'Reply exactly: OK'}],max_tokens:16});
   return Array.isArray(result.choices)&&result.choices.length>0;
 }
@@ -77,7 +78,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
   const context=thread?buildCommandContext(command,thread):{modelMessages:[{role:'user',content:command}],groundedText:command};
   const key=await resolveOpenRouterKey(env);
   if(!key)return '请先在网页设置中配置 OpenRouter Key，或在部署时设置 OPENROUTER_API_KEY Secret';
-  const model=await setting(env,'openrouter_model')||'openai/gpt-4.1-mini';
+  const model=await setting(env,'openrouter_model')||DEFAULT_OPENROUTER_MODEL;
   const localDay=new Date().toLocaleDateString('sv-SE',{timeZone:baby.time_zone||'Asia/Shanghai'});
   const instruction='你是 BabyMemo 微信操作入口的工具路由器，不是聊天/育儿分析助手。'+
     '当前本地日期 '+localDay+'，目标宝宝 '+baby.name+'。根据绑定用户指令，每次仅选择一个最匹配的工具调用。'+

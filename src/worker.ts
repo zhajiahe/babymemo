@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Baby } from './types';
 import {validCalendarDay,validTimeZone} from './validation';
+import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import { applySession, authenticated, clearSession, login, owner, sameOrigin, setup } from './auth';
 import { constantEqual, passwordHash, randomHex } from './crypto';
 import { decryptSecret, encryptSecret, setSetting, setting, deployedOpenRouterKey } from './crypto';
@@ -82,7 +83,7 @@ app.get('/api/state',async c=>{
     countsByBaby[row.baby_id][row.kind]=row.total;
   }
   return c.json({ownerName:user!.name,familyName:familyName||'家庭空间',babies:babies.results,counts:{growth:growth?.count??0,milestones:milestones?.count??0,media:media?.count??0},countsByBaby,
-    openrouter:{configured:!!encryptedApiKey||!!deployedOpenRouterKey(c.env),managedByDeployment:!!deployedOpenRouterKey(c.env),model:model||'openai/gpt-4.1-mini'},
+    openrouter:{configured:!!encryptedApiKey||!!deployedOpenRouterKey(c.env),managedByDeployment:!!deployedOpenRouterKey(c.env),model:model||DEFAULT_OPENROUTER_MODEL},
     wechat:{connected:!!encryptedBot,enabled:botOn==='true',defaultBabyId:await setting(c.env,'wechat_default_baby_id')||''}});
 });
 app.post('/api/babies',async c=>{
@@ -459,7 +460,7 @@ app.post('/api/settings/wechat/:action',async c=>{
   const action=c.req.param('action');
   if(!['start','pause'].includes(action))return fail(c,404,'NOT_FOUND');
   if(action==='start'&&!await setting(c.env,'wechat_token'))return fail(c,409,'WECHAT_NOT_PAIRED');
-  if(action==='start'&&!await setting(c.env,'openrouter_key'))return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
+  if(action==='start'&&!deployedOpenRouterKey(c.env)&&!await setting(c.env,'openrouter_key'))return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
   await setSetting(c.env,'wechat_enabled',action==='start'?'true':'false');
   const result=await workerBot(c.env).fetch('https://bot.internal/'+action,{method:'POST'});
   if(!result.ok){
