@@ -1,0 +1,2 @@
+export function deriveBabyAge(options:{question:string;observations:Array<{name:string;content:string}>;asOfDay:string;babyName:string}):null|{kind:string;birthday:string;asOfDay:string;days:number;totalMonths:number;years:number;months:number;remainderDays:number;name:string;answer:string};
+export function ageReplyMatches(text:string,age:null|{kind:string;days:number;totalMonths:number;years:number;months:number}):boolean;

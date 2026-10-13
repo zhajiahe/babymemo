@@ -45,7 +45,7 @@ try{
  await step('Worker AES-ECB accepts empty IV and decrypts exact bytes',async()=>{const r=await run({mode:'crypto',emptyIV:true});assert.equal(r.ok,true);assert.equal(r.sha,sha(jpeg))});
  await step('greeting capability question returns menu without model calls or writes',async()=>{const r=await run({mode:'text',id:'greeting-help',text:'你好，你可以做什么',responses:[noTools]});assert.match(r.reply,/BabyMemo 微信操作/);assert.equal(r.models,0);assert.equal(r.growth.length,0);assert.equal(r.media.length,0)});
  await step('missing model tools refuses writes',async()=>{const r=await run({mode:'text',id:'missing-tools',text:'测试宝宝今天体重 10.5kg',responses:[noTools]});assert.equal(r.reply,'synthetic no-tool response');assert.equal(r.growth.length,0)});
- await step('model tool -> policy -> local D1 write; replay does not duplicate',async()=>{const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});const payload={mode:'text',id:'create-weight',text:'测试宝宝今天体重 10.5kg',responses:[tool('create_growth',{day,weight:10.5})]};let r=await run(payload);assert.match(r.reply,/记录|保存/);assert.equal(r.growth.length,1);assert.equal(r.growth[0].weight,10.5);r=await run(payload);assert.equal(r.growth.length,1);savedWeightRecordId=r.growth[0].id;assert.equal(r.models,0);assert.equal(r.rounds.length,2)});
+ await step('model tool -> policy -> local D1 write; replay does not duplicate',async()=>{const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});const payload={mode:'text',id:'create-weight',text:'测试宝宝今天体重 10.5kg',responses:[tool('create_growth',{day,weight:10.5})]};let r=await run(payload);assert.match(r.reply,/记录|保存/);assert.equal(r.growth.length,1);assert.equal(r.growth[0].weight,10.5);r=await run(payload);assert.equal(r.growth.length,1);savedWeightRecordId=r.growth[0].id;assert.equal(r.models,0);assert.deepEqual(r.rounds.map(x=>x.round_index),[0,1,31])});
  await step('ChatGPT-style: age question becomes a natural answer based on the verified profile tool',async()=>{
   const r=await run({mode:'text',id:'ai-age-final',text:'我儿多大了',
    responses:[tool('get_baby',{}),natural('测试宝宝现在两岁九个月啦，生日是2024年1月1日。')]});
@@ -55,6 +55,48 @@ try{
   assert.match(r.modelMessages[1].at(-1).content,/生日 2024-01-01/);
   assert.match(r.modelMessages[0][0].content,/根据生日和消息本地日期计算年龄/);
   assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
+ });
+ await step('real age query: empty/generic first final triggers tool-free synthesis, not the complete profile',async()=>{
+  const r=await run({mode:'text',id:'ai-age-generic-final',text:'测试宝宝多大了',
+   responses:[
+    tool('get_baby',{}),
+    natural('操作已完成'),
+    natural('测试宝宝现在两岁九个月啦。')
+   ]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,3);
+  assert.equal(r.reply,'测试宝宝现在两岁九个月啦。');
+  assert.deepEqual(r.modelHasTools,[true,true,false]);
+  assert.match(r.modelMessages[1].at(-1).content,/生日 2024-01-01/);
+  assert.doesNotMatch(r.reply,/档案|生日|过敏|备注/);
+ });
+ await step('real age query: how many days always produces grounded days even when two model finals are bad',async()=>{
+  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const days=Math.round((Date.parse(today+'T00:00:00Z')-Date.parse('2024-01-01T00:00:00Z'))/86400000);
+  const r=await run({mode:'text',id:'ai-days-profile-fallback',text:'测试宝宝多少天了',
+   responses:[tool('get_baby',{}),
+    natural('测试宝宝 的档案：生日 2024-01-01，过敏和注意事项：无'),
+    natural('操作已完成')
+   ]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,3);
+  assert.deepEqual(r.modelHasTools,[true,true,false]);
+  assert.equal(r.reply,'测试宝宝从出生到今天已经 '+days+' 天啦。');
+  assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
+ });
+ await step('real age query: plausible but wrong model age is rejected in favor of server birthday arithmetic',async()=>{
+  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const year=Number(today.slice(0,4)),month=Number(today.slice(5,7)),date=Number(today.slice(8,10));
+  const ageYears=year-2024-(month<1?1:0);
+  const r=await run({mode:'text',id:'ai-age-wrong-final',text:'测试宝宝多大了',
+   responses:[tool('get_baby',{}),
+    natural('测试宝宝现在 99 岁 9 个月啦。'),
+    natural('还是 99 岁，已经长大了。')
+   ]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,3);
+  assert.match(r.reply,new RegExp('测试宝宝现在 '+ageYears+' 岁'));
+  assert.doesNotMatch(r.reply,/99 岁|档案：/);
  });
  await step('ChatGPT-style: verified milestone write has a concise AI final, not its DB receipt',async()=>{
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
@@ -70,14 +112,14 @@ try{
   assert.equal(r.milestones.filter(m=>m.source_message_id==='ai-milestone-final:step:0').length,1);
   assert.match(r.modelMessages[1].at(-1).content,/已保存成长事件/);
  });
- await step('read-only retry returns real D1 results after no-tool response',async()=>{const r=await run({mode:'text',id:'query-weight',text:'查询测试宝宝最近五条体重记录',responses:[noTools,tool('list_growth',{limit:5})]});assert.equal(r.models,3);assert.match(r.reply,/10\.5/);assert.equal(r.growth.length,1)});
+ await step('read-only retry returns real D1 results after no-tool response',async()=>{const r=await run({mode:'text',id:'query-weight',text:'查询测试宝宝最近五条体重记录',responses:[noTools,tool('list_growth',{limit:5})]});assert.equal(r.models,4);assert.match(r.reply,/10\.5/);assert.equal(r.growth.length,1)});
  await step('ReAct read -> write uses a real queried ID and tool observations',async()=>{
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
   const r=await run({mode:'text',id:'react-correct',text:'把测试宝宝今天的体重更正为 10.2kg',
    responses:[tool('list_growth',{day}),tool('update_growth',{id:savedWeightRecordId.slice(0,8),weight:10.2}),stop]});
   assert.equal(r.error,undefined);
   assert.equal(r.growth.length,1);assert.equal(r.growth[0].weight,10.2);
-  assert.equal(r.models,3);assert.equal(r.rounds.length,3);
+  assert.equal(r.models,4);assert.deepEqual(r.rounds.map(x=>x.round_index),[0,1,2,31]);
   assert.equal(r.modelMessages[1].at(-1).role,'tool');
   assert.equal(r.modelMessages[2].at(-1).role,'tool');
   assert.match(r.reply,/已更新/);
@@ -116,7 +158,7 @@ try{
    ]
   });
   assert.equal(r.error,undefined);
-  assert.equal(r.models,4);
+  assert.equal(r.models,5); // tool-only final invokes one extra tool-free summarization
   assert.equal(r.replies.length,2);
   const savedDiary=r.milestones.filter(x=>x.source_message_id?.endsWith('json-diary-two:step:1'));
   assert.equal(savedDiary.length,1); // source-scoped, independent of earlier fixture writes
@@ -146,7 +188,7 @@ try{
    ]
   });
   assert.equal(r.error,undefined);
-  assert.equal(r.models,5);
+  assert.equal(r.models,6); // 5 ReAct decisions + 1 independent final summary fallback
   assert.equal(r.replies.length,4);
   assert.match(r.replies[0],/想让我帮你记到日记里吗/);
   assert.match(r.replies[1],/连续三个小时/);
@@ -211,18 +253,18 @@ try{
  await step('a later text context cannot be overwritten by an older media caption operation',async()=>{
   const message=raw('caption-context-changed');message.item_list.push({type:1,text_item:{text:'测试宝宝今天记录第一次走路里程碑'}});
   const r=await run({mode:'alarm',holdMedia:true,messages:[message],followupMessages:[textFrom('newer-query','synthetic-user','synthetic-bot','查询测试宝宝最近五条体重记录')],responses:[tool('list_growth',{limit:5})],encryptedBase64:encrypt(jpeg)});
-  assert.equal(r.error,undefined);assert.equal(r.models,2);assert.match(r.reply,/附文操作未执行/);
+  assert.equal(r.error,undefined);assert.equal(r.models,3);assert.match(r.reply,/附文操作未执行/);
  });
  await step('an unchanged reception context executes the explicitly authorized caption after save',async()=>{
   const message=raw('caption-context-current');message.item_list.push({type:1,text_item:{text:'测试宝宝今天记录体重 11.5kg'}});
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
   const r=await run({mode:'alarm',messages:[message],responses:[tool('create_growth',{day,weight:11.5})],encryptedBase64:encrypt(jpeg)});
-  assert.equal(r.error,undefined);assert.equal(r.models,2,r.reply);assert.doesNotMatch(r.reply,/附文操作未执行/);assert.match(r.reply,/已保存/);
+  assert.equal(r.error,undefined);assert.equal(r.models,3,r.reply);assert.doesNotMatch(r.reply,/附文操作未执行/);assert.match(r.reply,/已保存/);
   const record=r.growth.find(x=>x.source_message_id==='synthetic-bot:caption-context-current:caption:step:0');assert.equal(record.weight,11.5);savedCaptionWeightRecordId=record.id;
  });
  await step('a media caption query publishes trusted IDs for the next text follow-up',async()=>{
   const message=raw('caption-query-reference-'+ 'a'.repeat(64)+'_%');message.item_list.push({type:1,text_item:{text:'测试宝宝查询今天成长记录'}});
-  const r=await run({mode:'alarm',alarms:2,messages:[message],followupMessages:[textFrom('caption-query-followup','synthetic-user','synthetic-bot','修改第一条体重为12kg')],responses:[tool('list_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})}),stop,tool('update_growth',{id:savedCaptionWeightRecordId.slice(0,8),weight:12}),stop],encryptedBase64:encrypt(jpeg)});
+  const r=await run({mode:'alarm',alarms:2,messages:[message],followupMessages:[textFrom('caption-query-followup','synthetic-user','synthetic-bot','修改第一条体重为12kg')],responses:[tool('list_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})}),natural('已经找到今天的成长测量。'),tool('update_growth',{id:savedCaptionWeightRecordId.slice(0,8),weight:12}),natural('好的，体重已更正为 12 公斤。')],encryptedBase64:encrypt(jpeg)});
   assert.equal(r.error,undefined);assert.equal(r.models,4,r.reply);assert.equal(r.growth.find(x=>x.id===savedCaptionWeightRecordId).weight,12,r.reply);
  });
  console.log(JSON.stringify({suite:'isolated WeChat Worker E2E',passed,failed:0,realExternalCalls:0,productionWrites:0}));

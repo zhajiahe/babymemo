@@ -22,7 +22,7 @@ export default {async fetch(request:Request,env:any){
   try{const iv=input.emptyIV?Buffer.alloc(0):null;const cipher=createCipheriv('aes-128-ecb',key,iv);const b=Buffer.concat([cipher.update(jpeg),cipher.final()]);const d=createDecipheriv('aes-128-ecb',key,iv);const back=Buffer.concat([d.update(b),d.final()]);return Response.json({ok:back.equals(Buffer.from(jpeg)),sha:createHash('sha256').update(back).digest('hex')})}catch(e:any){return Response.json({ok:false,error:e.message})}
  }
  await env.DB.prepare('INSERT OR IGNORE INTO babies(id,name,birthday,gender,time_zone,created_at) VALUES(?,?,?,?,?,?)').bind(baby.id,baby.name,baby.birthday,'girl',baby.time_zone,new Date().toISOString()).run();
- let models=0,downloads=0;const sent:any[]=[],modelMessages:any[]=[];const contexts=new Map<string,{session:WechatSession;store:Map<string,any>}>();
+ let models=0,downloads=0;const sent:any[]=[],modelMessages:any[]=[],modelHasTools:boolean[]=[];const contexts=new Map<string,{session:WechatSession;store:Map<string,any>}>();
  let inbound=input.messages||[],releaseMedia:any,mediaStarted:any;
  let pollIndex=0;
  const mediaGate=new Promise<void>(resolve=>releaseMedia=resolve),beganMedia=new Promise<void>(resolve=>mediaStarted=resolve);
@@ -33,7 +33,7 @@ export default {async fetch(request:Request,env:any){
  let finalSendAttempts=0;
  globalThis.fetch=async(url:any,init:any)=>{
   const u=String(url);
-  if(u.startsWith('https://openrouter.ai/')){models++;modelMessages.push(JSON.parse(init.body).messages);return Response.json(input.responses?.[models-1]||{choices:[{message:{tool_calls:[]}}]})}
+  if(u.startsWith('https://openrouter.ai/')){models++;const req=JSON.parse(init.body);modelMessages.push(req.messages);modelHasTools.push(!!req.tools);return Response.json(input.responses?.[models-1]||{choices:[{message:{tool_calls:[]}}]})}
   if(u.startsWith('https://novac2c.cdn.weixin.qq.com/')){downloads++;if(input.holdMedia){mediaStarted();await mediaGate}if(new URL(u).pathname!=='/c2c/download'||input.cdnStatus)return new Response('',{status:input.cdnStatus||502});const bytes=input.encryptedBase64?Buffer.from(input.encryptedBase64,'base64'):Uint8Array.from(input.encrypted||[]);return new Response(new ReadableStream({start(controller){for(let offset=0;offset<bytes.length;offset+=32768)controller.enqueue(bytes.subarray(offset,offset+32768));controller.close()}}))}
   if(u.includes('/ilink/bot/getupdates')){
    const auth=init?.headers?.Authorization;
@@ -108,6 +108,6 @@ export default {async fetch(request:Request,env:any){
   const rounds=input.id?await env.DB.prepare('SELECT round_index FROM wechat_agent_rounds WHERE message_id=? ORDER BY round_index').bind(input.id).all():{results:[]};
   let originalMatches=null;if(media.results.length){const row=media.results.at(-1);const obj=await env.MEDIA.get('private/'+row.baby_id+'/'+row.id);if(obj){const bytes=Buffer.from(await obj.arrayBuffer());originalMatches=input.expectedSHA256?createHash('sha256').update(bytes).digest('hex')===input.expectedSHA256:bytes.equals(Buffer.from(input.expectedPlain||jpeg));}}
   const mediaStorage=Object.fromEntries(contexts.get('wechat-media:legacy')?.store||[]);
-  return Response.json({reply,models,modelMessages,rounds:rounds.results,downloads,milestones:milestones.results,replies:sent.map(x=>x.msg.item_list[0]?.text_item?.text),sent:sent.length,sentTo:sent.map(x=>x.msg.to_user_id),clientIds:sent.map(x=>x.msg.client_id),finalClientIds:sent.filter(x=>x.msg.client_id.startsWith('media-')).map(x=>x.msg.client_id),status,mediaStorage,growth:growth.results,media:media.results,messages:messages.results,originalMatches});
+  return Response.json({reply,models,modelMessages,modelHasTools,rounds:rounds.results,downloads,milestones:milestones.results,replies:sent.map(x=>x.msg.item_list[0]?.text_item?.text),sent:sent.length,sentTo:sent.map(x=>x.msg.to_user_id),clientIds:sent.map(x=>x.msg.client_id),finalClientIds:sent.filter(x=>x.msg.client_id.startsWith('media-')).map(x=>x.msg.client_id),status,mediaStorage,growth:growth.results,media:media.results,messages:messages.results,originalMatches});
  }catch(e:any){return Response.json({error:e.message,models})}finally{globalThis.fetch=actualFetch;env.DB=originalDB}
 }};
