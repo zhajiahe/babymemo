@@ -10,7 +10,7 @@ import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations
 export const wechatTools=[
  tool('get_runtime_context','读取消息发出时的可信时间、宝宝时区和目标宝宝；只有需要消歧时才调用'),
  tool('list_babies','列出这个家庭已经创建的宝宝'),
- tool('get_baby','读取当前宝宝的生日、昵称、过敏等档案'),
+ tool('get_baby','读取当前宝宝的生日、昵称、过敏等档案；用户问“多大了/几个月/几岁”等时，按消息本地日期计算年龄，不要直接复述档案'),
  tool('update_baby','修改宝宝档案，只根据用户明确说出的字段修改',{name:str,allergies:str,notes:str,birthday:day,birthTime:{type:'string',description:'出生时间 HH:mm'}}),
  tool('list_growth','查询成长测量，结果中含记录编号',{day,limit:{type:'integer',minimum:1,maximum:10}}),
  tool('create_growth','新增一条体重/身高/头围测量，必须有用户明确提供的数值和单位',{day,weight:number('kg',150),height:number('cm',250),headCircumference:number('cm',100),notes:str},['day']),

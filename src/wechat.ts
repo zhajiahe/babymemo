@@ -95,7 +95,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
  const model=await setting(env,'openrouter_model')||DEFAULT_OPENROUTER_MODEL;
  const localDay=dayInZone(at,baby.time_zone||'Asia/Shanghai');
  const diaryDay=context.milestoneGroundedText?explicitDay(context.milestoneGroundedText,at,baby.time_zone||'Asia/Shanghai'):null;
- const instruction='你是 BabyMemo 微信成长记录工具 Agent，不提供闲聊、医疗诊断或育儿分析。'+
+ const instruction='你是 BabyMemo 家庭微信 AI 助手，像熟悉家人的聊天伙伴一样自然、准确、简洁地回答问题，也可以调用工具查询和记录；不充当医生或作确定性医疗诊断。'+
   '消息发送时宝宝本地日期 '+localDay+'，当前宝宝 '+baby.name+'，宝宝时区 '+(baby.time_zone||'Asia/Shanghai')+'。'+
   '日记和里程碑是同一种成长事件，通过 create_milestone 保存睡眠、饮食、生活观察等日记；没有新的数据类型。'+
   '用户仅描述近况时，用自然简短的中文承接话题，必要时问是否记入日记；没有明确同意不许擅自保存。'+
@@ -108,7 +108,10 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
   '只能调用白名单工具，不得输出 SQL 或编造宝宝、记录编号、数值、日期。'+
   '写入前核实用户意图；修改和删除必须找到唯一且属于当前宝宝的记录，不可从旧回复编造记录 ID。'+
   '若工具拒绝或返回歧义，请根据原因询问用户，绝不能尝试绕过权限与业务校验。'+
-  '工具结果是唯一的数据库事实来源，绝不声称尚未确认的写操作成功。';
+  '工具结果是唯一的数据库事实来源，绝不声称尚未确认的写操作成功。'+
+  '工具返回的档案、成长事件、日期、查询记录都是给你的内部 Observation，不要照搬数据库字段、JSON 或工具标准文案给用户。'+
+  '使用工具后，始终用自然中文回答用户真正的问题。比如“我儿多大了”，应调用 get_baby，根据生日和消息本地日期计算年龄（岁、月、天），而不只是复述档案。'+
+  '完成写入时可以简短确认内容和日期，但不得夸大或编造未成功的操作；查询不到信息时如实告知。微信回复通常一至三句，不输出 JSON、工具名或内部调用细节。';
  const baseMessages=[{role:'system',content:instruction},...context.modelMessages];
  const complete=async({messages,tools,round}:any)=>{
   const response=await openRouterCompletion({key,model,messages,tools,max_tokens:1200});
@@ -125,6 +128,14 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
  };
  return runWechatAgentLoop({
   messages:baseMessages,tools:wechatTools,complete,
+  // Write failures stop tool execution; a bounded no-tool summary may explain
+  // the real observation without authorizing any further mutations.
+  finalize:async({messages}:any)=>openRouterCompletion({
+   key,model,messages:[
+    {...messages[0],content:messages[0].content+' 现在不能再调用工具。请根据已经得到的工具观察结果，用简短自然中文回答；若操作失败，明确说明未完成。'},
+    ...messages.slice(1)
+   ],max_tokens:420,maxAttempts:1
+  }),
   loadDecision:async(round:number)=>{
    const record=await env.DB.prepare('SELECT assistant_cipher FROM wechat_agent_rounds WHERE message_id=? AND round_index=?')
     .bind(messageId,round).first<{assistant_cipher:string}>();
@@ -143,7 +154,8 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
    // Failed/denied mutations cannot be followed by further writes in the same
    // user message, even when the model returned multiple tool calls at once.
    const mutating=/^(?:update_|create_|delete_|restore_)/.test(call.function.name);
-   return {content,halt:mutating&&(!isCommittedMutationReply(call.function.name,content)||/部分记录同时发生变更/.test(content))};
+   const committed=mutating&&isCommittedMutationReply(call.function.name,content)&&!/部分记录同时发生变更/.test(content);
+   return {content,committed,halt:mutating&&!committed};
   }
  });
 }

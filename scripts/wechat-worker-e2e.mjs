@@ -27,6 +27,7 @@ const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const tool=(name,args)=>({choices:[{message:{tool_calls:[{id:'synthetic-'+name,type:'function',function:{name,arguments:JSON.stringify(args)}}]},finish_reason:'tool_calls'}]});
 const noTools={choices:[{message:{content:'synthetic no-tool response'},finish_reason:'stop'}]};
 const stop={choices:[{message:{content:'操作已完成',tool_calls:[]},finish_reason:'stop'}]};
+const natural=content=>({choices:[{message:{content,tool_calls:[]},finish_reason:'stop'}]});
 let savedWeightRecordId='';
 const raw=(id,type=2)=>({message_id:id,from_user_id:'synthetic-user',to_user_id:'synthetic-bot',message_type:1,message_state:2,context_token:'synthetic-context',create_time_ms:Date.now(),item_list:[type===2?{type:2,image_item:{media:{encrypt_query_param:'synthetic',aes_key:key.toString('base64')}}}:{type:5,video_item:{media:{encrypt_query_param:'synthetic',aes_key:key.toString('base64')}}}]});
 const textFrom=(id,from,to,text)=>({message_id:id,from_user_id:from,to_user_id:to,message_type:1,message_state:2,context_token:'synthetic-context',create_time_ms:Date.now(),item_list:[{type:1,text_item:{text}}]});
@@ -45,6 +46,30 @@ try{
  await step('greeting capability question returns menu without model calls or writes',async()=>{const r=await run({mode:'text',id:'greeting-help',text:'你好，你可以做什么',responses:[noTools]});assert.match(r.reply,/BabyMemo 微信操作/);assert.equal(r.models,0);assert.equal(r.growth.length,0);assert.equal(r.media.length,0)});
  await step('missing model tools refuses writes',async()=>{const r=await run({mode:'text',id:'missing-tools',text:'测试宝宝今天体重 10.5kg',responses:[noTools]});assert.equal(r.reply,'synthetic no-tool response');assert.equal(r.growth.length,0)});
  await step('model tool -> policy -> local D1 write; replay does not duplicate',async()=>{const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});const payload={mode:'text',id:'create-weight',text:'测试宝宝今天体重 10.5kg',responses:[tool('create_growth',{day,weight:10.5})]};let r=await run(payload);assert.match(r.reply,/记录|保存/);assert.equal(r.growth.length,1);assert.equal(r.growth[0].weight,10.5);r=await run(payload);assert.equal(r.growth.length,1);savedWeightRecordId=r.growth[0].id;assert.equal(r.models,0);assert.equal(r.rounds.length,2)});
+ await step('ChatGPT-style: age question becomes a natural answer based on the verified profile tool',async()=>{
+  const r=await run({mode:'text',id:'ai-age-final',text:'我儿多大了',
+   responses:[tool('get_baby',{}),natural('测试宝宝现在两岁九个月啦，生日是2024年1月1日。')]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,2);
+  assert.equal(r.reply,'测试宝宝现在两岁九个月啦，生日是2024年1月1日。');
+  assert.match(r.modelMessages[1].at(-1).content,/生日 2024-01-01/);
+  assert.match(r.modelMessages[0][0].content,/根据生日和消息本地日期计算年龄/);
+  assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
+ });
+ await step('ChatGPT-style: verified milestone write has a concise AI final, not its DB receipt',async()=>{
+  const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  const r=await run({mode:'text',id:'ai-milestone-final',text:'测试宝宝今天第一次学会鼓掌了，帮我记下来',
+   responses:[
+    tool('create_milestone',{day,title:'第一次学会鼓掌',description:'今天第一次学会鼓掌'}),
+    natural('记好啦！已经把测试宝宝今天第一次鼓掌的瞬间记进成长日记了。')
+   ]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,2);
+  assert.match(r.reply,/记好啦/);
+  assert.doesNotMatch(r.reply,/已保存成长事件|· \d{4}-\d{2}-\d{2}/);
+  assert.equal(r.milestones.filter(m=>m.source_message_id==='ai-milestone-final:step:0').length,1);
+  assert.match(r.modelMessages[1].at(-1).content,/已保存成长事件/);
+ });
  await step('read-only retry returns real D1 results after no-tool response',async()=>{const r=await run({mode:'text',id:'query-weight',text:'查询测试宝宝最近五条体重记录',responses:[noTools,tool('list_growth',{limit:5})]});assert.equal(r.models,3);assert.match(r.reply,/10\.5/);assert.equal(r.growth.length,1)});
  await step('ReAct read -> write uses a real queried ID and tool observations',async()=>{
   const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
@@ -65,9 +90,9 @@ try{
  });
  await step('runtime context comes from Worker clock rather than model guesses',async()=>{
   const r=await run({mode:'text',id:'react-clock',text:'查询当前时间',
-   responses:[tool('get_runtime_context',{}),stop]});
+   responses:[tool('get_runtime_context',{}),natural('现在是下午四点多。')]});
   assert.equal(r.error,undefined);
-  assert.equal(r.reply,'操作已完成');
+  assert.match(r.reply,/现在是下午/);
   assert.doesNotMatch(r.reply,/currentTimestamp|localDay|timeZone|Asia\/Shanghai/);
   assert.equal(r.modelMessages[1].at(-1).role,'tool');
   assert.match(r.modelMessages[1].at(-1).content,/messageLocalDay|timeZone/);
@@ -93,8 +118,9 @@ try{
   assert.equal(r.error,undefined);
   assert.equal(r.models,4);
   assert.equal(r.replies.length,2);
-  assert.equal(r.milestones.length,1);
-  assert.equal(r.milestones[0].day,yesterday);
+  const savedDiary=r.milestones.filter(x=>x.source_message_id?.endsWith('json-diary-two:step:1'));
+  assert.equal(savedDiary.length,1); // source-scoped, independent of earlier fixture writes
+  assert.equal(savedDiary[0].day,yesterday);
   assert.match(r.replies[1],/已保存成长事件/);
   assert.doesNotMatch(r.replies.join(' '),/currentTimestamp|messageTimestamp|timeZone|messageLocalDay|\{"current/);
   assert.match(r.modelMessages[1][0].content,new RegExp(yesterday)); // date in trusted instruction

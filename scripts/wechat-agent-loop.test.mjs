@@ -18,8 +18,7 @@ test('ReAct observes real tool result then decides next tool and ends',async()=>
  assert.equal(seen[1].at(-1).tool_call_id,'c1');
  assert.match(seen[1].at(-1).content,/abcdef12/);
  assert.deepEqual(seen[2].slice(-2).map(x=>x.role),['assistant','tool']);
- assert.match(result,/已更新体重/);
- assert.doesNotMatch(result,/已经修改/); // Model prose is never evidence of writes.
+ assert.equal(result,'已经修改'); // Final model response is the surface; verified tool write authorizes this.
 });
 test('all calls in one turn execute sequentially with globally unique offsets',async()=>{
  const indexes=[];
@@ -136,4 +135,81 @@ test('legacy no-tool boilerplate echoed by the model does not reach users',async
   execute:async()=>{throw Error('unexpected')}});
  assert.doesNotMatch(r,/没有返回可执行的工具指令/);
  assert.match(r,/没有修改记录/);
+});
+
+test('read observation is private and the assistant answers the actual age question',async()=>{
+ const transcript=[];
+ const query=[{role:'user',content:'我儿多大了'}];
+ let turn=0;
+ const replyText='小好现在一岁四个月十三天啦。';
+ const r=await runWechatAgentLoop({
+  messages:query,tools:args.tools,
+  complete:async({messages})=>{
+   transcript.push(structuredClone(messages));
+   return turn++===0?reply(call('b','get_baby')):done(replyText);
+  },
+  execute:async()=> '小好 的档案：生日 2025-05-30 21:01，过敏和注意事项：无，备注：拉屎困难户'
+ });
+ assert.equal(r,replyText);
+ assert.equal(transcript.length,2);
+ assert.equal(transcript[1].at(-1).role,'tool');
+ assert.match(transcript[1].at(-1).content,/2025-05-30/);
+ assert.doesNotMatch(r,/档案|过敏|备注/);
+});
+test('an actual diary write authorizes a natural final reply without echoing the tool receipt',async()=>{
+ const natural='记好啦，小好昨晚频繁夜醒的情况已记到昨天的日记里。';
+ const r=await runWechatAgentLoop({...args,
+  complete:async({round})=>round===0?reply(call('create','create_milestone',{day:'2026-10-12'})):done(natural),
+  execute:async()=>({content:'已保存成长事件：12345678 · 2026-10-12 · 昨夜睡眠观察',committed:true})});
+ assert.equal(r,natural);
+ assert.doesNotMatch(r,/12345678/);
+});
+test('a read cannot authorize the model to invent a successful save',async()=>{
+ const r=await runWechatAgentLoop({...args,
+  complete:async({round})=>round===0?reply(call('read','get_baby')):done('我已经把小好的睡眠保存到日记啦！'),
+  execute:async()=> '小好 的档案：生日 2025-05-30'});
+ assert.doesNotMatch(r,/已经把|保存到日记/);
+ assert.match(r,/生日 2025-05-30/);
+});
+test('a failed write can be explained naturally without permitting another write',async()=>{
+ let writeCount=0,finalCount=0;
+ const r=await runWechatAgentLoop({...args,
+  complete:async()=>reply(call('write','create_milestone')),
+  execute:async()=>{writeCount++;return {content:'记录日期缺乏原消息的明确依据，请补充日期。',committed:false,halt:true}},
+  finalize:async({messages})=>{
+   finalCount++;
+   assert.equal(messages.at(-1).role,'tool');
+   return done('这次还没记进去，你想把它记在昨天还是今天？');
+  }});
+ assert.equal(writeCount,1);
+ assert.equal(finalCount,1);
+ assert.equal(r,'这次还没记进去，你想把它记在昨天还是今天？');
+});
+test('a failed write does not accept hallucinated success during finalization',async()=>{
+ const r=await runWechatAgentLoop({...args,
+  complete:async()=>reply(call('write','create_milestone')),
+  execute:async()=>({content:'记录日期缺乏依据，未保存。',committed:false,halt:true}),
+  finalize:async()=>done('已经成功保存到日记里啦！')});
+ assert.equal(r,'记录日期缺乏依据，未保存。');
+});
+test('model can answer after a runtime context tool without displaying the JSON',async()=>{
+ const payload='{"currentTimestamp":"2026-10-13T08:32:00Z","messageLocalTime":"16:32","timeZone":"Asia/Shanghai"}';
+ const r=await runWechatAgentLoop({...args,
+  complete:async({round})=>round===0?reply(call('clock','get_runtime_context')):done('现在是下午四点三十二分。'),
+  execute:async()=>payload});
+ assert.equal(r,'现在是下午四点三十二分。');
+ assert.doesNotMatch(r,/currentTimestamp|timeZone/);
+});
+
+test('reading the baby profile never authorizes a fake cheerful diary acknowledgement',async()=>{
+ const r=await runWechatAgentLoop({...args,
+  complete:async({round})=>round===0?reply(call('a','get_baby')):done('记好啦！小好的睡眠已经记进日记了。'),
+  execute:async()=> '小好 的档案：生日 2025-05-30'});
+ assert.equal(r,'小好 的档案：生日 2025-05-30');
+});
+test('a no-tool cheerful acknowledgement cannot impersonate a successful write',async()=>{
+ const r=await runWechatAgentLoop({...args,
+  complete:async()=>done('记好啦！'),
+  execute:async()=>{throw Error('unexpected')}});
+ assert.match(r,/没有实际保存或修改/);
 });
