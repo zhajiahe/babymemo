@@ -118,8 +118,9 @@ try{
   assert.equal(r.error,undefined);
   assert.equal(r.models,4);
   assert.equal(r.replies.length,2);
-  assert.equal(r.milestones.length,1);
-  assert.equal(r.milestones[0].day,yesterday);
+  const savedDiary=r.milestones.filter(x=>x.source_message_id?.endsWith('json-diary-two:step:1'));
+  assert.equal(savedDiary.length,1); // source-scoped, independent of earlier fixture writes
+  assert.equal(savedDiary[0].day,yesterday);
   assert.match(r.replies[1],/已保存成长事件/);
   assert.doesNotMatch(r.replies.join(' '),/currentTimestamp|messageTimestamp|timeZone|messageLocalDay|\{"current/);
   assert.match(r.modelMessages[1][0].content,new RegExp(yesterday)); // date in trusted instruction
