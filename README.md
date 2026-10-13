@@ -76,6 +76,8 @@ npm run test:e2e
 | Agent 的生产权限边界 | [Agent 部署 Runbook](docs/agent-deploy.md) |
 | 代码组织、变更质量、错误处理 | [工程规范](ENGINEERING.md) 与 [AGENTS.md](AGENTS.md) |
 | 自动化范围、真机验收缺口 | [QA 回归矩阵](docs/qa-regression-matrix.md) |
+| 微信 Harness 的真实场景缺陷与演进 | [Harness 场景审查](docs/wechat-harness-review.md) |
+| 微信 Harness 自动化测试设计 | [Harness 测试计划](docs/wechat-harness-test-plan.md) |
 | 私有 D1/R2 备份与恢复 | [备份与恢复](docs/BACKUP.md) |
 | 一次性旧照片缩略图维护 | [媒体维护](docs/MEDIA_MAINTENANCE.md) |
 | 旧 MyBaby 数据映射及限制 | [迁移计划](docs/MIGRATION.md) |
