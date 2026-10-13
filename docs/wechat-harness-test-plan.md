@@ -19,7 +19,7 @@
 | R-009 | 4轮、8工具、90秒软限制 | `wechat-agent-loop.test.mjs` | 达预算停止剩余操作，旧写入保留 | PR 待 CI |
 | R-010 | 非法工具结构、未知工具、重复调用 ID | `wechat-agent-loop.test.mjs`、`wechat-orchestrator.test.mjs` | 零越权工具执行 | PR 待 CI |
 | R-011 | 先查后改时的 ID 来源 | `wechat-worker-e2e.mjs` | ID 来自同条消息真实查询，不能跨宝宝或模型编造 | PR 待 CI |
-| R-012 | 写操作被策略拒绝 | `wechat-agent-loop.test.mjs` + 原有 policy suite | 停止后续写入；无隐式重试绕过 | PR 待补充 |
+| R-012 | 写操作被策略拒绝 | `wechat-agent-loop.test.mjs` + 原有 policy suite | 停止后续写入；无隐式重试绕过 | PR 待 CI |
 | R-013 | 真实 OpenRouter 连续两轮工具调用 | `Manual OpenRouter Live E2E`（待扩展） | 真模型发出两轮规范 tool_calls/tool_call_id；模型耗时/费用可测 | **仅手动，未验证** |
 | R-014 | 真实微信账号、短期上下文、媒体/文本交错 | 真机与真实 iLink 专项 | 多账号独立、同一个消息 replay、查询修改结果正确 | **人工待验收** |
 
