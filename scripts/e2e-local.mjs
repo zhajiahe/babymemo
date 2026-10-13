@@ -307,6 +307,36 @@ async function e2e() {
     assert.equal(state.data.openrouter.managedByDeployment,false);
     assert.equal(JSON.stringify(state.data).includes('sk-or-local-fake'),false);
   });
+  await step('browser upload performance metric endpoint is authenticated and excludes user identifiers',async()=>{
+    const metric={stage:'client',size:1048576,durationMs:1200,status:'ok'};
+    assert.equal((await json('/api/upload/metrics',{method:'POST',anonymous:true,body:metric})).status,401);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:metric,headers:{Origin:'https://attacker.invalid'}})).status,403);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:{...metric,stage:'filename'}})).status,400);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:{...metric,durationMs:Infinity}})).status,400);
+    assert.equal((await json('/api/upload/metrics',{method:'POST',body:metric})).status,200);
+  });
+  await step('direct photo fast path is private, idempotent and does not create multipart sessions',async()=>{
+    const id='2f0e90a1-bb1a-4f3f-8090-99f26a000001';
+    const sample=Uint8Array.from([255,216,255,224,0,16,74,70,73,70,73,255,217]);
+    const headers={'Content-Type':'image/jpeg','x-baby-id':babyId,'x-upload-day':'2026-01-12',
+     'x-upload-title':encodeURIComponent('小照片.jpg')};
+    assert.equal((await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers,anonymous:true})).status,401);
+    assert.equal((await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers:{...headers,Origin:'https://attacker.invalid'}})).status,403);
+    assert.equal((await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers:{...headers,'Content-Type':'text/html'}})).status,400);
+    const first=await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers});
+    assert.equal(first.status,201,JSON.stringify(first.data));
+    const repeat=await json('/api/upload/direct/'+id,{method:'PUT',body:sample,headers});
+    assert.equal(repeat.status,200);assert.equal(repeat.data.alreadyCompleted,true);
+    const conflict=await json('/api/upload/direct/'+id,{method:'PUT',body:Uint8Array.from([...sample,1]),headers});
+    assert.equal(conflict.status,409);
+    const read=await request('/api/media/'+id+'/content');
+    assert.equal(read.status,200);assert.deepEqual(new Uint8Array(await read.arrayBuffer()),sample);
+    const list=await json('/api/media?babyId='+babyId);
+    assert.equal(list.data.items.filter(item=>item.id===id).length,1);
+    const pending=await json('/api/upload/pending?babyId='+babyId);
+    assert.equal(pending.data.items.some(item=>item.id===id),false);
+    assert.equal((await json('/api/media/'+id,{method:'DELETE'})).status,200);
+  });
   let mediaId,original;
   await step('image multipart start and pending incomplete uploads',async()=>{
     original=Uint8Array.from([255,216,255,224,1,2,3,4,5,255,217]);

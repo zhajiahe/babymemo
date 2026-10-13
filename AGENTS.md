@@ -59,7 +59,7 @@ npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
 - 通用无业务组件 `Logo / Notice / Field / Primary / Card / Pager` 位于 `src/components/ui.tsx`；先复用它们，再考虑添加新原语。业务组件已拆分至 `src/features/`；保持 `App` 的协调职责，不要为小修复重写页面。
 - API 涉及用户数据的操作继续强制认证；状态变更请求不得绕过 `sameOrigin` 校验。错误区分 `401`（未登录）、`403`（Origin）、网络暂时不可达；不要将网络中断误判为需要重新初始化。
 - D1 是用户、宝宝、成长记录、里程碑、媒体索引及加密配置的事实来源。结构修改必须提交新的 `migrations/` SQL，并考虑已部署数据库的兼容性；**禁止删表、清库、重建资源来“修复”迁移**。
-- R2 保存媒体对象；读取仍经登录后的 Worker 代理。上传保持分片、并发上限、重试与失败取消逻辑；不要把视频全量读进 Worker 或为方便直接公开 R2 bucket。移动 Safari 需覆盖 HEIC/MOV、慢网和取消后的状态。
+- R2 保存媒体对象；读取仍经登录后的 Worker 代理。<=5MiB 原件可通过已认证的单请求 `/api/upload/direct/:id` 写入私有 R2，较大原件保留 Multipart 分片/断点续传；网页并发、微信 R2 分片并发必须有上限和失败回滚。不要把视频全量读进 Worker 或公开 R2 bucket。上传耗时日志仅可保留固定 channel、stage、sizeBand、durationMs、status 字段，禁止含文件名、媒体 URL、宝宝或微信标识；详见 `docs/media-upload-performance.md`。移动 Safari 需覆盖 HEIC/MOV、慢网和取消后的状态。
 - 新增或修改按宝宝区分的 AI / 记录功能时，始终检查 `babyId` 上下文，避免不同宝宝的记录混在一起。AI 不得编造来源于家庭数据库的记录；明确区分建议和真实记录。
 - 微信 iLink 集成是不稳定的第三方协议。启停、重绑、去重、轮询游标、失败回滚需保持一致；不要声称扫码成功意味着消息收发已真实验证。
 - 变动只含文档时不必触碰 Cloudflare 资源，也不应做看似无关的 UI 或依赖升级。
