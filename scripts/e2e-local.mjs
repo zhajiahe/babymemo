@@ -885,11 +885,16 @@ async function browserE2e(){
       const bytes=await(await fetch(base+'/api/media/'+saved.id+'/content',{headers:{Cookie:sessionCookie}})).arrayBuffer();assert.ok(Buffer.from(bytes).equals(original));
     });
     await step((useWebKit?'WebKit':'Chromium')+': family-facing WeChat status across mobile and desktop widths',async()=>{
+      // This UI fixture mocks HTTP; isolate it from Service Worker interception.
+      // The real application/browser flow keeps Service Workers enabled.
+      const statusContext=await browser.newContext({viewport:{width:1280,height:900},serviceWorkers:'block',...(useWebKit?{isMobile:true,hasTouch:true,deviceScaleFactor:2}:{})});
+      await statusContext.addCookies(await context.cookies());const page=await statusContext.newPage();
+      try{
       const stamp=new Date().toISOString();const members=[{id:'status-normal',label:'测试爸爸',enabled:true},{id:'status-saving',label:'测试妈妈',enabled:true},{id:'status-expired',label:'测试外婆',enabled:false},{id:'status-paused',label:'测试爷爷',enabled:false}];
       const statuses=Object.fromEntries(members.map(member=>[member.id,{connectionId:member.id,connected:true,enabled:member.enabled,lastPoll:stamp,lastMessage:stamp,lastError:member.id==='status-expired'?'WECHAT_AUTH_EXPIRED':null,media:{pending:member.id==='status-saving'?2:0,saving:member.id==='status-saving',retrying:false,lastError:null,lastCompleted:null}}]));
       await page.route('**/api/state',async route=>{const response=await route.fetch();const data=await response.json();data.wechat.connections=members.map(member=>({...member,createdAt:stamp,updatedAt:stamp}));await route.fulfill({response,json:data})});
       await page.route('**/api/settings/wechat/connections/*/status',async route=>{const id=new URL(route.request().url()).pathname.split('/').at(-2);await route.fulfill({json:statuses[id]})});
-      await page.reload();await page.locator('.mobile-nav button[aria-label="设置"]').click();await page.getByText('运行正常',{exact:true}).waitFor();
+      await page.goto(base+'/',{waitUntil:'domcontentloaded'});await page.locator('.mobile-nav button[aria-label="设置"]').click();await page.getByText('运行正常',{exact:true}).waitFor();
       for(const label of ['媒体保存中','需要重新绑定','已暂停'])assert.equal(await page.getByText(label,{exact:true}).isVisible(),true);
       assert.equal(await page.locator('.status-json').count(),0);
       for(const width of [320,375,768,1280]){await page.setViewportSize({width,height:900});const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,'WeChat status overflow at '+width);if(width===320||width===1280)await page.screenshot({path:join(evidence,'wechat-status-'+width+'.png'),fullPage:true})}
@@ -897,6 +902,7 @@ async function browserE2e(){
       statuses['status-saving'].media={pending:0,saving:false,retrying:false,lastError:{code:'WECHAT_CDN_HTTP_503',attempt:3,at:stamp},lastCompleted:null};
       await details.getByRole('button',{name:'状态',exact:true}).click();await page.getByText('部分媒体保存失败',{exact:true}).waitFor();
       await page.unroute('**/api/state');await page.unroute('**/api/settings/wechat/connections/*/status');
+      }finally{await statusContext.close()}
     });
     if(!useWebKit){const {browserWebManagement}=await import('./browser-web-management.mjs');await browserWebManagement({page,context,base,evidence,step}).catch(async error=>{console.error('Synthetic shell cache: '+JSON.stringify(await page.evaluate(async()=>{const keys=await caches.keys();return Promise.all(keys.filter(k=>k.startsWith('babymemo-shell')).map(async key=>{const cache=await caches.open(key),shell=await cache.match('/index.html');return{key,shell:!!shell,redirected:shell?.redirected,urls:(await cache.keys()).map(r=>new URL(r.url).pathname)}}))})));console.error('Synthetic web-management failure view: '+(await page.locator('body').innerText()).slice(0,5000));await page.screenshot({path:join(evidence,'web-management-failure.png'),fullPage:true});throw error})}
     assert.deepEqual(errors,[],'Uncaught browser exceptions');

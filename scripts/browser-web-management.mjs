@@ -49,11 +49,11 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   const row=page.locator('.timeline-item').filter({hasText:'web-ui-edited'});
   await row.getByRole('button',{name:'编辑记录'}).click();await context.setOffline(true);
   await page.getByLabel('备注',{exact:true}).fill('offline-chain-one');await page.getByRole('button',{name:'保存修改',exact:true}).click();
-  await page.locator('.timeline-item').filter({hasText:'offline-chain-one'}).getByRole('button',{name:'编辑记录'}).click();await page.getByLabel('备注',{exact:true}).fill('offline-chain-two');await page.getByRole('button',{name:'保存修改',exact:true}).click();
+  await page.locator('.timeline-item').filter({hasText:'offline-chain-one'}).getByRole('button',{name:'编辑记录'}).click();await page.getByLabel('备注',{exact:true}).fill('offline-chain-two');await page.getByRole('button',{name:'保存修改',exact:true}).click();await page.locator('.timeline-item').filter({hasText:'offline-chain-two'}).waitFor();await page.getByRole('button',{name:'保存记录',exact:true}).waitFor();
   await context.setOffline(false);await page.waitForFunction(()=>!document.querySelector('.offline-status'),null,{timeout:30000});
   const list=await context.request.get(base+'/api/records/growth?babyId='+babyId+'&q=offline-chain-two',{headers:requestHeaders});const target=(await list.json()).items[0];assert.ok(target);
   await page.locator('.timeline-item').filter({hasText:'offline-chain-two'}).getByRole('button',{name:'编辑记录'}).click();
-  await context.setOffline(true);await page.getByLabel('备注',{exact:true}).fill('offline-conflict-preserved');await page.getByRole('button',{name:'保存修改',exact:true}).click();
+  await context.setOffline(true);await page.getByLabel('备注',{exact:true}).fill('offline-conflict-preserved');await page.getByRole('button',{name:'保存修改',exact:true}).click();await page.locator('.timeline-item').filter({hasText:'offline-conflict-preserved'}).waitFor();await page.getByRole('button',{name:'保存记录',exact:true}).waitFor();
   // A different client changes D1 while the browser remains offline.
   const external=await fetch(base+'/api/records/growth/'+target.id,{method:'PATCH',headers:{...requestHeaders,'Content-Type':'application/json'},body:JSON.stringify({babyId,day:target.day,weight:14,height:null,headCircumference:null,notes:'server-conflict-wins',expectedUpdatedAt:target.updated_at})});assert.equal(external.status,200);
   await context.setOffline(false);await page.getByRole('button',{name:'查看待同步内容',exact:true}).click();await page.locator('.offline-jobs').getByText('记录已被其他设备修改。请重新载入后核对并编辑。',{exact:true}).waitFor();

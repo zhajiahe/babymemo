@@ -1,15 +1,7 @@
 export const MUTATING_ACTIONS: Set<string>;
-export const QUERY_KINDS: Record<string,string|null>;
 export function validDay(s:unknown):boolean;
 export function messageTime(raw:any,now?:number):number;
 export function dayInZone(now:number,tz?:string):string;
-export function relativeDay(offset:number,now:number,tz:string):string;
-export function explicitDay(text:string,now:number,tz:string):string|null;
-export function isNegativeOrConditional(text:string,action:string):boolean;
-export function groundingOfDate(args:any,text:string,tz:string,at:number):boolean;
-export function measurementGrounded(args:any,text:string):boolean;
-export function newDayGrounded(newDay:string,text:string,at:number,tz:string):boolean;
-export function guardAction(action:string,args:any,text:string,baby:any,at?:number):string|null;
+export function guardAction(action:string,args:any,text:string,baby?:any,at?:number):string|null;
 export function isCancel(text:string):boolean;
 export function isUndo(text:string):boolean;
-export function isFollowup(text:string):boolean;

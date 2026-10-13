@@ -5,28 +5,24 @@ import {quickCommand,runWechatPlan} from '../src/wechat-orchestrator.mjs';
 import {runWechatTool} from '../src/wechat-harness.mjs';
 import {purgeDeletedMedia} from '../src/media-retention.mjs';
 const at=Date.parse('2026-10-13T04:00:00Z'),baby={id:'synthetic',name:'测试宝宝',time_zone:'Asia/Shanghai'};
-test('queries repeating values or dates cannot authorise any mutating tool',async()=>{
- const env={DB:{prepare(){return {bind(){return this},async first(){return null},async run(){throw Error('Unexpected write')},async all(){throw Error('Unexpected tool query')}}}}};
- for(const text of ['查询测试宝宝今天体重10.5kg有没有记录','看看今天10.5kg有没有记录','今天有没有记录第一次走路','怎么记录今天10.5kg','今天10.5kg？','今天记录10.5kg是否保存了？','今天修改后的体重10.5kg是多少？']){
-  const args={day:'2026-10-13',weight:10.5};
-  assert.ok(guardAction('create_growth',args,text,baby,at));
-  assert.match(await runWechatPlan(env,baby,[{type:'function',function:{name:'create_growth',arguments:JSON.stringify(args)}}],{messageId:'read-only',text,at}),/未授权/);
- }
- assert.equal(guardAction('create_growth',{day:'2026-10-13',weight:10.5},'查询昨天的记录，并记录今天体重10.5kg',baby,at),null);
- assert.equal(guardAction('create_growth',{day:'2026-10-13',weight:10.5},'昨天身高80cm，今天体重10.5kg',baby,at),null);
- assert.ok(guardAction('create_growth',{day:'2026-10-12',weight:10.5},'昨天身高80cm，今天体重10.5kg',baby,at));
+test('explicit refusal blocks writes even when the model supplies a valid tool',async()=>{
+ const env={DB:{prepare(){return {bind(){return this},async first(){return null},async run(){throw Error('Unexpected write')}}}}};
+ const args={day:'2026-10-13',weight:10.5},text='不要保存今天体重10.5kg';
+ assert.ok(guardAction('create_growth',args,text,baby,at));
+ assert.match(await runWechatPlan(env,baby,[{type:'function',function:{name:'create_growth',arguments:JSON.stringify(args)}}],{messageId:'read-only',text,at}),/未修改/);
 });
 test('complete milestone text does not get the missing-weight shortcut',async()=>{
  assert.equal(await quickCommand({},baby,'记录成长瞬间：测试宝宝今天会走路了',{pending:null},at),null);
 });
-test('single and recent media edits accept grounded dates and reject invented dates',async()=>{
+test('single and recent media edits validate real calendar dates before writing',async()=>{
  const record={id:'12345678-abcd-4000-8000-000000000000',baby_id:baby.id,day:'2026-10-01'};
  const updates=[];
  const env={DB:{prepare(sql){let values;return{bind(...v){values=v;return this},async all(){return{results:[record]}},async run(){updates.push({sql,values});return{meta:{changes:1}}}}}}};
  assert.match(await runWechatTool(env,baby,'update_media',{day:'2026-10-01',newDay:'2026-10-02'},'edit','把10.1号照片改到10月2日',{at}),/已更新/);
  assert.equal(updates[0].values[0],'2026-10-02');
- assert.ok(guardAction('update_milestone',{day:'2026-10-01',newDay:'2026-10-09'},'把10月1日成长瞬间改成10月2日',baby,at));
- assert.equal(guardAction('update_recent_media',{newDay:'2026-10-12'},'把刚才的照片日期改成昨天',baby,at),null);
+ assert.match(await runWechatTool(env,baby,'update_media',{day:'2026-10-01',newDay:'2026-02-30'},'invalid','改成二月底',{at}),/新日期不正确/);
+ assert.match(await runWechatTool(env,baby,'update_recent_media',{newDay:'2026-02-30'},'recent-invalid','那批日期换一下',{at,thread:{lastMedia:{babyId:baby.id,ids:[record.id],expiresAt:at+60000}}}),/有效的新日期/);
+ assert.equal(updates.length,1,'invalid dates must not issue any update');
 });
 test('a restore winning before the purge claim preserves both objects',async()=>{
  const deleted=[];
