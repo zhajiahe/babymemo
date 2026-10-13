@@ -753,6 +753,7 @@ async function browserE2e(){
       // A tiny valid PNG; user photos and R2 production storage are untouched.
       const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ln0AAAAASUVORK5CYII=','base64');
       await page.getByRole('button',{name:'添加照片或视频'}).click();
+      await page.getByLabel('描述（可选，本次选择的照片或视频共用）').fill('浏览器上传的描述');
       await page.locator('input[type="file"]').setInputFiles({
         name:'browser-e2e.png',mimeType:'image/png',buffer:png
       });
@@ -764,15 +765,19 @@ async function browserE2e(){
       assert.equal(await page.getByText('仅看收藏').count(),0);
       await img.waitFor();
       await page.waitForFunction(()=>document.querySelector('.media-viewer-stage img')?.naturalWidth > 0);
+      assert.equal(await page.getByLabel('照片或视频描述').inputValue(),'浏览器上传的描述');
       await page.screenshot({path:join(evidence,'desktop-album-viewer.png'),fullPage:false});
     });
     await step((useWebKit?'WebKit':'Chromium')+': gallery metadata edit and delete',async()=>{
             await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
+      await page.getByLabel('照片或视频描述').fill('浏览器编辑后的描述');
       await page.getByRole('button',{name:/保存信息/}).click();
       await page.getByText('照片信息已更新').waitFor({timeout:15000});
       const source=await page.locator('.media-viewer-stage img').getAttribute('src');
       const deletedId=source?.match(/\/api\/media\/([^/]+)\/content/)?.[1];
       assert.ok(deletedId,'viewer must point to real saved media');
+      const updated=await json('/api/media?babyId='+(await json('/api/state')).data.babies[0].id);
+      assert.equal(updated.data.items.find(item=>item.id===deletedId)?.description,'浏览器编辑后的描述');
       page.once('dialog',dialog=>void dialog.accept());
       await page.getByRole('button',{name:'移入回收站'}).click();
       await page.getByRole('dialog',{name:'相册预览'}).waitFor({state:'hidden',timeout:15000});
