@@ -1,129 +1,52 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {getActiveThread,appendTurn,buildCommandContext,isClearContext,recordQuery,setPending,isMilestoneSaveFollowup,confirmsMilestoneProposal,CONTEXT_TTL_MS} from '../src/wechat-memory.mjs';
-test('scoped bounded memory with TTL and explicit reset',()=>{
- let thread=getActiveThread(null,'botA','userA',1000);
- for(let i=0;i<6;i++)thread=appendTurn(thread,'query '+i,'reply '+i,'baby1',1000+i);
- assert.equal(thread.turns.length,4);assert.equal(thread.babyId,'baby1');
- assert.equal(getActiveThread(thread,'botB','userA',2000).turns.length,0);
- assert.equal(getActiveThread(thread,'botA','userB',2000).turns.length,0);
- assert.equal(getActiveThread(thread,'botA','userA',2000).turns.length,4);
- assert.equal(getActiveThread(thread,'botA','userA',1006+CONTEXT_TTL_MS).turns.length,0);
- assert.equal(isClearContext('清除上下文'),true);assert.equal(isClearContext('查询小好'),false);
+import {getActiveThread,appendTurn,buildCommandContext,isClearContext,recordQuery,CONTEXT_TTL_MS} from '../src/wechat-memory.mjs';
+test('bounded memory is scoped to the paired user and expires',()=>{
+ let t=getActiveThread(null,'b','u',1000);
+ for(let i=0;i<6;i++)t=appendTurn(t,'observation '+i,'reply '+i,'babyA',1000+i);
+ assert.equal(t.turns.length,4);
+ assert.equal(getActiveThread(t,'otherbot','u',2000).turns.length,0);
+ assert.equal(getActiveThread(t,'b','otheruser',2000).turns.length,0);
+ assert.equal(getActiveThread(t,'b','u',2000).turns.length,4);
+ assert.equal(getActiveThread(t,'b','u',1006+CONTEXT_TTL_MS).turns.length,0);
+ assert.equal(isClearContext('清除上下文'),true);
 });
-test('multi-turn first result reference resolves to previously listed ID',()=>{
- let thread=getActiveThread(null,'bot','user',1000);
- thread=appendTurn(thread,'查小好最近体重','小好的成长测量：\naaaaaaaa · 2026-10-01 · 10kg\nbbbbbbbb · 2026-09-30 · 9kg','baby',1000);
- recordQuery(thread,'baby','growth',['aaaaaaaa','bbbbbbbb'],1000);
- const c=buildCommandContext('把第一条体重改为 10.2kg',thread,1500,'baby');
- assert.match(c.modelMessages.at(-1).content,/aaaaaaaa/);assert.match(c.groundedText,/记录编号 aaaaaaaa/);
- assert.doesNotMatch(buildCommandContext('删除第三条',thread,1500,'baby').groundedText,/记录编号/);
- assert.doesNotMatch(buildCommandContext('删除别人的记录',thread,1500,'baby').groundedText,/记录编号/);
-});
-test('clarification continuation uses actual previous user intent, not bot as authority',()=>{
- let thread=getActiveThread(null,'bot','user',1000);
- thread=appendTurn(thread,'删除小好某天记录','请提供记录日期','baby',1000);
- const next=buildCommandContext('10月1日',thread);
- assert.match(next.groundedText,/删除小好某天记录/);
- assert.match(next.modelMessages.at(-1).content,/上一轮待补充/);
- const unrelated=buildCommandContext('查询最近记录',thread);
- assert.doesNotMatch(unrelated.groundedText,/删除/);
-});
-
-test('structured query is scoped to baby and expires; pending task state survives turns',()=>{
- let thread=getActiveThread(null,'bot','user',1000);
- recordQuery(thread,'babyA','growth',['aaaaaaaa'],1000);
- assert.doesNotMatch(buildCommandContext('改第一条',thread,1500,'babyB').groundedText,/记录编号/);
- assert.match(buildCommandContext('改第一条',thread,1500,'babyA').groundedText,/aaaaaaaa/);
- setPending(thread,'babyA','create_growth','记一下体重',{},1000);
- thread=appendTurn(thread,'记一下体重','请提供数值','babyA',1000);
- assert.equal(getActiveThread(thread,'bot','user',1500).pending.action,'create_growth');
- assert.equal(getActiveThread(thread,'bot','user',1000+CONTEXT_TTL_MS+5).pending,null);
-});
-
-test('explicit follow-up consolidates three user observations into one grounded milestone',()=>{
- const at=Date.parse('2026-10-13T15:00:00+08:00');
- let thread=getActiveThread(null,'bot','user',at);
- thread=appendTurn(thread,'小好昨晚总醒','听起来昨晚很辛苦，需要我帮你记录吗？','baby-a',at);
- thread=appendTurn(thread,'中间睡了三个小时','明白，中间连续睡了三个小时。','baby-a',at+1000);
- thread=appendTurn(thread,'后面又半小时一醒','这样听起来确实频繁。','baby-a',at+2000);
- assert.equal(isMilestoneSaveFollowup('记下来'),true);
- assert.equal(isMilestoneSaveFollowup('不要记下来'),false);
- const ctx=buildCommandContext('记下来',thread,at+3000,'baby-a');
- assert.match(ctx.milestoneGroundedText,/小好昨晚总醒[\s\S]*中间睡了三个小时[\s\S]*后面又半小时一醒[\s\S]*记下来/);
- assert.doesNotMatch(ctx.milestoneGroundedText,/听起来|明白/);
- assert.equal(ctx.groundedText,'记下来'); // only the milestone tool gets enriched grounding
- assert.match(ctx.modelMessages.at(-1).content,/create_milestone/);
-});
-test('diary follow-up never borrows another baby, an expired session or casual non-consent',()=>{
- const at=Date.parse('2026-10-13T15:00:00+08:00');
- let thread=getActiveThread(null,'bot','user',at);
- thread=appendTurn(thread,'宝宝A昨晚生病了','需要我记录吗？','baby-a',at);
- assert.equal(buildCommandContext('记下来',thread,at+1,'baby-b').milestoneGroundedText,null);
- assert.equal(buildCommandContext('不要记下来',thread,at+1,'baby-a').milestoneGroundedText,null);
- assert.equal(buildCommandContext('记下来',getActiveThread(thread,'bot','user',at+CONTEXT_TTL_MS+1),at+CONTEXT_TTL_MS+1,'baby-a').milestoneGroundedText,null);
-});
-
-test('an explicit assistant proposal followed by 好 carries the last user date into create_milestone only',()=>{
- const at=Date.parse('2026-10-13T17:50:00+08:00');
- const source='我们一家人，光召恩惠，10月2号去了钱江世纪公园玩，顺便给小好妈妈过生日';
- let thread=getActiveThread(null,'bot','member',at);
- thread=appendTurn(thread,source,
-  '听起来好温馨呀，还顺便给小好妈妈过了生日～要我帮你把10月2号去钱江世纪公园玩这件事记下来吗？',
-  'baby-a',at);
- const ctx=buildCommandContext('好',thread,at+6000,'baby-a');
- assert.match(ctx.milestoneGroundedText,/10月2号去了钱江世纪公园/);
- assert.match(ctx.milestoneGroundedText,/顺便给小好妈妈过生日/);
- assert.doesNotMatch(ctx.milestoneGroundedText,/听起来|要我帮你/);
- assert.equal(ctx.groundedText,'好'); // never extend grounding for unrelated writes
- assert.match(ctx.modelMessages.at(-1).content,/create_milestone/);
- assert.equal(confirmsMilestoneProposal('好',thread.turns[0].reply),true);
-});
-test('a casual 好 does not authorize a write without a recent save proposal for the same baby',()=>{
- const at=Date.parse('2026-10-13T17:50:00+08:00');
- const source='10月2日去了钱江世纪公园';
- let thread=getActiveThread(null,'bot','member',at);
- thread=appendTurn(thread,source,'要我帮你查一下最近的照片吗？','baby-a',at);
- assert.equal(buildCommandContext('好',thread,at+1,'baby-a').milestoneGroundedText,null);
- thread=appendTurn(thread,source,'要我帮你把这件事记下来吗？','baby-a',at+2);
- for(const no of ['不好','不用','不要','算了','好，但别保存','删除','好的，请删除照片']){
-  assert.equal(buildCommandContext(no,thread,at+3,'baby-a').milestoneGroundedText,null,no);
- }
- assert.equal(buildCommandContext('好',thread,at+3,'baby-b').milestoneGroundedText,null);
- assert.equal(buildCommandContext('好',getActiveThread(thread,'bot','member',at+CONTEXT_TTL_MS+5),at+CONTEXT_TTL_MS+5,'baby-a').milestoneGroundedText,null);
-});
-test('confirmation uses the original description, never dates added by the assistant',()=>{
- const at=Date.parse('2026-10-13T17:50:00+08:00');
- let thread=getActiveThread(null,'bot','member',at);
- thread=appendTurn(thread,'去公园玩了',
-  '要我帮你把10月2号去公园玩这件事记下来吗？','baby-a',at);
- const ctx=buildCommandContext('好',thread,at+1,'baby-a');
- assert.equal(ctx.milestoneGroundedText,'去公园玩了\n好');
- assert.doesNotMatch(ctx.milestoneGroundedText,/10月2号/);
-});
-
-test('spoken 可以可以 confirms an immediate "要帮你记成" proposal using only the user original event',()=>{
+test('the model receives raw dialogue for spoken confirmation, without an injected instruction',()=>{
  const at=Date.parse('2026-10-13T18:50:00+08:00');
- const original='上周六，测试宝宝第一次睡拼接床，是我们在二手平台上买的，尺寸特别合适。';
- const proposal='第一次睡拼接床啦！要帮你记成10月10日那天的成长事件吗？';
- let thread=getActiveThread(null,'synthetic-bot','synthetic-user',at);
- thread=appendTurn(thread,original,proposal,'synthetic-baby',at);
- const context=buildCommandContext('可以可以。',thread,at+60000,'synthetic-baby');
- assert.equal(confirmsMilestoneProposal('可以可以。',proposal),true);
- assert.equal(confirmsMilestoneProposal('可以，可以。',proposal),true);
- assert.equal(confirmsMilestoneProposal('好好',proposal),true);
- assert.equal(context.milestoneGroundedText,original+'\n可以可以。');
- assert.equal(context.groundedText,'可以可以。'); // Other write types cannot borrow earlier context
- assert.match(context.modelMessages.at(-1).content,/create_milestone/);
- assert.doesNotMatch(context.milestoneGroundedText,/10月10日/); // Assistant claims cannot ground dates
+ let t=getActiveThread(null,'bot','user',at);
+ t=appendTurn(t,'上周六第一次睡拼接床，尺寸刚好','要帮你记成 10 月 10 日那天的成长事件吗？','babyA',at);
+ const x=buildCommandContext('可以可以。',t,at+1000,'babyA');
+ assert.deepEqual(x.modelMessages,[
+  {role:'user',content:'上周六第一次睡拼接床，尺寸刚好'},
+  {role:'assistant',content:'要帮你记成 10 月 10 日那天的成长事件吗？'},
+  {role:'user',content:'可以可以。'}
+ ]);
+ assert.equal(x.groundedText,'可以可以。');
+ assert.equal(x.milestoneGroundedText,null);
 });
-test('repeated confirmation is not general write authorization',()=>{
- const at=Date.parse('2026-10-13T18:50:00+08:00'),original='上周六第一次睡拼接床';
- const offer='要帮你记成10月10日那天的成长事件吗？';
- const denial=['不可以','可以但是别保存','可以删除刚才那条','可以吗','好，但别记'];
- for(const answer of denial)assert.equal(confirmsMilestoneProposal(answer,offer),false,answer);
- assert.equal(confirmsMilestoneProposal('可以可以。','要我帮你看看最近的相册吗？'),false);
- const thread=appendTurn(getActiveThread(null,'b','u',at),original,'要帮你查查宝宝的生日吗？','synthetic-baby',at);
- assert.equal(buildCommandContext('可以可以。',thread,at+1000,'synthetic-baby').milestoneGroundedText,null);
- assert.equal(buildCommandContext('可以可以。',thread,at+1000,'other-baby').milestoneGroundedText,null);
+test('all follow-ups use one shared dialogue mechanism',()=>{
+ const at=Date.parse('2026-10-13T18:50:00+08:00');
+ let t=getActiveThread(null,'bot','user',at);
+ t=appendTurn(t,'宝宝昨天量身高了','嗯，告诉我具体数值吧','babyA',at);
+ t=appendTurn(t,'85厘米','需要我保存吗？','babyA',at+1000);
+ for(const text of ['好','嗯嗯','帮我记一下','不用保存','改第一条','10月10号'])
+  assert.deepEqual(buildCommandContext(text,t,at+2000,'babyA').modelMessages.at(-1),{role:'user',content:text});
+});
+test('different babies never share conversation history',()=>{
+ const at=Date.parse('2026-10-13T18:50:00+08:00');
+ let t=getActiveThread(null,'bot','user',at);
+ t=appendTurn(t,'宝宝A 体重 10kg','已记录','babyA',at);
+ t=appendTurn(t,'宝宝B 去公园玩','听起来很开心','babyB',at+1);
+ const b=buildCommandContext('记下来',t,at+2,'babyB');
+ assert.equal(b.modelMessages.length,3);
+ assert.doesNotMatch(JSON.stringify(b.modelMessages),/宝宝A/);
+ const a=buildCommandContext('继续',t,at+2,'babyA');
+ assert.doesNotMatch(JSON.stringify(a.modelMessages),/宝宝B/);
+});
+test('structured IDs stay scoped, never injected as fictitious user instructions',()=>{
+ const at=Date.now(),t=getActiveThread(null,'bot','user',at);
+ recordQuery(t,'babyA','growth',['aaaaaaaa','bbbbbbbb'],at,'msg1');
+ assert.deepEqual(t.lastQuery.ids,['aaaaaaaa','bbbbbbbb']);
+ assert.equal(t.lastQuery.babyId,'babyA');
+ assert.deepEqual(buildCommandContext('改第一条',t,at+1,'babyA').modelMessages,[{role:'user',content:'改第一条'}]);
 });

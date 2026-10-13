@@ -4,7 +4,7 @@ import {wechatSystemPrompt,wechatFinalMessages} from '../src/wechat-prompt.mjs';
 test('system prompt stays brief and free of age/intent heuristics',()=>{
  const s=wechatSystemPrompt({babyName:'小好',localDay:'2026-10-13',timeZone:'Asia/Shanghai'});
  assert.ok(s.length<350,'Prompt grew to '+s.length);
- for(const item of ['先查工具','create_milestone','用户明确同意','真实','小好','2026-10-13'])assert.ok(s.includes(item),item);
+ for(const item of ['对话历史','调用工具','create_milestone','用户明确同意','真实','小好','2026-10-13'])assert.ok(s.includes(item),item);
  for(const item of ['我儿多大了','昨晚、昨夜、昨天','多大了/几个月','第二次调用'])assert.ok(!s.includes(item),item);
 });
 test('final synthesis is limited to actual observations and commits',()=>{

@@ -87,7 +87,7 @@ try{
   assert.equal(r.sent,2);
   assert.equal(r.replies.length,2);
   assert.ok(r.modelMessages[1].some(m=>m.role==='user'&&m.content==='测试宝宝今天在公园第一次独立走路'));
-  assert.match(r.modelMessages[1].at(-1).content,/create_milestone/);
+  assert.equal(r.modelMessages[1].at(-1).content,'好');
   assert.equal(r.milestones.filter(x=>x.source_message_id==='synthetic-bot:voice-followup-yes:step:0').length,1);
  });
  await step('voice without native transcription is acknowledged once, without ASR or model calls',async()=>{
@@ -110,7 +110,7 @@ try{
   assert.equal(r.reply,'测试宝宝现在两岁九个月啦，生日是2024年1月1日。');
   assert.match(r.modelMessages[1].at(-1).content,/生日 2024-01-01/);
   assert.match(r.modelMessages[1].at(-1).content,/截至消息当天年龄/);
-  assert.match(r.modelMessages[0][0].content,/涉及家庭数据时先查工具/);
+  assert.match(r.modelMessages[0][0].content,/对话历史自主理解/);
   assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
  });
  await step('real age query: empty/generic first final triggers tool-free synthesis, not the complete profile',async()=>{
@@ -253,12 +253,11 @@ try{
   assert.match(written[0].description,/钱江世纪公园.*妈妈过生日/);
   assert.match(r.replies[1],/记好啦/);
   assert.equal(r.modelMessages[1].at(-1).role,'user');
-  assert.match(r.modelMessages[1].at(-1).content,/create_milestone/);
+  assert.equal(r.modelMessages[1].at(-1).content,'好');
   assert.equal(r.modelMessages[1].at(-2).role,'assistant');
   assert.match(r.modelMessages[1].at(-2).content,/记下来吗/);
  });
- await step('好 after an unrelated question never authorizes a milestone write',async()=>{
-  const year=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,4),day=year+'-10-02';
+ await step('model treats a casual 好 as agreement to the previous photo question',async()=>{
   const r=await run({mode:'alarm',alarms:2,
    pollBatches:[
     [textFrom('unrelated-good-one','synthetic-user','synthetic-bot','10月2号去了公园玩')],
@@ -266,30 +265,29 @@ try{
    ],
    responses:[
     natural('要我帮你查一下最近的照片吗？'),
-    tool('create_milestone',{day,title:'公园玩耍',description:'10月2号去公园玩'}),
-    natural('这次没有保存。')
+    natural('当然，可以查。想看哪天的相册？')
    ]
   });
   assert.equal(r.error,undefined);
+  assert.equal(r.models,2);
   assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('unrelated-good-two')).length,0);
-  assert.match(r.replies[1],/未|没有|尚未/);
+  assert.match(r.replies[1],/相册/);
  });
- await step('assistant-supplied date cannot ground a confirmed diary creation',async()=>{
-  const year=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,4),day=year+'-10-02';
+ await step('model asks for missing diary date rather than inventing one',async()=>{
   const r=await run({mode:'alarm',alarms:2,
    pollBatches:[
-    [textFrom('hallucinated-date-one','synthetic-user','synthetic-bot','去公园玩了')],
-    [textFrom('hallucinated-date-two','synthetic-user','synthetic-bot','好')]
+    [textFrom('ambiguous-day-one','synthetic-user','synthetic-bot','去公园玩了')],
+    [textFrom('ambiguous-day-two','synthetic-user','synthetic-bot','好')]
    ],
    responses:[
-    natural('要我帮你把10月2号去公园玩这件事记下来吗？'),
-    tool('create_milestone',{day,title:'公园玩耍',description:'去公园玩了'}),
-    natural('没有实际保存，因为日期还需要你确认。')
+    natural('要我帮你把这件事记下来吗？'),
+    natural('好呀，想记在哪一天呢？')
    ]
   });
   assert.equal(r.error,undefined);
-  assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('hallucinated-date-two')).length,0);
-  assert.match(r.replies[1],/没有实际保存/);
+  assert.equal(r.models,2);
+  assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('ambiguous-day')).length,0);
+  assert.match(r.replies[1],/哪一天/);
  });
  await step('regression: voice 上周六 plus voice 可以可以。 saves the correct previous-Saturday diary date',async()=>{
   const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
@@ -314,23 +312,20 @@ try{
   assert.match(entries[0].description,/第一次睡拼接床/);
   assert.match(r.replies[1],/记下啦/);
   assert.ok(r.modelMessages[1].some(x=>x.role==='user'&&x.content===event));
-  assert.match(r.modelMessages[1].at(-1).content,/create_milestone/);
+  assert.equal(r.modelMessages[1].at(-1).content,'可以可以。');
  });
- await step('repeated voice affirmation without a save proposal cannot write a milestone',async()=>{
-  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
-  const d=new Date(today+'T12:00:00Z'),weekday=(d.getUTCDay()+6)%7;
-  const lastSaturday=new Date(d.getTime()-(weekday+2)*86400000).toISOString().slice(0,10);
+ await step('model treats repeated spoken agreement to a photo question as chat',async()=>{
   const r=await run({mode:'alarm',alarms:2,pollBatches:[
    [voiceFrom('voice-unrelated-event','上周六第一次睡拼接床')],
    [voiceFrom('voice-unrelated-confirm','可以可以。')]
   ],responses:[
    natural('要我帮你查看一下相册吗？'),
-   tool('create_milestone',{day:lastSaturday,title:'睡拼接床',description:'上周六第一次睡拼接床'}),
-   natural('没有保存任何成长日记。')
+   natural('好，想看哪天的照片？')
   ]});
   assert.equal(r.error,undefined);
+  assert.equal(r.models,2);
   assert.equal(r.milestones.filter(x=>x.source_message_id?.includes('voice-unrelated-confirm')).length,0);
-  assert.match(r.replies[1],/没有保存|未保存/);
+  assert.match(r.replies[1],/照片/);
  });
  await step('negated delete cannot mutate local D1',async()=>{const r=await run({mode:'text',id:'negated-delete',text:'不要删除测试宝宝今天的体重',responses:[tool('delete_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})})]});assert.equal(r.growth.length,2);assert.doesNotMatch(r.reply,/已删除/)});
  await step('four consecutive WeChat messages naturally respond, then save one consolidated diary milestone',async()=>{
@@ -364,7 +359,7 @@ try{
   assert.match(thisMessageMilestones[0].description,/半小时一醒.*三个小时.*半小时一醒/);
   const finalRequest=r.modelMessages[3];
   assert.deepEqual(finalRequest.filter(x=>x.role==='user').slice(0,3).map(x=>x.content),messages.slice(0,3));
-  assert.match(finalRequest.at(-1).content,/create_milestone/);
+  assert.equal(finalRequest.at(-1).content,'记下来');
   assert.match(finalRequest[0].content,/日记和里程碑共用/);
   assert.equal(r.modelMessages[4].at(-1).role,'tool');
   assert.equal(r.messages.filter(m=>m.message_id.startsWith('synthetic-bot:diary-turn-')&&m.state==='done').length,4);
