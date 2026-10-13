@@ -208,11 +208,11 @@ export class WechatSession {
      const task=await decode(payload),thread=structuredClone(task.thread);
      let reply=await handleWechatPhotoMessage(env,task.raw,task.sourceId,thread,task.babyId);
      const ok=reply.startsWith('已保存')||reply.startsWith('这些照片或视频已经保存过');
+     const text=wechatMessageText(task.raw);
      if(ok){
       const ids=await savedWechatMediaIds(env,task.raw,task.babyId,task.sourceId);
       thread.pendingMedia=null;
       thread.lastMedia={babyId:task.babyId,ids,expiresAt:task.receivedAt+1200000};
-      const text=wechatMessageText(task.raw);
       const c=await getWechatConnection(env,task.connectionId);
       if(!task.raw.forwarded_content&&/记(?:录|下)|里程碑|成长瞬间/.test(text)&&c?.enabled===1&&await mediaTaskId(c.token_cipher)===task.credentialHash&&generation===await ctx.storage.get('media-generation')){
        const checked=await workerBot(env,task.connectionId).fetch('https://bot.internal/media/context',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch:task.epoch,version:task.version,babyId:task.babyId})});
