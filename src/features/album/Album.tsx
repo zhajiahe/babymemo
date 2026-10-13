@@ -53,7 +53,10 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
   setUploading(true);
   const mobile=window.matchMedia('(pointer:coarse)').matches;
   const policy=transferConcurrency(mobile,files.length);
-  let saved=0;
+  let saved=0,failedFiles=0;
+  const report=(stage:'client'|'thumbnail',size:number,startedAt:number,status:'ok'|'error')=>{
+   void post('/api/upload/metrics',{stage,size,durationMs:Math.round(performance.now()-startedAt),status}).catch(()=>{});
+  };
   try{
    const queue=await refreshPending();
    const reserved=new Set<string>();
@@ -62,13 +65,15 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
    const queueThumbnail=(file:File,mime:string,id:string)=>{
     if(!mime.startsWith('image/')&&!mime.startsWith('video/'))return;
     thumbnailTail.current=thumbnailTail.current.catch(()=>{}).then(async()=>{
+     const previewStarted=performance.now();
      try{
       const thumb=mime.startsWith('image/')?await createAlbumThumbnail(file):await createVideoThumbnail(file);
       if(thumb){
        await api('/api/media/'+id+'/thumbnail',{method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}});
        changed();
       }
-     }catch{notify('原文件已保存，但预览图暂不可用（仍可查看原文件）')}
+      report('thumbnail',file.size,previewStarted,'ok');
+     }catch{report('thumbnail',file.size,previewStarted,'error');notify('原文件已保存，但预览图暂不可用（仍可查看原文件）')}
     });
    };
    const results=await mapBounded(files,policy.files,async file=>{
@@ -154,11 +159,14 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
      changed();
      notify('已保存 '+file.name);
      queueThumbnail(file,mime,completedId);
+     report('client',file.size,fileStarted,'ok');
     }catch(error){
+     failedFiles++;
+     report('client',file.size,fileStarted,'error');
      notify(file.name+'：'+(error instanceof Error?error.message:'上传中断')+(uploadId&&!canDirectUpload(file.size)?'。重新选择同一文件即可续传。':''));
     }
    });
-   if(results.some(x=>x.status==='rejected'))notify('部分文件上传未完成，请重新选择文件重试');
+   if(failedFiles||results.some(x=>x.status==='rejected'))notify('有 '+(failedFiles+results.filter(x=>x.status==='rejected').length)+' 个文件未完成，可重新选择文件重试');
    await refreshPending();
   }catch(error){
    notify(error instanceof Error?error.message:'无法检查未完成上传，请检查网络后重试');
