@@ -15,6 +15,10 @@ on:
         description: "Create D1/R2 resources if missing (not used during dry-run)"
         type: boolean
         default: true
+      preserve_runtime_secrets:
+        description: "Keep the installed SESSION_SECRET and DATA_KEY (disable only for first setup)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -99,7 +103,7 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "CLOUDFLARE_API_TOKEN is missing"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "CLOUDFLARE_ACCOUNT_ID is missing"; exit 1; }
       - name: Validate production secrets (manual release)
-        if: ${{ github.event_name == 'workflow_dispatch' && needs.gate.outputs.dry_run == 'false' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && needs.gate.outputs.dry_run == 'false' && inputs.preserve_runtime_secrets == false }}
         shell: bash
         env:
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
@@ -167,7 +171,7 @@ jobs:
       # Auto-deploy preserves existing SESSION_SECRET and DATA_KEY values.
       # Optional OpenRouter API Key is uploaded atomically with code.
       - name: Sync configured Worker secrets (manual release only)
-        if: ${{ github.event_name == 'workflow_dispatch' && needs.gate.outputs.dry_run == 'false' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && needs.gate.outputs.dry_run == 'false' && inputs.preserve_runtime_secrets == false }}
         shell: bash
         env:
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}

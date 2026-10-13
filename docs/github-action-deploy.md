@@ -52,6 +52,7 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 | 选项 | 默认 | 作用 |
 | --- | --- | --- |
 | `dry_run` | `true` | 只读核对已有远端 D1/R2、类型检查、构建、`wrangler deploy --dry-run`；不迁移、不发布、不同步 Secrets |
+| `preserve_runtime_secrets` | `true` | 保留已有 SESSION_SECRET / DATA_KEY；仅首次安装需要从 GitHub 初始化这两个密钥时选择false |
 | `provision` | `true` | 仅在正式运行且 `dry_run=false` 时创建缺失的 D1、R2；已存在同名资源则复用 |
 
 **第一次账号还没有 D1 / R2 资源时，默认 Dry Run 会报“Missing D1/R2”，这是预期现象。** 可先通过 Cloudflare 控制台创建同名资源后重新试跑 Dry Run；也可以在明确选择正确账号后，将 `dry_run=false` 且 `provision=true` 运行首次正式部署。
@@ -63,7 +64,7 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 3. `npm run verify`：执行 TypeScript 检查、单元测试与 Vite 构建。
 4. `node scripts/reconcile-birth-time.mjs` 先只读检查 `babies.birth_time` 与 D1 迁移历史：仅当字段已存在、文本类型与默认值兼容且前置迁移已记录时，补记 `0012_birth_time.sql`；绝不重建字段或删除数据。然后 `npx wrangler d1 migrations apply DB --remote` 继续运行真正尚未执行的迁移。
 5. `npx wrangler deploy --keep-vars`：发布 Worker、静态资源以及 `WechatSession` Durable Object 绑定，并保留控制台变量。若 GitHub Actions 已配置 `OPENROUTER_API_KEY`，则通过临时 0600 权限 JSON 文件与 `--secrets-file` 在同一次发布中写入 Worker Secret；文件执行后删除，日志不打印密钥。
-6. **仅手动正式发布**：验证并同步 GitHub Secrets 中的 `SESSION_SECRET`、`DATA_KEY` 到 Worker。**CI 自动发布绝不重新写入这两项密钥**，保持 Cloudflare Worker 中既有值；必须确保首次安装时已经通过手动发布或控制台配置好密钥。
+6. **仅手动正式发布且 `preserve_runtime_secrets=false`**：验证并同步 GitHub Secrets 中的 `SESSION_SECRET`、`DATA_KEY` 到 Worker。**CI 自动发布绝不重新写入这两项密钥**，保持 Cloudflare Worker 中既有值；必须确保首次安装时已经通过手动发布或控制台配置好密钥。
 7. `npm run smoke:check`：检查 `/api/health`（包含 D1 可用性）和 `/api/bootstrap/status`（只验证两项 Secret 是否配置，不泄露其值）。
 
 **重要：** `npm run deploy` 现按“构建 → 检查或创建 D1/R2 → 核验 0012 迁移历史 → 增量迁移 → 发布 Worker”的顺序执行，适用于显式的模板部署。GitHub Actions 自动发布则**只检查已有资源，不自动创建生产数据库**，应优先使用受控工作流。
