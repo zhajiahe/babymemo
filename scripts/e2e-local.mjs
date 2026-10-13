@@ -757,8 +757,8 @@ async function browserE2e(){
       await page.locator('input[type="file"]').setInputFiles({
         name:'browser-e2e.png',mimeType:'image/png',buffer:png
       });
-      await page.locator('.photo-preview').first().waitFor({state:'visible',timeout:30000});
-      await page.locator('.photo-preview').first().click();
+      await page.locator('.photo-description').filter({hasText:'浏览器上传的描述'}).first().waitFor({state:'visible',timeout:30000});
+      await page.locator('.photo-item').filter({hasText:'浏览器上传的描述'}).first().getByRole('button',{name:/预览/}).click();
       await page.getByRole('dialog',{name:'相册预览'}).waitFor();
       const img=page.locator('.media-viewer-stage img');
       assert.equal(await page.getByRole('button',{name:'收藏'}).count(),0);
