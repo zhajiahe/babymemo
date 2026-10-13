@@ -28,15 +28,15 @@ BabyMemo 是部署在 Cloudflare 上的私密家庭成长记录应用，以相�
 
 | Secret | 用途 | 注意 |
 | --- | --- | --- |
-| \`SESSION_SECRET\` | 签名登录 Cookie | 更换会使旧会话失效 |
-| \`DATA_KEY\` | 加密 D1 中的微信和 OpenRouter 凭据 | 需 64 位十六进制；更换会使旧密文无法解密 |
+| `SESSION_SECRET` | 签名登录 Cookie | 更换会使旧会话失效 |
+| `DATA_KEY` | 加密 D1 中的微信和 OpenRouter 凭据 | 需 64 位十六进制；更换会使旧密文无法解密 |
 
-可在独立的安全终端分别运行两次 \`openssl rand -hex 32\` 生成并保管密钥；不要把真实密钥粘贴到仓库、PR 或聊天。
+可在独立的安全终端分别运行两次 `openssl rand -hex 32` 生成并保管密钥；不要把真实密钥粘贴到仓库、PR 或聊天。
 
 OpenRouter Key 是**可选**的微信指令模型配置，支持两种方式：
 
-1. **部署管理**：在 GitHub Actions / \`production\` Environment 添加 Secret \`OPENROUTER_API_KEY\`，正式部署后作为 Cloudflare Worker Secret 使用，优先于 D1 设置。
-2. **网页管理**：管理员登录网站后，在「设置 → 微信操作引擎 · OpenRouter」填写 Key 和模型 ID。Key 用 \`DATA_KEY\` 加密保存于 D1。
+1. **部署管理**：在 GitHub Actions / `production` Environment 添加 Secret `OPENROUTER_API_KEY`，正式部署后作为 Cloudflare Worker Secret 使用，优先于 D1 设置。
+2. **网页管理**：管理员登录网站后，在「设置 → 微信操作引擎 · OpenRouter」填写 Key 和模型 ID。Key 用 `DATA_KEY` 加密保存于 D1。
 
 已经配置部署 Secret 时，网页仍可更改模型 ID，但不能覆盖部署 Key。**从 GitHub 删除 Secret 不会自动删除云端已有 Worker Secret**；需明确到 Cloudflare 控制台撤销。Key 不会传回浏览器。
 
@@ -44,26 +44,26 @@ OpenRouter Key 是**可选**的微信指令模型配置，支持两种方式：
 
 ## 本地开发
 
-需要 Node.js 22+。开发前复制 \`.dev.vars.example\` 为 \`.dev.vars\`，仅在本机配置测试密钥，不要使用生产 \`DATA_KEY\`。
+需要 Node.js 22+。开发前复制 `.dev.vars.example` 为 `.dev.vars`，仅在本机配置测试密钥，不要使用生产 `DATA_KEY`。
 
-\`\`\`bash
+```bash
 npm install --no-audit --no-fund
 npm run db:local
 npm run dev
-\`\`\`
+```
 
-另一个终端运行 \`npx wrangler dev --local\`，以本地 D1/R2/DO 调试后端；前端 Vite 默认使用自己的端口，具体代理行为以 \`vite.config.ts\` 为准。执行需要远端 Cloudflare 权限的命令之前，请查看 [Agent 部署 Runbook](docs/agent-deploy.md)。
+另一个终端运行 `npx wrangler dev --local`，以本地 D1/R2/DO 调试后端；前端 Vite 默认使用自己的端口，具体代理行为以 `vite.config.ts` 为准。执行需要远端 Cloudflare 权限的命令之前，请查看 [Agent 部署 Runbook](docs/agent-deploy.md)。
 
 ## 质量检查
 
-\`\`\`bash
+```bash
 npm run verify
 npm run test:e2e
-\`\`\`
+```
 
-\`verify\` 包含类型检查、单元测试和构建。\`test:e2e\` 在临时本地 Wrangler 环境里测试 HTTP/D1/R2，不读写生产数据；Chromium、WebKit 在 GitHub Actions 独立运行。详见 [测试矩阵](docs/qa-regression-matrix.md)。
+`verify` 包含类型检查、单元测试和构建。`test:e2e` 在临时本地 Wrangler 环境里测试 HTTP/D1/R2，不读写生产数据；Chromium、WebKit 在 GitHub Actions 独立运行。详见 [测试矩阵](docs/qa-regression-matrix.md)。
 
-合并到 \`main\` 后，**完整 CI 通过才会触发 Cloudflare 自动发布**。自动发布只检查已有 D1/R2 资源，不创建或重建生产数据库；先核验迁移，再发布 Worker。修复程序仅在 \`birth_time\` 已存在、结构精确匹配时补记缺失的 0012 迁移历史。
+合并到 `main` 后，**完整 CI 通过才会触发 Cloudflare 自动发布**。自动发布只检查已有 D1/R2 资源，不创建或重建生产数据库；先核验迁移，再发布 Worker。修复程序仅在 `birth_time` 已存在、结构精确匹配时补记缺失的 0012 迁移历史。
 
 **未被自动化证明**：真实 iPhone Safari 下的 HEIC/HEVC/MOV、蜂窝弱网、真实微信协议持续可用性、生产 D1/R2 一致性快照与完整恢复演练。
 
