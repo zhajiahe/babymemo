@@ -178,6 +178,20 @@ app.get('/api/media/thumbnail-backfill',async c=>{
   ).bind(babyId).first<{total:number}>();
   return c.json({items:batch.results,remaining:count?.total||0,cursor:batch.results.at(-1)?.id||after});
 });
+// Opt-in, same-origin, PII-free browser-side elapsed time. Client durations
+// include the phone-to-edge network leg; Worker R2 timings do not.
+app.post('/api/upload/metrics',async c=>{
+  try{
+    const v=await json(c.req.raw,512);
+    if(!v||!['client','thumbnail'].includes(v.stage)||
+       !Number.isSafeInteger(v.size)||v.size<0||v.size>209715200||
+       !Number.isFinite(v.durationMs)||v.durationMs<0||v.durationMs>600000||
+       !['ok','error'].includes(v.status))return fail(c,400,'INVALID_UPLOAD_METRIC');
+    mediaTiming({channel:'web',stage:v.stage,size:v.size,
+      startedAt:performance.now()-v.durationMs,status:v.status});
+    return c.json({ok:true});
+  }catch{return fail(c,400,'INVALID_UPLOAD_METRIC')}
+});
 // Small-file fast path: one authenticated same-origin request, private R2
 // storage, stable client UUID for retries and no Multipart start/finish RTTs.
 // A D1 failure after R2 PUT can be recovered by the same upload UUID.
