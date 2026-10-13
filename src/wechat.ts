@@ -105,7 +105,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
   // Mutating commands are never forced, even when the model omits tool_calls.
   const readOnly=readOnlyFallbackTool(command);
   const selected=wechatTools.find(x=>x.function.name===readOnly);
-  if(selected){
+  if(selected&&readOnly){
    const forced=await openRouterCompletion({key,model,
     messages:[{role:'system',content:instruction+' 现在只允许调用指定的只读查询工具。'},...context.modelMessages],
     tools:[selected],tool_choice:{type:'function',function:{name:readOnly}},
