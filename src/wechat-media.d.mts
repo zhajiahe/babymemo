@@ -1,6 +1,7 @@
 export const MAX_WECHAT_MEDIA_BYTES:number;
 export const MAX_WECHAT_IMAGE_BYTES:number;
 export class WechatPhotoError extends Error{}
+export function wechatMediaErrorCode(error:unknown):string;
 export function decodeWeChatAesKey(encoded:unknown):Uint8Array;
 export function wechatCdnUrl(media:unknown):string;
 export function imageReference(item:unknown):{media:Record<string,unknown>;key:string};

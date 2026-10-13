@@ -7,6 +7,17 @@ export const MAX_WECHAT_IMAGE_BYTES=MAX_WECHAT_MEDIA_BYTES; // backwards compati
 const MAX_ITEMS=4,PART=8*1024*1024,CDN='novac2c.cdn.weixin.qq.com';
 export class WechatPhotoError extends Error{constructor(message){super(message);this.name='WechatPhotoError'}}
 const bad=(msg)=>{throw new WechatPhotoError(msg)};
+// Persist only fixed codes; provider errors may include private CDN URLs or keys.
+export function wechatMediaErrorCode(error){
+ const message=error instanceof Error?error.message:'';
+ if(/^WECHAT_(?:CDN_NETWORK_ERROR|CDN_HTTP_[1-5][0-9]{2}|MEDIA_MIME_MISMATCH|MEDIA_INDEX_FAILED)$/.test(message))return message;
+ if(error instanceof WechatPhotoError)return 'WECHAT_MEDIA_INVALID_PAYLOAD';
+ if(/^D1_/.test(message))return 'WECHAT_MEDIA_D1_FAILED';
+ if(/^R2\b/.test(message))return 'WECHAT_MEDIA_R2_FAILED';
+ if(error instanceof ReferenceError)return 'WECHAT_MEDIA_RUNTIME_ERROR';
+ if(error instanceof TypeError)return 'WECHAT_MEDIA_TYPE_ERROR';
+ return 'WECHAT_MEDIA_PROCESSING_ERROR';
+}
 export function decodeWeChatAesKey(encoded){
  if(typeof encoded!=='string'||encoded.length>200||!encoded.trim())bad('微信媒体密钥缺失，请重新发送');
  const v=encoded.trim();
@@ -41,7 +52,8 @@ export function wechatCdnUrl(media){
  }else{
   const param=media.encrypt_query_param;
   if(typeof param!=='string'||!param||param.length>8192)bad('微信 CDN 下载参数无效');
-  url=new URL('https://'+CDN+'/download');
+  // Tencent's @tencent-weixin/openclaw-weixin 2.4.10 uses CDN_BASE_URL /c2c.
+  url=new URL('https://'+CDN+'/c2c/download');
   url.searchParams.set('encrypted_query_param',param);
  }
  if(url.protocol!=='https:'||url.hostname!==CDN||url.port||url.username||url.password||

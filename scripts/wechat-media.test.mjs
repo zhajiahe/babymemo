@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCipheriv} from 'node:crypto';
-import {decodeWeChatAesKey,wechatCdnUrl,downloadWeChatImage,persistWeChatPhotos,photoRecordId,WechatPhotoError} from '../src/wechat-media.mjs';
+import {decodeWeChatAesKey,wechatCdnUrl,downloadWeChatImage,persistWeChatPhotos,photoRecordId,WechatPhotoError,wechatMediaErrorCode} from '../src/wechat-media.mjs';
 
 const jpeg=Uint8Array.from([255,216,255,224,0,16,74,70,73,70,0,1,255,217]);
 const key=Buffer.from('000102030405060708090a0b0c0d0e0f','hex');
@@ -50,12 +50,22 @@ test('WeChat AES key encodings including raw hex, base64 bytes, base64 hex',()=>
  assert.throws(()=>decodeWeChatAesKey('not a key'),WechatPhotoError);
 });
 test('CDN allowlist rejects arbitrary hosts, relative URLs, HTTP, and redirects',async()=>{
- assert.match(wechatCdnUrl({encrypt_query_param:'a/b+z=='}),/^https:\/\/novac2c\.cdn\.weixin\.qq\.com\/download\?/);
+ const built=new URL(wechatCdnUrl({encrypt_query_param:'a/b+z=='}));
+ assert.equal(built.origin,'https://novac2c.cdn.weixin.qq.com');
+ assert.equal(built.pathname,'/c2c/download');
+ assert.equal(built.searchParams.get('encrypted_query_param'),'a/b+z==');
  for(const url of ['http://novac2c.cdn.weixin.qq.com/c2c/download?x=y','https://evil.example/c2c/download',
    'https://novac2c.cdn.weixin.qq.com.evil.example/c2c/download','http://127.0.0.1/c2c/download']){
   assert.throws(()=>wechatCdnUrl({full_url:url}),WechatPhotoError);
  }
  await assert.rejects(()=>downloadWeChatImage(item(),{fetchImpl:async()=>Response.redirect('https://evil.example',302)}));
+});
+test('media diagnostics retain only fixed codes, never provider error contents',()=>{
+ assert.equal(wechatMediaErrorCode(Error('WECHAT_CDN_HTTP_502')),'WECHAT_CDN_HTTP_502');
+ assert.equal(wechatMediaErrorCode(Error('D1_ERROR: synthetic query failed')),'WECHAT_MEDIA_D1_FAILED');
+ assert.equal(wechatMediaErrorCode(Error('R2 put failed')),'WECHAT_MEDIA_R2_FAILED');
+ assert.equal(wechatMediaErrorCode(Error('https://private.example/?key=synthetic-private-key')),'WECHAT_MEDIA_PROCESSING_ERROR');
+ assert.equal(wechatMediaErrorCode(new WechatPhotoError('synthetic private payload')),'WECHAT_MEDIA_INVALID_PAYLOAD');
 });
 test('encrypted image decrypts, MIME is sniffed, and only JPEG bytes are persisted',async()=>{
  const got=await downloadWeChatImage(item(),{fetchImpl:cdnFetch});
