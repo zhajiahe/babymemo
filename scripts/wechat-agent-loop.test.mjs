@@ -63,7 +63,7 @@ test('tool batches above per-turn limit are refused before write',async()=>{
 });
 test('a hallucinated success message without a tool never counts as a write',async()=>{
  const r=await runWechatAgentLoop({...args,complete:async()=>done('已保存宝宝记录'),execute:async()=>{throw Error('should not call')}});
- assert.match(r,/未修改数据/);
+ assert.match(r,/没有实际保存或修改/);
 });
 test('time cap cannot dispatch a write after timeout',async()=>{
  let clock=0,writes=0;
