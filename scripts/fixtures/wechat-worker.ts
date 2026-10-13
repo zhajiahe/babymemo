@@ -30,6 +30,8 @@ export default {async fetch(request:Request,env:any){
   else if(input.mode==='media')reply=await handleWechatPhotoMessage(env,input.raw,input.id);
   else if(input.mode==='alarm'){
    await setSetting(env,'wechat_enabled','true');await setSetting(env,'wechat_bot_id','synthetic-bot');await setSetting(env,'wechat_user_id','synthetic-user');await setSetting(env,'wechat_token',await encryptSecret(env,'synthetic-token'));
+   await env.DB.prepare('INSERT OR REPLACE INTO wechat_connections(id,label,bot_id,user_id,token_cipher,base_url,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,1,?,?)')
+     .bind('legacy','测试成员','synthetic-bot','synthetic-user',await encryptSecret(env,'synthetic-token'),'https://ilinkai.weixin.qq.com',new Date().toISOString(),new Date().toISOString()).run();
    const saved=new Map(Object.entries(input.storage||{}));const ctx:any={storage:{get:async(k:string)=>saved.get(k),put:async(k:string,v:any)=>{saved.set(k,v)},delete:async(k:string)=>saved.delete(k),setAlarm:async()=>{},deleteAlarm:async()=>{}}};
    const bot=new WechatSession(ctx,env);for(let n=0;n<(input.alarms||1);n++)await bot.alarm();
    status=Object.fromEntries(saved);delete status.conversation;
