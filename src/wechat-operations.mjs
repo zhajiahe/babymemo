@@ -14,7 +14,8 @@ const key=(kind,id)=>{if(!TABLES[kind]||typeof id!=='string')throw Error('INVALI
 export async function auditChange(env,{sourceId,babyId,kind,recordId,action,before,after,statement}){
  key(kind,recordId);
  const opId=crypto.randomUUID(),when=new Date().toISOString();
- const insert=env.DB.prepare('INSERT OR IGNORE INTO wechat_operation_log(id,source_message_id,baby_id,kind,record_id,action,before_json,after_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+ const insert=env.DB.prepare('INSERT OR IGNORE INTO wechat_operation_log(id,source_message_id,baby_id,kind,record_id,action,before_json,after_json,created_at) '+
+  (statement?'SELECT ?,?,?,?,?,?,?,?,? WHERE changes()>0':'VALUES(?,?,?,?,?,?,?,?,?)'))
  .bind(opId,sourceId||opId,babyId,kind,recordId,action,JSON.stringify(before),JSON.stringify(after),when);
  // D1 batch is a transaction: a failed log insertion must not leave an untracked edit.
  if(statement){
@@ -45,7 +46,7 @@ export async function undoOperation(env,babyId,opId){
  const conditional=Object.keys(expected).map(k=>k+' IS ?').join(' AND ');
  const update=env.DB.prepare('UPDATE '+table+' SET '+keys.map(k=>k+'=?').join(',')+' WHERE id=? AND '+(op.kind==='baby'?'id=?':'baby_id=?')+(conditional?' AND '+conditional:''))
  .bind(...keys.map(k=>values[k]),op.record_id,babyId,...Object.keys(expected).map(k=>expected[k]));
- const mark=env.DB.prepare('UPDATE wechat_operation_log SET undone_at=? WHERE id=? AND undone_at IS NULL').bind(new Date().toISOString(),op.id);
+ const mark=env.DB.prepare('UPDATE wechat_operation_log SET undone_at=? WHERE id=? AND undone_at IS NULL AND changes()>0').bind(new Date().toISOString(),op.id);
  if(typeof env.DB.batch!=='function')throw Error('AUDIT_TRANSACTION_UNAVAILABLE');
  const result=await env.DB.batch([update,mark]);
  return result[0]?.meta?.changes?'已撤销最近一次操作（'+op.kind+'，编号 '+op.record_id.slice(0,8)+'）。':'记录发生变化，未撤销';
