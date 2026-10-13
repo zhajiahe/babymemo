@@ -150,9 +150,9 @@ export async function runWechatTool(env,baby,action,args={},messageId='',origina
   }
   if(action==='create_growth'){
    if(!validDate(args.day))throw Error('请给出有效日期');
-   const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const changes=measurement(args);
    if(!['weight','height','head_circumference'].some(x=>x in changes))throw Error('请明确体重、身高或头围数值');
+   const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const id=crypto.randomUUID(),when=new Date().toISOString();
    await env.DB.prepare('INSERT OR IGNORE INTO growth_records(id,baby_id,day,weight,height,head_circumference,notes,created_at,source_message_id) VALUES(?,?,?,?,?,?,?,?,?)')
    .bind(id,baby.id,args.day,changes.weight??null,changes.height??null,changes.head_circumference??null,changes.notes||'来自微信',when,messageId||null).run();
