@@ -41,7 +41,7 @@ test('WeChat administration favors status with progressively disclosed controls'
  assert.match(settings,/微信 AI 模型/);
  assert.match(settings,/当前生效/);
  assert.match(settings,/模型接口未检测/);
- assert.match(settings,/已确认运行/);
+ assert.match(settings,/最近确认运行/);
  assert.match(settings,/modelDirty\|\|testingModel/);
  assert.match(settings,/if\(!result.ok\|\|result.provider!==savedProvider\)/);
  assert.match(settings,/role="status" aria-live="polite"/);
