@@ -948,13 +948,28 @@ async function browserE2e(){
       await page.setViewportSize({width:390,height:844});
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
       const section=page.locator('.thumbnail-repair-card');
-      await section.getByRole('button',{name:'一键后台修复全部封面'}).click();
-      await section.getByText('正在后台修复').waitFor();
-      const checkpoint=await page.evaluate(()=>JSON.parse(localStorage.getItem('babymemo-thumbnail-repair-v1')||'null'));
-      assert.equal(checkpoint.phase,'running');
-      assert.ok(checkpoint.babyIds.length>=1);
-      await section.getByRole('button',{name:'暂停修复'}).click();
-      await section.getByText('任务已暂停').waitFor();
+      // Hold the first scan request until Pause is clicked. Without this gate
+      // a fast empty scan completes and removes the Pause button before WebKit
+      // can click it; that tests timing, not the actual pause checkpoint.
+      let releaseScan=()=>{};
+      const scanGate=new Promise(resolve=>{releaseScan=resolve});
+      const backfillPattern='**/api/media/thumbnail-backfill?**';
+      await page.route(backfillPattern,async route=>{
+        await scanGate;
+        try{await route.continue()}catch{/* Reload or Pause can cancel this request. */}
+      });
+      try{
+        await section.getByRole('button',{name:'一键后台修复全部封面'}).click();
+        await section.getByText('正在后台修复').waitFor();
+        const checkpoint=await page.evaluate(()=>JSON.parse(localStorage.getItem('babymemo-thumbnail-repair-v1')||'null'));
+        assert.equal(checkpoint.phase,'running');
+        assert.ok(checkpoint.babyIds.length>=1);
+        await section.getByRole('button',{name:'暂停修复'}).click();
+        await section.getByText('任务已暂停').waitFor();
+      }finally{
+        releaseScan();
+        await page.unroute(backfillPattern);
+      }
       await page.reload();
       await section.getByRole('button',{name:'继续修复缺失封面'}).waitFor();
       const response=await page.evaluate(async()=>{
