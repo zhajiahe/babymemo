@@ -236,6 +236,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
         {(!item.upload_state||item.upload_state==='ready')&&item.mime.startsWith('video/')&&<span className="video-play-badge" aria-hidden="true"><Play size={18} fill="currentColor"/></span>}</span>
        <span className="photo-preview-hint" role={item.upload_state&&item.upload_state!=='ready'?'status':undefined}>{item.upload_state==='processing'?'正在后台保存…':item.upload_state==='failed'?'保存失败，请在微信重新发送':item.mime.startsWith('image/')?'查看照片':'播放视频'}</span>
       </button>
+     {item.upload_state==='failed'&&<button type="button" className="text-btn" onClick={()=>void remove(item.id)} aria-label={'移除保存失败的照片 '+item.day}><Trash2 size={15} aria-hidden="true"/>移除失败记录</button>}
      {albumView==='stories'&&<div className="photo-story-copy">
       <time dateTime={item.day}>{item.day.slice(5).replace('-', ' 月 ')} 日</time>
       {item.description?.trim()
