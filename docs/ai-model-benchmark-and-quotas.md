@@ -1,8 +1,6 @@
 # AI 模型选型、统一 Benchmark 与 Cloudflare 免费额度
 
-历史 Qwen3.8 单模型试验及当时的验收边界见 [Qwen 评估记录](workers-ai-qwen38-evaluation.md)；不同日期、题集和提供方的结果不得直接视为公平的同题比较。
-
-> 更新：2026-10-14。BabyMemo 当前生产默认 `@cf/qwen/qwen3.8-27b`（Workers AI、关闭思考）；可在「设置 → 微信 AI 模型」手动切回 OpenRouter。本文不包含任何家庭真实数据。
+> 更新：2026-10-14。当前手动 Benchmark 为 **30 题、1~6 个 OpenRouter 模型并行矩阵、优先关闭推理（拒绝时回退最低档）**；文中历史 10 题成绩不代表新题库成绩。BabyMemo 当前生产默认 `@cf/qwen/qwen3.8-27b`（Workers AI、关闭思考）；可在「设置 → 微信 AI 模型」手动切回 OpenRouter。本文不包含任何家庭真实数据。
 
 ## 1. 三种额度完全独立
 
@@ -48,14 +46,16 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 
 旧 Qwen 的 9/10 成绩用不同场景、较简单的工具定义，并对最终回复提出要求。因此新旧结果不能直接做优劣或成本判断；它们仅作为已观察的基线事实保留。
 
-## 5. 新的公平 Benchmark：相同 10 题、工具和评分
+## 5. 新的公平 Benchmark：相同 30 题、工具和评分
 
-`scripts/model-benchmark-cases.mjs` 定义十道虚构家庭微信任务；`scripts/model-benchmark.mjs` 采用生产使用的**同一套完整 `wechatTools` schema**、同一条中文 system prompt、模拟工具结果与 ReAct 引擎，单次最多 4 轮及 8 次工具调用；从真实模型响应中记录：
+`scripts/model-benchmark-cases.mjs` 定义三十道虚构家庭微信任务；`scripts/model-benchmark.mjs` 采用生产使用的**同一套完整 `wechatTools` schema**、同一条中文 system prompt、模拟工具结果与 ReAct 引擎，单次最多 4 轮及 8 次工具调用；从真实模型响应中记录：
 
 - 任务成功率；不仅检查调用了目标工具，还检查**查询→修改/恢复的顺序**、更改值、已查询到的真实记录编号、禁止的写入和重复调用。
 - 是否返回可用的**模型自然语言最终回复**（不能将回退/轮数不足或原始工具 JSON 算作完成）。
 - 模型请求次数、每题耗时、输入/输出 tokens，以及 Workers AI 的实际 `usage.neurons`；OpenRouter 只有提供 `usage.cost` 时才显示“报告的美元费用”，没有就为“未报告”，**绝不填 0 冒充免费**。
 - 每题是否符合预期、错误类型；所有 D1/R2 增删改查都只在内存中返回虚构观察，**零生产家庭记录读取或写入**。
+
+**高难度扩展（第 21–30 题）**：同句矛盾测量选择最终实测、斤转千克与日期归一、汇总→查询→定向更正、同日两条测量 ID 消歧、相册描述中的 prompt injection、两类记录使用同一搜索工具进行两次不同参数筛选、无匹配时禁止删除、只修改里程碑日期、回收站按类型和 ID 精确恢复、跨里程碑与相册的条件写入。这些题目除了工具名称，还检查输入参数、先查后改顺序、禁止冗余写入、必需事实以及重复调用。相关数据全部是隔离的合成观察，不依赖真实用户记录。
 
 两家服务端部署参数**不完全相同**：Qwen 使用 `enable_thinking=false`、`temperature=1`；Muse 沿用 OpenRouter Harness `temperature=0`。这是一项**真实生产配置下的任务表现对比**，并非控制所有采样因素的纯模型能力科学实验。
 
@@ -71,62 +71,63 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 
 [OpenRouter DeepSeek V4.1 Flash](https://openrouter.ai/deepseek/deepseek-v4.1-flash) 的准确模型 ID 为 `deepseek/deepseek-v4.1-flash`，标价参考输入 **$0.13/M tokens**、输出 **$0.52/M tokens**；路由提供方可能有差异，实际以 OpenRouter `usage.cost` 为准。模型支持工具调用与推理控制。
 
-**关闭思考**：OpenRouter Chat Completions 支持 `"reasoning":{"enabled":false}`，BabyMemo 的 OpenRouter 客户端在选择 **DeepSeek V4.1 Flash** 时默认发送这个参数；Muse 不受影响，保持原有采样配置。Benchmark 中可选择 `reasoning_mode=auto`（DeepSeek 自动关闭）、`off`（强制关闭）或 `low`（低思考）。`reasoning.enabled=false` 是**接口请求配置**，只有真实模型成功返回并确认用量中 `reasoning_tokens=0`（若提供）才能验证该次调用的推理开销；未报告推理 tokens 不自动视为 0。
+**关闭思考**：OpenRouter Chat Completions 支持 `"reasoning":{"enabled":false}`，BabyMemo 的 OpenRouter 客户端在选择 **DeepSeek V4.1 Flash** 时默认发送这个参数；Muse 不受影响，保持原有采样配置。旧版 Benchmark 曾可选择推理模式；**新版测试固定请求 `reasoning.enabled=false`**。只有上游明确拒绝关闭时，才重试一次最低推理档位（通常为 `low`，GPT-6 Luna 为 `minimal`）。生产端的原有 Muse 自动推理配置不变。`reasoning.enabled=false` 是**接口请求配置**，只有真实模型成功返回并确认用量中 `reasoning_tokens=0`（若提供）才能验证该次调用的推理开销；未报告推理 tokens 不自动视为 0。
 
 **当前状态**：已准备代码和手动测试入口，**尚未实际运行 DeepSeek 的 10 题**。不得虚构准确率或费用，也不应为这项测试修改 BabyMemo 线上默认模型。
 
-## 5.2 OpenRouter 新增模型与固定路由（2026-10-14）
+## 5.2 OpenRouter 模型统一优先 Relace，可自动回退（2026-10-14）
 
-**默认模型变更**：OpenRouter 模型默认值现为 `deepseek/deepseek-v4.1-flash`，固定 Relace 并优先 `reasoning.enabled=false`。Muse 保留为手动可选。已有明确保存的 OpenRouter 模型 ID 不被默认值更改覆盖；无 `ai_provider` 偏好的用户依然默认使用 Workers AI Qwen。如需实际切换线上已有 Muse 配置，请在设置里保存 DeepSeek 模型并将提供方设为 OpenRouter。
+**统一 Provider 路由**：所有 OpenRouter 模型（包括自定义 ID、Muse、DeepSeek、GPT-6 Luna、Haiku）统一使用 `provider: {order: ['relace'], allow_fallbacks: true}`：若 Relace 能提供该模型且满足请求条件则优先选用；若 Relace 不支持、不可用或拒绝请求，OpenRouter 允许按其路由策略改用其他提供同**一个模型**的服务商。**不使用 `only`，也不进行跨模型回退**。其他服务商可能具有不同价格、延迟和行为，实际费用以 OpenRouter 返回的用量为准。
+
+**默认模型**仍为 `deepseek/deepseek-v4.1-flash`，默认优先 `reasoning.enabled=false`；Muse 保留为手动可选。原有用户保存的模型 ID 不受影响；无 `ai_provider` 偏好的用户仍默认使用 Workers AI Qwen。如需切换已有生产 Muse 配置，可在设置页手动修改。
 
 
 | OpenRouter 模型 ID | 服务商选择 | 思考设置 |
 | --- | --- | --- |
-| `deepseek/deepseek-v4.1-flash` | **固定 Relace**：`provider: {only: ['relace'], allow_fallbacks: false}`，其他服务商不会自动接管 | 优先 `reasoning.enabled=false` |
-| `openai/gpt-6-luna` | OpenRouter 自动路由 | 优先关闭；若上游明确拒绝关闭思考，自动重试一次 `reasoning.effort='minimal'` |
-| `anthropic/claude-haiku-5.5` | OpenRouter 自动路由 | 优先关闭；若上游明确拒绝关闭思考，自动重试一次 `reasoning.effort='low'` |
-| `meta/muse-spark-1.3-contributor` | 保持以前路由策略 | 保持以前默认请求参数 |
+| `deepseek/deepseek-v4.1-flash` | 优先 Relace，可自动回退其他提供方 | 优先 `reasoning.enabled=false` |
+| `openai/gpt-6-luna` | 优先 Relace，可自动回退其他提供方 | 优先关闭；若上游明确拒绝关闭思考，自动重试一次 `reasoning.effort='minimal'` |
+| `anthropic/claude-haiku-5.5` | 优先 Relace，可自动回退其他提供方 | 优先关闭；若上游明确拒绝关闭思考，自动重试一次 `reasoning.effort='low'` |
+| `meta/muse-spark-1.3-contributor` | 优先 Relace，可自动回退其他提供方 | 保持以前默认请求参数 |
 
-参见 [DeepSeek 服务商列表](https://openrouter.ai/deepseek/deepseek-v4.1-flash/providers)、[GPT-6 Luna](https://openrouter.ai/openai/gpt-6-luna)、[Haiku 5.5](https://openrouter.ai/anthropic/claude-haiku-5.5) 和 [OpenRouter 推理配置](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)。
+参见 [OpenRouter Provider 排序与回退说明](https://openrouter.ai/docs/guides/routing/provider-selection)、[DeepSeek 服务商列表](https://openrouter.ai/deepseek/deepseek-v4.1-flash/providers)、[GPT-6 Luna](https://openrouter.ai/openai/gpt-6-luna)、[Haiku 5.5](https://openrouter.ai/anthropic/claude-haiku-5.5) 和 [OpenRouter 推理配置](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)。
 
-兼容性重试**只**在模型支持的情况下、服务商返回与 `reasoning` 参数直接相关的 HTTP 400 时发生；认证错误、工具参数错误、余额不足、一般模型错误不重试，并限制最多一次。若实际输出 `reasoning_tokens>0` 且没有发生合法最低思考回退，Benchmark 将标为思考配置未生效；**缺少该字段不等于零思考**。实际最低思考回退状态与服务商路由信息将写入日志和 JSON Artifact。
+兼容性重试**只**在服务商返回与 `reasoning` 参数直接相关的 HTTP 400 时发生；认证错误、工具参数错误、余额不足、一般模型错误不重试，并限制最多一次。若实际输出 `reasoning_tokens>0` 且没有发生合法最低思考回退，Benchmark 将标为思考配置未生效；**缺少该字段不等于零思考**。实际最低思考回退状态、请求首选 Provider 与服务商实际返回的 Provider 信息（若上游提供）将写入日志和 JSON Artifact。Provider 回退由 OpenRouter 服务端处理，**不保证 Relace 支持所有模型，也不保证每个响应都报告真实服务商**。
 
-**目前新增两款模型尚未实测**。测试入口为 GitHub Actions 的 `Manual Harness Deep E2E`，只发送虚构家庭指令，不读写真实数据，也不更改默认 Qwen 模型。选择 `model_preset` 即可使用三款候选模型，`model_id` 留空；高级场景仍可填写自定义模型 ID。
+**目前新增两款模型尚未实测**。测试入口为 GitHub Actions 的 `Manual Harness Deep E2E`，只发送虚构家庭指令，不读写真实数据，也不更改默认 Qwen 模型。留空 `model_ids` 则使用单个 `model_preset`；填写 1–6 个模型 ID 则并行评估。
 
 ## 5.3 更丰富、可审计的 Actions 日志
 
 - 每条场景开始/结束：`provider/model/caseId/iteration`、通过与否、实际工具调用顺序、模型轮数、时延、输入/输出和推理 tokens、Neurons / USD、简短最终回答。
 - 每次真实模型请求的前后：模型、场景、消息与工具数量、思考开关、完成原因、返回的工具名与 tokens；每个模拟工具执行打印工具名、有限长度参数和拒绝原因。
-- Cloudflare REST 认证返回 `10000`、OpenRouter 401/402 等明确权限或支付错误时，**立即停止后续场景和其他模型**，减少无意义模型调用和误导性 0% 成绩。保留 JSON Artifact，Run Summary 中显示**逐题表格**。
+- Cloudflare REST 认证返回 `10000`、OpenRouter 401/402 等明确权限或支付错误时，**立即停止该模型作业的后续场景，其他模型作业独立继续**，减少无意义模型调用和误导性 0% 成绩。保留 JSON Artifact，Run Summary 中显示**逐题表格**。
 - 日志只处理虚构家庭测试数据；不打印 API Key、HTTP Authorization 头或原始上游响应体；长文本截断并过滤类似凭证的值。
 
 
-## 6. 如何从 GitHub Actions 手动运行
+## 6. 如何从 GitHub Actions 手动运行 30 题并行模型对比
 
-进入 GitHub 仓库 **Actions → Manual Harness Deep E2E → Run workflow**，选 `mode=live`，指定：
+进入 GitHub 仓库 **Actions → Manual Harness Deep E2E → Run workflow**。该工作流只有手动入口，没有 push、PR、cron 或部署触发。
 
-1. `provider=both`（或者只运行 `workers-ai` / `openrouter`）。
-2. `repetitions=1`：每种模型 10 题；可设为 3 做每题三次复测。
-3. `max_neurons`：Workers AI 消耗预算软上限（默认 **3,000**）；`max_usd`：OpenRouter 返回费用的累计软上限（默认 **$0.10**）。
-4. 从 `model_preset` 下拉选择 **Muse、DeepSeek V4.1 Flash、GPT-6 Luna、Claude Haiku 5.5**；`model_id` 默认为空，只有要覆盖预设并测试其他自定义模型 ID 时填写。
-5. `reasoning_mode=auto`：上述三款新增/更新模型优先关闭思考，明确不支持才最低档；`off` 强制优先关闭，`low` 显式使用最低档（GPT-6 Luna 为 `minimal`，其他为 `low`）。
-6. 显式选择 `confirm_live=true` 才会进行真实推理。未确认会拒绝启动，**不会自动测试、自动充值或生产部署**。
+1. 设置 `mode=live`，`provider=openrouter`（或 `both`，另测 Qwen Workers AI）；`confirm_live=true` 才会调用真实接口，未确认不推理。
+2. 要测试多个 OpenRouter 模型，填写 `model_ids`，例如 `deepseek/deepseek-v4.1-flash, meta/muse-spark-1.3-contributor, openai/gpt-6-luna`。支持逗号、空格、换行分隔，自动去重，**最多 6 个**。留空时使用单个 `model_preset`；选择 `workers-ai` 时忽略 OpenRouter 模型列表。
+3. 每个模型在独立的 GitHub Actions Matrix Job 中并行执行**相同 30 题 × repetitions 次**，使用同一生产工具 schema、系统提示、模拟工具观察与评分器。每模型分开计费、分开记录失败，不能把某个模型的认证失败当作模型得分 0%。
+4. **OpenRouter 思考固定优先关闭**：发送 `reasoning.enabled=false`。只有模型服务商以明确的关闭推理不支持错误拒绝时，才重试一次 `effort=low`（GPT-6 Luna 的最低档 `minimal`）。回退详情以及实际上报的 reasoning tokens 均在报告；没有 token 字段不代表实际为 0。
+5. `max_usd`（默认 $0.10）是**每个 OpenRouter 模型作业**的用量软阈值，不是所有模型合计；同时测 3 个模型时，理论软预算可达 $0.30 以上。`max_neurons` 是 Workers AI 作业单独的软阈值（默认 6,000）；OpenRouter 不消耗 Workers AI Neurons。
+6. 每个模型的 JSON artifact 单独保留 7 天；`compare` Job 汇总各模型的通过率、工具轨迹、tokens、报告美元费用以及逐题结果，产出 `baby-model-benchmark-comparison`。若某模型没有产出结果，汇总会明确标为缺失，而不是算作失败的 30 题。
 
-Actions 使用仓库 `production` Environment 的 GitHub Secrets `CLOUDFLARE_ACCOUNT_ID`、`OPENROUTER_API_KEY` 和可选的专用 `CLOUDFLARE_AI_API_TOKEN`（具有 **Account → Workers AI → Read** 权限）。若后者未配置则尝试原部署 Token `CLOUDFLARE_API_TOKEN`，但它可能只有部署权限；接口如返回 10000 会立即停止并提示权限问题。只测 DeepSeek 时设 `provider=openrouter`，不需要 Workers AI Token。工作流把每模型成绩写入 Run Summary，详细 JSON 结果保留 **7 天 Artifact**。如果没有正确 Secret，工作流直接失败，不会降级成只模拟的模型得分。
+所需 Secrets：`OPENROUTER_API_KEY`；当包含 Workers AI 时还需 `CLOUDFLARE_ACCOUNT_ID`、推荐独立 `CLOUDFLARE_AI_API_TOKEN`（Account → Workers AI → Read），可尝试 `CLOUDFLARE_API_TOKEN` 但部署令牌可能无 AI REST 权限。选择 `provider=openrouter` 不需要 Workers AI 凭据。测试只使用虚构宝宝和模拟工具结果，不接触真实家庭 D1/R2/微信数据。
 
-**预算是软上限，不是硬账单封顶**：额度检查在每次请求前按已收到的用量进行，最后一笔请求可以超出限额；并且 OpenRouter 若不返回 `usage.cost`，脚本无法可靠控制其美元费用。真正的账单限制应在云端提供方设置。
+**费用限制不是账单硬封顶**：最后一次请求仍可超出阈值，OpenRouter 未返回 `usage.cost` 时无法准确统计美元支出；模型间同时请求也会受到模型服务商的并发/429 限制。真正硬限制应配置在服务商账户。多模型整体花费上限不能由目前各作业的软阈值保证。
 
-命令行：
+本地仅测试一个模型：
 
 ```sh
-MODEL_BENCH_CONFIRM=YES MODEL_BENCH_PROVIDER=both \
-MODEL_BENCH_REPETITIONS=1 MODEL_BENCH_MAX_NEURONS=3000 \
-MODEL_BENCH_MAX_USD=0.10 \
-CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_AI_API_TOKEN=... \
-OPENROUTER_API_KEY=... MODEL_BENCH_REASONING_MODE=auto npm run test:model:benchmark
+MODEL_BENCH_CONFIRM=YES MODEL_BENCH_PROVIDER=openrouter \
+MODEL_BENCH_OPENROUTER_MODEL=deepseek/deepseek-v4.1-flash \
+MODEL_BENCH_REASONING_MODE=off MODEL_BENCH_MAX_USD=0.10 \
+OPENROUTER_API_KEY=... npm run test:model:benchmark
 ```
 
-不要将凭证、家庭记录或账号账单放进 PR、截图或公开 Artifacts。普通 `npm run verify` 只执行离线回归，完全不访问第三方模型。
+本地离线断言（不会消耗模型 credits）：`node --test scripts/model-benchmark.test.mjs scripts/model-benchmark-matrix.test.mjs scripts/openrouter-retry.test.mjs`。无需也不应在 PR 中写入真实凭证。
 
 ## 7. 当前设置页的可见信息
 
