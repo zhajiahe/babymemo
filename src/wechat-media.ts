@@ -20,7 +20,7 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
  const result:{id:string;kind:'image'|'video';already:boolean}[]=[];
  async function persistItem(i:number){
   const itemStartedAt=performance.now();
-  const kind=items[i].type===5?'video':'image';
+  const kind:'video'|'image'=items[i].type===5?'video':'image';
   const sourceId=messageId+':'+kind+':'+i,id=photoRecordId(sourceId);
   const existing=await env.DB.prepare('SELECT id,deleted_at FROM media WHERE source_message_id=?').bind(sourceId).first<{id:string;deleted_at?:string|null}>();
   if(existing)return {id:existing.id,kind,already:true};
