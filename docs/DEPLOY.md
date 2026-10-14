@@ -21,11 +21,11 @@ Cloudflare → Workers & Pages → `babymemo` → Settings → Variables and Sec
 | --- | --- | --- |
 | `SESSION_SECRET` | 是 | 最少 32 字符；会话签名，长期不更换 |
 | `DATA_KEY` | 是 | 独立的 64 位十六进制随机值；解密已有 D1 凭据 |
-| `OPENROUTER_API_KEY` | 否 | 以 `sk-or-` 开头；微信自然语言工具路由使用 |
+| `OPENROUTER_API_KEY` | 否 | 使用 OpenRouter 时可选配置；默认 Workers AI 不需要 |
 
 前两个密钥可以在安全终端各运行一次 `openssl rand -hex 32` 生成；后续升级需复用原值，不要重新生成。
 
-如果使用 **GitHub Actions**，管理员可以把 `OPENROUTER_API_KEY` 配置为仓库或 `production` Environment Secret，再正式部署。Worker 会优先使用这个 Key。也可以部署后在网页「设置 → 微信操作引擎 · OpenRouter」配置 Key（加密保存于 D1）。两种路径的优先级和撤销方法见 [GitHub Actions 指南](github-action-deploy.md)。
+**默认微信工具模型使用 Workers AI Qwen3.8，不要求 OpenRouter Key**。需要切换到 OpenRouter 时，如果使用 **GitHub Actions**，管理员可以把 `OPENROUTER_API_KEY` 配置为仓库或 `production` Environment Secret，再正式部署。Worker 会优先使用这个 Key。也可以部署后在网页「设置 → 微信操作引擎 · OpenRouter」配置 Key（加密保存于 D1）。两种路径的优先级和撤销方法见 [GitHub Actions 指南](github-action-deploy.md)。
 
 ## 3. 首次初始化
 
@@ -39,7 +39,7 @@ Cloudflare → Workers & Pages → `babymemo` → Settings → Variables and Sec
 
 - 登录后分别测试宝宝切换、成长记录、成长瞬间和回收站的创建、查看、删除与恢复。
 - 测试一张图片和一段视频的私密上传与下载。网页单文件上限 200 MB；微信消息附件单文件上限 50 MiB。Safari HEIC、MOV/HEVC 的可播放性取决于设备解码器，**当前没有自动转码**。
-- 如需微信操作，配置 OpenRouter 模型 ID，测试连接，再通过「设置 → 微信操作」扫码绑定 iLink Bot，之后手动启用。
+- 如需微信操作，先检查默认 Workers AI Binding；如切换 OpenRouter 则配置模型 ID 和可选 Key，再通过「设置 → 微信操作」扫码绑定 iLink Bot，之后手动启用。
 - 如需自定义域名，先在 Cloudflare Workers 绑定并确认 HTTPS 可用，再在 GitHub Variables 配置用于 Smoke Check 的 `BABYMEMO_PUBLIC_URL`。**不要因为更换域名就轮换会话或加密密钥。**
 
 ## 5. 已有实例升级
@@ -58,7 +58,7 @@ Cloudflare → Workers & Pages → `babymemo` → Settings → Variables and Sec
 | 迁移报重复列 | 确认 D1 指向正确的生产数据库；查看 `reconcile-birth-time` 的安全校验结果 |
 | 初始化无法完成 | `/api/health` 和 `/api/bootstrap/status`，以及两项必需 Worker Secrets |
 | 登录失效或 403 Origin | HTTPS 域名、Cookie 域隔离、同源 POST；不要关闭 CSRF 验证 |
-| 微信 Bot 不回复 | OpenRouter Key/余额/工具调用支持、iLink 授权、默认宝宝和 Bot 状态 |
+| 微信 Bot 不回复 | Workers AI Binding/额度或 OpenRouter Key/限流，以及 iLink 授权、默认宝宝和 Bot 状态 |
 | 视频在 iPhone 无法播放 | 浏览器支持的 MIME/编解码格式；上传成功不代表转码成功 |
 
 生产数据需按 [备份与恢复手册](BACKUP.md) 独立保管；MyBaby 旧数据迁移另见 [迁移计划](MIGRATION.md)。
