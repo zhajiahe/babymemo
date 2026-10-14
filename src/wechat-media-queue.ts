@@ -36,7 +36,7 @@ export class DurableMediaQueue {
   return {pending:jobs.filter(Boolean).length,
    saving:jobs.some(j=>j?.phase==='saving'),
    notifying:jobs.some(j=>j?.phase==='reply'),
-   retrying:jobs.some(j=>j?.nextAt>Date.now()),
+   retrying:jobs.some(j=>(j?.nextAt??0)>Date.now()),
    lastError:await this.storage.get<MediaQueueStatus['lastError']>('media-last-error')||null,
    lastCompleted:await this.storage.get<string>('media-last-completed')||null};
  }
