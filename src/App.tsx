@@ -95,6 +95,15 @@ export default function App(){
   catch(e){if(sequence!==refreshSequence.current)return;if(e instanceof ApiFailure&&e.status===401){setMode('gate');setState(null);}else{setToast('连接暂时中断，已保留当前页面。请检查网络并重试。');setMode(old=>old==='loading'?'unavailable':old);}}
  }
  useEffect(()=>{refresh();const wake=()=>{if(document.visibilityState==='visible')void refresh()};window.addEventListener('focus',wake);document.addEventListener('visibilitychange',wake);return()=>{window.removeEventListener('focus',wake);document.removeEventListener('visibilitychange',wake)}},[]);
+ // Keep the active album fresh when WeChat changes a caption in another session.
+ // Poll only while visible; the effect below already reloads media on revision.
+ useEffect(()=>{
+  if(mode!=='app'||active!=='album'||!baby?.id)return;
+  const timer=window.setInterval(()=>{
+   if(document.visibilityState==='visible'&&navigator.onLine)setRevision(value=>value+1);
+  },15000);
+  return()=>window.clearInterval(timer);
+ },[mode,active,baby?.id]);
  // Resume only jobs explicitly started by the user on this device.
  useEffect(()=>{if(mode==='app'&&state)resumeThumbnailRepair(state.babies.map(item=>item.id))},[mode,state]);
  useEffect(()=>{
