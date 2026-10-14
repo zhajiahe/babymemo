@@ -5,7 +5,7 @@ function metadataParser(){
   const BlobReader=(exifr as any).fileReaders.get('blob');
   (exifr as any).fileReaders.set('blob',class extends BlobReader {
    async readWhole(){this.chunked=false;this._swapArrayBuffer(await this.input.arrayBuffer())}
-   async _readChunk(offset,length){return this.set(await this.input.slice(offset,length?offset+length:undefined).arrayBuffer(),offset,true)}
+   async _readChunk(offset:number,length?:number){return this.set(await this.input.slice(offset,length?offset+length:undefined).arrayBuffer(),offset,true)}
   });return exifr;
  });return parserPromise;
 }
