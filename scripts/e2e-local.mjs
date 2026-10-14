@@ -758,6 +758,9 @@ async function browserE2e(){
         name:'browser-e2e.png',mimeType:'image/png',buffer:png
       });
       await page.locator('.photo-story-text').filter({hasText:'浏览器上传的描述'}).first().waitFor({state:'visible',timeout:30000});
+      await page.getByRole('button',{name:'照片墙'}).click();
+      assert.equal(await page.locator('.photo-stories').count(),0);
+      await page.getByRole('button',{name:'故事'}).click();
       await page.locator('.photo-story').filter({hasText:'浏览器上传的描述'}).first().getByRole('button',{name:/预览/}).click();
       await page.getByRole('dialog',{name:'相册预览'}).waitFor();
       const img=page.locator('.media-viewer-stage img');
@@ -765,6 +768,8 @@ async function browserE2e(){
       assert.equal(await page.getByText('仅看收藏').count(),0);
       await img.waitFor();
       await page.waitForFunction(()=>document.querySelector('.media-viewer-stage img')?.naturalWidth > 0);
+      await page.locator('.media-story-body').filter({hasText:'浏览器上传的描述'}).waitFor();
+      assert.equal(await page.locator('.media-viewer-edit').isVisible(),false);
       await page.getByRole('button',{name:'编辑故事'}).click();
       assert.equal(await page.getByLabel('照片或视频描述').inputValue(),'浏览器上传的描述');
       await page.screenshot({path:join(evidence,'desktop-album-viewer.png'),fullPage:false});
