@@ -225,7 +225,7 @@ h1,h2,h3 { letter-spacing:normal; }
 /* The software keyboard should not leave a nonfunctional tab bar over form fields. */
 @supports selector(:has(input:focus)) {
  @media(max-width:800px) {
-  .app:has(input:focus,textarea:focus,[contenteditable="true"]:focus) .mobile-nav { opacity:0; pointer-events:none; transform:translateY(100%); }
+  .app:has(input:not([type]):focus,input[type="text"]:focus,input[type="password"]:focus,input[type="number"]:focus,input[type="email"]:focus,input[type="search"]:focus,input[type="tel"]:focus,input[type="url"]:focus,textarea:focus,[contenteditable="true"]:focus) .mobile-nav { opacity:0; pointer-events:none; transform:translateY(100%); }
  }
 }
 @media(prefers-reduced-motion:reduce) { .mobile-nav,.topbar { backdrop-filter:none; -webkit-backdrop-filter:none; } .mobile-nav,.mobile-nav button { transition:none; } }
