@@ -2,7 +2,7 @@
 
 本文适用于自己的 `zhajiahe/babymemo` 仓库。工作流位于 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)，显示名称为 **Deploy BabyMemo to Cloudflare**。支持两种发布方式：**`main` 的完整 CI（包括本地 Worker E2E 和 Chromium 浏览器 E2E）通过后自动发布**，或在 Actions 里手动点击 **Run workflow**（默认 Dry Run，不修改生产）。PR 检查不会触发发布。
 
-BabyMemo 运行于 Cloudflare Workers + D1 + R2 + Durable Objects，前端 React/Vite、服务端 Hono；无需 VPS。首次初始化使用家庭管理员名称和密码。OpenRouter 支持 GitHub Actions Secret 或网页加密配置；微信 Bot 为可选的 iLink 集成。
+BabyMemo 运行于 Cloudflare Workers + D1 + R2 + Durable Objects，前端 React/Vite、服务端 Hono；无需 VPS。首次初始化使用家庭管理员名称和密码。微信工具模型默认使用 Workers AI，OpenRouter 可选并支持 GitHub Actions Secret 或网页加密配置；微信 Bot 为可选的 iLink 集成。
 
 > **生产变更已通过启用自动发布得到部署者授权。** 合并到 `main` 且 CI 全部通过，会自动迁移远端 D1 并发布 Worker；请在合并前确认数据库备份、目标账号及影响范围。手动 Dry Run 仍只检查，不发布，但会读取目标账号的 D1/R2。MyBaby 旧站的 Neon / Vercel / R2 不会被本工作流迁移，切勿把新空数据库当作旧站数据。
 
@@ -82,7 +82,7 @@ BABYMEMO_PUBLIC_URL=https://baby.example.com
 1. 退出并以家庭管理员名称、密码重新登录。
 2. 新增、查看、删除一条测试成长记录；确认只在当前宝宝下显示。
 3. 上传一张照片，在手机浏览器打开相册并确认可读取；再测试视频和弱网络上传。
-4. OpenRouter Key 二选一：推荐管理员预先设置 GitHub Actions Secret `OPENROUTER_API_KEY` 再运行正式发布（页面会显示「部署 Secret 管理」）；或部署后在网页设置中填写 Key（加密保存在 D1）。填写模型 ID 后点击连接测试。不要把 Key 写入工作流输入框或日志。
+4. 默认 Workers AI 不需要 OpenRouter Key。**仅在切换到 OpenRouter 时**二选一：推荐管理员预先设置 GitHub Actions Secret `OPENROUTER_API_KEY` 再运行正式发布（页面会显示「部署 Secret 管理」）；或部署后在网页设置中填写 Key（加密保存在 D1）。填写模型 ID 后点击连接测试。不要把 Key 写入工作流输入框或日志。
 5. 如需微信 Bot，在设置中扫码绑定 iLink，确认授权后再**手动启用**，检查运行状态和白名单单聊；iLink 可能因第三方协议变化而失效。
 
 ## 5. 后续升级及自定义域名
