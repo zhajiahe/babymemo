@@ -58,7 +58,7 @@ function credibleReply(text:string,committedKinds:Set<string>,failedWrite=false)
   restore:/(?:已(?:经)?|成功).{0,14}(?:恢复|还原)|(?:恢复|还原)(?:成功|完成|好了)/
  };
  if(Object.entries(claims).some(([kind,re])=>re.test(text)&&!committedKinds.has(kind)))return false;
- if(claimsUnverifiedWrite(text)&&committedKinds.size===0)return false;
+ if((claimsUnverifiedWrite(text)||claims.update.test(text)||claims.create.test(text)||claims.delete.test(text)||claims.restore.test(text))&&committedKinds.size===0)return false;
  if(failedWrite&&/(?:全部|都|所有|每条).{0,12}(?:完成|成功|保存|修改|删除|处理)|(?:已完成全部|全部处理完)/.test(text))return false;
  return true;
 }
@@ -76,7 +76,7 @@ function render(results:string[],finalText='',suffix='',committedKinds=new Set<s
  }
  if(text.includes('模型没有返回可执行的工具指令'))
   return '这次没有修改记录。你可以继续说刚才的情况，需要保存时直接说“记下来”。';
- if(claimsUnverifiedWrite(text)||/(?:^|[，。！!\s])记好(?:了|啦|喽|咯)[！!。\s]*/.test(text))
+ if(claimsUnverifiedWrite(text)||/(?:已(?:经)?|成功).{0,24}(?:更新|修改|更正|调整|保存|记录|写入|删除|恢复)|(?:^|[，。！!\s])记好(?:了|啦|喽|咯)[！!。\s]*/.test(text))
   return '这次没有实际保存或修改记录。需要记入日记或里程碑时，可以直接说“记下来”。';
  return text.slice(0,1500)||'我在听。想让我把刚才的内容记入日记，可以说“记下来”。';
 }
