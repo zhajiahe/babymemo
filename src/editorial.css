@@ -135,12 +135,19 @@ h1,h2,h3 { letter-spacing:normal; }
  .photo-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
 @media(max-width:800px) {
- .topbar { display:flex; min-height:54px; height:auto; padding:10px 16px; }
-  .topbar .crumb { min-width:0; width:100%; }
-  .topbar .space-name { font-size:15px; line-height:1.45; overflow-wrap:anywhere; }
-  .topbar .crumb>svg,.topbar .crumb>strong,.topbar .top-right { display:none; }
- .page { padding:22px 16px 26px; }
- .page-heading { margin-bottom:17px; align-items:center; }
+ /* iPhone: sticky translucent family title below the sensor cutout. */
+ .topbar { position:sticky; top:0; z-index:60; display:flex; min-height:calc(54px + env(safe-area-inset-top)); height:auto; padding:calc(9px + env(safe-area-inset-top)) 16px 9px; background:rgba(247,250,253,.88); -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px); border-bottom:1px solid rgba(36,52,72,.08); }
+ .topbar .crumb { min-width:0; width:100%; justify-content:center; text-align:center; }
+ .topbar .space-name { font-size:15px; line-height:1.4; font-weight:680; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ .topbar .crumb>svg,.topbar .crumb>strong,.topbar .top-right { display:none; }
+ .page { padding:22px 16px 28px; }
+ .page-heading { margin-bottom:20px; align-items:center; }
+ .page-heading h1 { font-size:clamp(28px,8vw,34px); letter-spacing:-.03em; line-height:1.17; }
+ .page .card { border-radius:18px; box-shadow:0 1px 3px rgba(28,43,58,.035); }
+ .page :is(button,a,input,select,textarea,summary) { -webkit-tap-highlight-color:transparent; }
+ .page :is(button,a,summary) { touch-action:manipulation; }
+ .page :is(button,.primary,.secondary,.icon-btn):active:not(:disabled) { filter:brightness(.94); }
+ .page .field input,.page .field select,.page .field textarea { border-radius:11px; min-height:44px; }
  .page-heading-content.has-avatar { display:grid; grid-template-columns:46px minmax(0,1fr); grid-template-rows:auto auto; gap:1px 12px; align-items:center; }
  .page-heading-content.has-avatar .baby-portrait { grid-row:1 / span 2; grid-column:1; width:46px; height:46px; margin:0; }
  .page-heading-content.has-avatar h1,.page-heading-content.has-avatar p { grid-column:2; }
@@ -150,7 +157,6 @@ h1,h2,h3 { letter-spacing:normal; }
  .record-filter-fields input[type="date"] { display:block; width:100%; min-width:0; max-width:100%; -webkit-appearance:none; appearance:none; }
  .record-filter-shell,.record-filters,.record-filter-fields,.record-filter-fields .field { max-width:100%; }
  .wechat-member-actions { width:100%; }
- .page-heading h1 { font-size:27px; }
  .page-heading p { font-size:13px; }
  
  .home-feed { display:flex; flex-direction:column; gap:23px; }
@@ -177,16 +183,28 @@ h1,h2,h3 { letter-spacing:normal; }
  .page-heading-album .baby-portrait { display:none; }
  .page-heading-album .page-heading-content.has-avatar { display:block; }
  .home-quick-add { display:inline-flex; align-items:center; gap:5px; padding:9px 11px; min-height:44px; border-radius:9px; background:var(--bm-brand-soft); border:0; color:var(--bm-brand); font-weight:650; font-size:13px; }
- .mobile-nav { background:rgba(255,255,255,.97); border-top:1px solid var(--bm-border); backdrop-filter:blur(14px); padding-bottom:env(safe-area-inset-bottom); }
- .mobile-nav button { color:var(--bm-muted); }
- .mobile-nav button.active { color:var(--bm-brand); }
- .mobile-nav button span { letter-spacing:0; font-size:12px; }
- .media-dialog { width:100%; max-width:100vw; max-height:100dvh; border-radius:0; }
- .media-viewer-stage,.media-viewer-stage img,.media-viewer-stage video { max-height:65dvh; }
- .media-viewer-toolbar { gap:7px; }
+ /* iPhone tab bar: safe area, icons + labels, selected and touch feedback. */
+ .mobile-nav { background:rgba(255,255,255,.88); border-top:1px solid rgba(36,52,72,.09); -webkit-backdrop-filter:blur(22px); backdrop-filter:blur(22px); padding:7px 10px calc(7px + env(safe-area-inset-bottom)); gap:3px; }
+ .mobile-nav button { color:var(--bm-muted); flex:1 1 0; max-width:100px; min-height:53px; border-radius:12px; gap:2px; padding:4px 2px; touch-action:manipulation; -webkit-tap-highlight-color:transparent; transition:color .15s,background .15s; }
+ .mobile-nav button:active { background:var(--bm-brand-soft); }
+ .mobile-nav button.active { color:var(--bm-brand); font-weight:700; }
+ .mobile-nav .mobile-nav-icon { display:grid; place-items:center; width:35px; height:27px; border-radius:10px; }
+ .mobile-nav button.active .mobile-nav-icon { background:var(--bm-brand-soft); }
+ .mobile-nav .mobile-nav-label { letter-spacing:0; font-size:11px; line-height:1.3; }
+ /* Immersive Photos-style preview, without hiding existing edit/download actions. */
+ .media-dialog { width:100%; max-width:100vw; max-height:100dvh; height:100dvh; border-radius:0; overflow-y:auto; overscroll-behavior:contain; }
+ .media-viewer { min-height:100%; }
+ .media-viewer-header { padding:calc(12px + env(safe-area-inset-top)) 16px 12px; background:#171717; color:#fff; }
+ .media-viewer-header .muted { color:#c7cbd1; }
+ .media-viewer-header .icon-btn { color:#fff; border-radius:50%; background:rgba(255,255,255,.16); }
+ .media-viewer-stage { min-height:45dvh; max-height:60dvh; touch-action:pan-y; }
+ .media-viewer-stage img,.media-viewer-stage video { max-height:60dvh; }
+ .media-viewer-toolbar { gap:9px; padding:12px 16px; }
+ .media-viewer-arrows { flex:1 1 100%; justify-content:space-between; }
  .media-viewer-arrows .secondary { font-size:12px; }
+ .media-detail-actions { width:100%; justify-content:space-between; }
  .media-download { font-size:12px; }
- .media-viewer-edit { padding:12px 16px; }
+ .media-viewer-edit { padding:16px 16px calc(20px + env(safe-area-inset-bottom)); }
 }
 @media(max-width:380px) {
  .page { padding-left:12px; padding-right:12px; }
@@ -197,7 +215,7 @@ h1,h2,h3 { letter-spacing:normal; }
  
  .home-event time { min-width:76px; }
 }
-@media(prefers-reduced-motion:reduce) { .mobile-nav { backdrop-filter:none; } }
+@media(prefers-reduced-motion:reduce) { .mobile-nav,.topbar { backdrop-filter:none; -webkit-backdrop-filter:none; } .mobile-nav button { transition:none; } }
 
 /* Mobile settings are action-first: detailed instructions stay accessible on demand. */
 .settings-help { margin:12px 0; color:var(--bm-muted); }
