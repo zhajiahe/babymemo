@@ -43,7 +43,7 @@ npm run test:e2e
 - `docs/DEPLOY.md`：自托管管理员的首次安装与升级概览。
 - `docs/github-action-deploy.md`：GitHub Actions Secrets、配置和故障排查的权威操作源。
 - `docs/agent-deploy.md`：Agent 生产权限与分步操作。
-- `docs/e2e-testing.md`：开发者如何重现自动化；[QA 回归矩阵](docs/qa-regression-matrix.md)记录具体风险覆盖。
+- [QA 回归矩阵](docs/qa-regression-matrix.md)：自动化复现命令、风险覆盖与真机验收边界的统一入口。
 - `docs/wechat-harness-review.md`：基于真实家庭消息场景的 Harness 静态审查和分阶段演进提案；不是上线承诺。
 - `docs/wechat-harness-test-plan.md`：Harness 的场景和故障注入设计、门禁及验收指标；新增用例须附实际测试结果。
 - `docs/wechat-harness-implementation.md`：记录已经实现的 Harness 行为、自动/手动执行边界和仍需真机验证的风险。

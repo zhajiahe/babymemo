@@ -22,6 +22,22 @@
 - 只记录 `MEDIA_TRANSFER_TIMING` 固定字段；浏览器端的 `client` 耗时才包括手机到 Worker 的上行网络。
 - 性能说明和人工验收指标见 [媒体上传性能](media-upload-performance.md)。**合成测试不等于真实国内网络和微信协议已测速度，未声称确定性加速倍数。**
 
+
+## 本地与 CI E2E 复现命令
+
+Node.js 22+，本地 Wrangler。隔离脚本 `scripts/e2e-local.mjs` 创建临时 D1/R2/DO 和测试配置，结束后清理。若工作目录存在 `.dev.vars`，脚本会主动退出以免覆盖密钥，请使用干净的工作区。
+
+```bash
+npm install --no-audit --no-fund
+npm run verify
+npm run test:e2e
+BROWSER_E2E=1 npm run test:e2e
+BROWSER_E2E=1 BROWSER_ENGINE=webkit npm run test:e2e
+E2E_DEPLOY_KEY=1 npm run test:e2e
+```
+
+最后一个命令仅用模拟 OpenRouter Key 测试部署管理优先级，不向真实服务发送请求。浏览器用例在安装相应 Playwright 依赖后运行；GitHub Actions 的 Chromium/Linux WebKit 截图使用合成数据。Linux WebKit 不是实际 iPhone Safari。运行前检查当前工具链的 Node 和 Wrangler 版本。
+
 ## 自动化入口
 
 | 入口 | 环境 | 覆盖内容 |
