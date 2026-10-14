@@ -405,7 +405,9 @@ try{
   assert.equal(r.status.pollOutcome,'idle-timeout');
   assert.equal(r.status.lastError,null);
   assert.equal(r.status.cursor,undefined);
-  assert.ok(r.status.alarmAt>=Date.now()+18000);
+  // The mock freezes Date.now() at alarm entry: an 8s real timer elapses
+  // before its next alarm is scheduled from that frozen test clock.
+  assert.ok(r.status.alarmAt>=Date.now()+10000);
   assert.equal(r.models,0);
  });
  await step('iLink photo -> durable acceptance -> AES -> local R2/D1 -> final reply; duplicate ignored',async()=>{const r=await run({mode:'alarm',messages:[raw('photo-ok')],alarms:2,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 张照片/);assert.equal(r.media.length,1);assert.equal(r.downloads,1);assert.equal(r.sent,2);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:photo-ok').state,'done')});
