@@ -8,7 +8,6 @@ import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
 import {qwenRequest,DEFAULT_QWEN_MODEL} from '../src/qwen-workers-ai.mjs';
 import {openRouterCompletion} from '../src/openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from '../src/openrouter-model.mjs';
-import {DEEPSEEK_V41_FLASH} from '../src/openrouter-retry.mjs';
 import {diagnosticEvent,safeBenchPreview,benchmarkFailureKind,isFatalBenchmarkError,benchmarkMarkdownReport} from './model-benchmark-logging.mjs';
 import {MODEL_BENCH_CASES,BENCHMARK_SYSTEM,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
 
@@ -80,12 +79,12 @@ async function request(provider,messages,tools,maxTokens=1200,meta={}){
  const applied=response?._babymemo_request||{};
  const reasoningTokens=usage.completion_tokens_details?.reasoning_tokens??usage.output_tokens_details?.reasoning_tokens??null;
  log('model_request_complete',{...context,elapsedMs:Date.now()-started,finishReason:choice?.finish_reason||'unknown',inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,reasoningTokens,reportedUSD:cost,reasoningFallbackUsed:!!applied.reasoningFallbackUsed,
-  actualReasoningRequested:applied.reasoningRequested??null,requestedProvider:applied.requestedProvider?.only?.[0]??null,
+  actualReasoningRequested:applied.reasoningRequested??null,requestedProvider:applied.requestedProvider?.order?.[0]??null,
   servedProvider:response?.provider??null,toolNames:message?.tool_calls?.map(x=>x?.function?.name),assistant:message?.tool_calls?.length?undefined:message?.content});
  return {response,usage:{
   inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,
   neurons:null,reportedUSD:cost,reasoningTokens,reasoningFallbackUsed:!!applied.reasoningFallbackUsed,
-  requestedProvider:applied.requestedProvider?.only?.[0]??null,servedProvider:response?.provider??null
+  requestedProvider:applied.requestedProvider?.order?.[0]??null,servedProvider:response?.provider??null
  }};
 }
 async function evaluate(modelProvider,item,iteration){
@@ -159,7 +158,7 @@ for(const id of selected){
  const fatal=tasks.find(x=>x.errorCode&&isFatalBenchmarkError(x.errorCode));
  models.push({provider:id,model,reasoningRequested:id==='workers-ai'?'off':effectiveReasoning,
   status:fatal?'BLOCKED_'+benchmarkFailureKind(fatal.errorCode):'COMPLETED',
-  preferredProvider:id==='openrouter'&&openRouterModel===DEEPSEEK_V41_FLASH?'relace':null,
+  preferredProvider:id==='openrouter'?'relace':null,
   summary:aggregateBenchmark(tasks),results:tasks});
 }
 const report={benchmark:'babymemo-model-parity-v1',timestamp:new Date().toISOString(),
