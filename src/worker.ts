@@ -210,10 +210,10 @@ app.get('/api/media/thumbnail-backfill',async c=>{
   // Keep the manual legacy photo backfill image-only by default.
   const missing=type==='all'?"(mime LIKE 'image/%' OR mime LIKE 'video/%')":"mime LIKE 'image/%'";
   const batch=await c.env.DB.prepare(
-    'SELECT id,mime,size FROM media WHERE baby_id=? AND deleted_at IS NULL AND upload_state='ready' AND thumbnail_ready=0 AND '+missing+' AND id>? ORDER BY id LIMIT 10'
+    'SELECT id,mime,size FROM media WHERE baby_id=? AND deleted_at IS NULL AND upload_state=\'ready\' AND thumbnail_ready=0 AND '+missing+' AND id>? ORDER BY id LIMIT 10'
   ).bind(babyId,after).all<{id:string;mime:string;size:number}>();
   const count=await c.env.DB.prepare(
-    'SELECT COUNT(*) AS total FROM media WHERE baby_id=? AND deleted_at IS NULL AND upload_state='ready' AND thumbnail_ready=0 AND '+missing
+    'SELECT COUNT(*) AS total FROM media WHERE baby_id=? AND deleted_at IS NULL AND upload_state=\'ready\' AND thumbnail_ready=0 AND '+missing
   ).bind(babyId).first<{total:number}>();
   return c.json({items:batch.results,remaining:count?.total||0,cursor:batch.results.at(-1)?.id||after});
 });
@@ -383,7 +383,7 @@ app.post('/api/upload/:id/finish',async c=>{
 // Existing media lacking thumbnails automatically fall back to the original.
 app.get('/api/media/:id/thumbnail',async c=>{
   const id=c.req.param('id');
-  const row=await c.env.DB.prepare('SELECT object_key,mime FROM media WHERE id=? AND deleted_at IS NULL AND upload_state='ready'').bind(id).first<{object_key:string;mime:string}>();
+  const row=await c.env.DB.prepare('SELECT object_key,mime FROM media WHERE id=? AND deleted_at IS NULL AND upload_state=\'ready\'').bind(id).first<{object_key:string;mime:string}>();
   if(!row)return fail(c,404,'NOT_FOUND');
   const thumb=await c.env.MEDIA.get(thumbKey(id));
   const obj=thumb||(row.mime.startsWith('image/')?await c.env.MEDIA.get(row.object_key):null);
@@ -397,7 +397,7 @@ app.get('/api/media/:id/thumbnail',async c=>{
 // Thumbnail is optional: its failure must never invalidate an uploaded original.
 app.put('/api/media/:id/thumbnail',async c=>{
   const id=c.req.param('id');
-  const row=await c.env.DB.prepare('SELECT mime FROM media WHERE id=? AND deleted_at IS NULL AND upload_state='ready'').bind(id).first<{mime:string}>();
+  const row=await c.env.DB.prepare('SELECT mime FROM media WHERE id=? AND deleted_at IS NULL AND upload_state=\'ready\'').bind(id).first<{mime:string}>();
   if(!row||(!row.mime.startsWith('image/')&&!row.mime.startsWith('video/')))return fail(c,404,'NOT_FOUND');
   const max=524288;
   const size=Number(c.req.header('content-length')||0);
@@ -451,7 +451,7 @@ app.patch('/api/media/:id',async c=>{
   return c.json({ok:true,updated_at:version});
 });
 app.get('/api/media/:id/content',async c=>{
-  const row=await c.env.DB.prepare('SELECT object_key,mime,title FROM media WHERE id=? AND deleted_at IS NULL AND upload_state='ready'').bind(c.req.param('id')).first<{object_key:string;mime:string;title:string}>();
+  const row=await c.env.DB.prepare('SELECT object_key,mime,title FROM media WHERE id=? AND deleted_at IS NULL AND upload_state=\'ready\'').bind(c.req.param('id')).first<{object_key:string;mime:string;title:string}>();
   if(!row)return fail(c,404,'NOT_FOUND');
   const range=c.req.header('Range');let options: R2GetOptions|undefined;
   if(range){
