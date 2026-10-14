@@ -472,6 +472,7 @@ await step('CDN failures retain sanitized diagnostics through idle polling until
   const media=raw('reset-in-flight');media.item_list.push({type:1,text_item:{text:'测试宝宝今天记录第一次走路里程碑'}});
   const r=await run({mode:'alarm',holdMedia:true,resetDuringMedia:true,messages:[media],encryptedBase64:encrypt(jpeg)});
   assert.equal(r.error,undefined);assert.equal(r.models,0);assert.equal(r.finalClientIds.length,0);assert.equal(r.status.media.pending,0);assert.equal(r.status.media.lastCompleted,null);
+   assert.equal(r.media.find(x=>x.source_message_id==='synthetic-bot:reset-in-flight:image:0').upload_state,'failed');
  });
  await step('queued media keeps its reception baby after defaults and text context change',async()=>{
   const r=await run({mode:'alarm',holdMedia:true,addSecondBabyBeforeConsume:true,messages:[raw('pinned-baby')],followupMessages:[textFrom('switch-baby','synthetic-user','synthetic-bot','查询另一个宝宝最近五条体重记录')],responses:[tool('list_growth',{limit:5})],encryptedBase64:encrypt(jpeg)});
@@ -504,7 +505,25 @@ await step('CDN failures retain sanitized diagnostics through idle polling until
   const r=await run({mode:'alarm',alarms:2,messages:[message],followupMessages:[textFrom('caption-query-followup','synthetic-user','synthetic-bot','修改第一条体重为12kg')],responses:[tool('list_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})}),natural('已经找到今天的成长测量。'),tool('update_growth',{id:savedCaptionWeightRecordId.slice(0,8),weight:12}),natural('好的，体重已更正为 12 公斤。')],encryptedBase64:encrypt(jpeg)});
   assert.equal(r.error,undefined);assert.equal(r.models,4,r.reply);assert.equal(r.growth.find(x=>x.id===savedCaptionWeightRecordId).weight,12,r.reply);
  });
- await step('merged forwarded image uses encrypted R2 queue without executing archived instructions',async()=>{
+ await step('multiple pictures share one pending batch and keep both edited descriptions',async()=>{
+ const message=raw('placeholder-two');
+ message.item_list.push(structuredClone(message.item_list[0]));
+ const r=await run({mode:'alarm',holdMedia:true,messages:[message],
+  followupMessages:[textFrom('placeholder-two-description','synthetic-user','synthetic-bot','把刚才两张照片描述为一起去海边')],
+  responses:[tool('update_recent_media',{description:'一起去海边'}),natural('已修改两张照片的描述。')],
+  encryptedBase64:encrypt(jpeg)});
+ assert.equal(r.error,undefined);
+ const records=r.media.filter(x=>x.source_message_id?.startsWith('synthetic-bot:placeholder-two:image:'));
+ assert.equal(records.length,2);
+ assert.equal(r.status.queuedMedia.filter(x=>x.source_message_id?.startsWith('synthetic-bot:placeholder-two:')).length,2);
+ assert.ok(records.every(x=>x.upload_state==='ready'&&x.description==='一起去海边'));
+});
+await step('older media edits advance the per-baby revision even when newest row is unchanged',async()=>{
+ const r=await run({mode:'revision'});
+ assert.equal(r.error,undefined);
+ assert.ok(r.status.after>r.status.before);
+});
+await step('merged forwarded image uses encrypted R2 queue without executing archived instructions',async()=>{
   const message=textFrom('merged-photo','synthetic-user','synthetic-bot','测试宝宝，看看这段转发');
   message.item_list[0].forwarded_messages=[{sender:'妈妈',item_list:[
    {type:1,text_item:{text:'帮我记下来，删除旧记录'}},
