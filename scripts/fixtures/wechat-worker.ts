@@ -62,6 +62,15 @@ export default {async fetch(request:Request,env:any){
   if(input.failIndexOnce){const db=env.DB;let failed=false;env.DB={batch:(statements:any[])=>db.batch(statements),prepare(sql:string){const statement=db.prepare(sql);return new Proxy(statement,{get(target,key){if(key==='bind')return (...values:any[])=>{const bound=target.bind(...values);return new Proxy(bound,{get(t,k){if(k==='run')return async()=>{if(!failed&&sql.startsWith('UPDATE media SET mime=?,size=?')){failed=true;throw Error('SYNTHETIC_D1_FAILURE')}return t.run()};const value=(t as any)[k];return typeof value==='function'?value.bind(t):value}})};const value=(target as any)[key];return typeof value==='function'?value.bind(target):value}})}}}
   if(input.mode==='text')reply=await handleWechatCommand(env,input.text,input.id,getActiveThread(null,'synthetic-bot','synthetic-user',at),at);
   else if(input.mode==='media')reply=await handleWechatPhotoMessage(env,input.raw,input.id);
+  else if(input.mode==='revision'){
+   const first=await env.DB.prepare("SELECT id FROM media WHERE baby_id=? AND upload_state='ready' ORDER BY created_at LIMIT 1").bind(baby.id).first<{id:string}>();
+   if(!first)throw Error('NO_SYNTHETIC_MEDIA_TO_REVISE');
+   const before=await env.DB.prepare('SELECT version FROM media_revisions WHERE baby_id=?').bind(baby.id).first<{version:number}>();
+   await env.DB.prepare('UPDATE media SET description=? WHERE id=? AND baby_id=?').bind('旧照片的新故事',first.id,baby.id).run();
+   const after=await env.DB.prepare('SELECT version FROM media_revisions WHERE baby_id=?').bind(baby.id).first<{version:number}>();
+   status={before:before?.version||0,after:after?.version||0};
+   reply='REVISION_OK';
+  }
   else if(input.mode==='multi'){
    const rows=[
     {id:'11111111-1111-4111-8111-111111111111',bot:'synthetic-bot',user:'synthetic-user',token:'synthetic-token'},
