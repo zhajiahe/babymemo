@@ -95,14 +95,27 @@ export default function App(){
   catch(e){if(sequence!==refreshSequence.current)return;if(e instanceof ApiFailure&&e.status===401){setMode('gate');setState(null);}else{setToast('连接暂时中断，已保留当前页面。请检查网络并重试。');setMode(old=>old==='loading'?'unavailable':old);}}
  }
  useEffect(()=>{refresh();const wake=()=>{if(document.visibilityState==='visible')void refresh()};window.addEventListener('focus',wake);document.addEventListener('visibilitychange',wake);return()=>{window.removeEventListener('focus',wake);document.removeEventListener('visibilitychange',wake)}},[]);
- // Keep the active album fresh when WeChat changes a caption in another session.
- // Poll only while visible; the effect below already reloads media on revision.
+ // Refresh external WeChat edits without continually downloading the full album.
+ // The lightweight revision endpoint compares the newest media update timestamp.
  useEffect(()=>{
   if(mode!=='app'||active!=='album'||!baby?.id)return;
-  const timer=window.setInterval(()=>{
-   if(document.visibilityState==='visible'&&navigator.onLine)setRevision(value=>value+1);
-  },15000);
-  return()=>window.clearInterval(timer);
+  let stopped=false,checking=false,version:string|null=null;
+  const id=encodeURIComponent(baby.id);
+  const check=async()=>{
+   if(stopped||checking||document.visibilityState!=='visible'||!navigator.onLine)return;
+   checking=true;
+   try{
+    const result=await api<{version:string}>('/api/media/revision?babyId='+id);
+    if(!stopped){if(version!==null&&result.version!==version)setRevision(value=>value+1);version=result.version;}
+   }catch{/* Keep current album on transient network errors. */}
+   finally{checking=false}
+  };
+  void check();
+  const timer=window.setInterval(()=>void check(),12000);
+  const wake=()=>void check();
+  window.addEventListener('online',wake);
+  document.addEventListener('visibilitychange',wake);
+  return()=>{stopped=true;window.clearInterval(timer);window.removeEventListener('online',wake);document.removeEventListener('visibilitychange',wake)};
  },[mode,active,baby?.id]);
  // Resume only jobs explicitly started by the user on this device.
  useEffect(()=>{if(mode==='app'&&state)resumeThumbnailRepair(state.babies.map(item=>item.id))},[mode,state]);
