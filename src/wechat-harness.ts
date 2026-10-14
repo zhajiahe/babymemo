@@ -134,7 +134,7 @@ export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,a
     .bind(baby.id,args.startDay,args.endDay).all<DbRow>();
    if(!rows.results.length)return '这段时间还没有测量记录';
    const metric=(name:string,unit:string)=>{const xs=rows.results.filter(x=>typeof x[name]==='number');
-     return xs.length?name+'：'+xs[0][name]+unit+' → '+xs.at(-1)![name]+unit+'，变化 '+Number((xs.at(-1)[name]-xs[0][name]).toFixed(2))+unit:'';};
+     return xs.length?name+'：'+xs[0][name]+unit+' → '+xs.at(-1)![name]+unit+'，变化 '+Number((xs.at(-1)![name]-xs[0][name]).toFixed(2))+unit:'';};
    return baby.name+' '+args.startDay+' 至 '+args.endDay+'，共 '+rows.results.length+' 条测量\n'+
     [metric('weight','kg'),metric('height','cm'),metric('head_circumference','cm')].filter(Boolean).join('\n');
   }
