@@ -96,7 +96,7 @@ export default function App(){
  }
  useEffect(()=>{refresh();const wake=()=>{if(document.visibilityState==='visible')void refresh()};window.addEventListener('focus',wake);document.addEventListener('visibilitychange',wake);return()=>{window.removeEventListener('focus',wake);document.removeEventListener('visibilitychange',wake)}},[]);
  // Refresh external WeChat edits without continually downloading the full album.
- // The lightweight revision endpoint compares the newest media update timestamp.
+ // A per-baby D1 revision advances for every media mutation, including older captions.
  useEffect(()=>{
   if(mode!=='app'||active!=='album'||!baby?.id)return;
   let stopped=false,checking=false,version:string|null=null;
@@ -188,10 +188,10 @@ export default function App(){
   <section className="home-memories" aria-label="最近照片">
    <div className="section-title home-section-title"><h2>最近的照片</h2><button type="button" className="text-btn" onClick={()=>setActive('album')}>查看相册 <ChevronRight size={16}/></button></div>
    {media.length>0?<><button type="button" className="home-photo-cover" onClick={()=>setActive('album')} aria-label="打开家庭相册查看最近照片">
-    {(media[0].mime.startsWith('image/')||media[0].thumbnail_ready)?<><img src={'/api/media/'+encodeURIComponent(media[0].id)+'/thumbnail'} alt="" decoding="async"/>{media[0].mime.startsWith('video/')&&<span className="home-video-badge"><Play size={15} fill="currentColor"/> 视频</span>}</>:<span className="home-video-placeholder"><Camera size={27}/>最近的视频</span>}
+    {media[0].upload_state&&media[0].upload_state!=='ready'?<span className="home-video-placeholder"><Camera size={27}/>{media[0].upload_state==='processing'?'正在保存照片…':'照片保存失败'}</span>:(media[0].mime.startsWith('image/')||media[0].thumbnail_ready)?<><img src={'/api/media/'+encodeURIComponent(media[0].id)+'/thumbnail'} alt="" decoding="async"/>{media[0].mime.startsWith('video/')&&<span className="home-video-badge"><Play size={15} fill="currentColor"/> 视频</span>}</>:<span className="home-video-placeholder"><Camera size={27}/>最近的视频</span>}
    </button>
    {media.length>1&&<div className="home-photo-strip">{media.slice(1,5).map(item=><button key={item.id} type="button" className="home-photo-thumb" onClick={()=>setActive('album')} aria-label={'查看 '+item.day+' 的媒体'}>
-    {(item.mime.startsWith('image/')||item.thumbnail_ready)?<><img src={'/api/media/'+encodeURIComponent(item.id)+'/thumbnail'} loading="lazy" alt=""/>{item.mime.startsWith('video/')&&<span className="home-thumb-video" aria-hidden="true"><Play size={13} fill="currentColor"/></span>}</>:<>{item.mime.startsWith("video/")?<Play size={20} aria-hidden="true"/>:<Camera size={22}/>}</>}
+    {item.upload_state&&item.upload_state!=='ready'?<Camera size={22} aria-label={item.upload_state==='processing'?'正在保存':'保存失败'}/>:item.mime.startsWith('image/')||item.thumbnail_ready?<><img src={'/api/media/'+encodeURIComponent(item.id)+'/thumbnail'} loading="lazy" alt=""/>{item.mime.startsWith('video/')&&<span className="home-thumb-video" aria-hidden="true"><Play size={13} fill="currentColor"/></span>}</>:<>{item.mime.startsWith("video/")?<Play size={20} aria-hidden="true"/>:<Camera size={22}/>}</>}
    </button>)}</div>}</>:<div className="home-empty-photos"><Camera size={26}/><p>还没有照片</p><button className="secondary" type="button" onClick={()=>setActive('album')}>添加第一张照片</button></div>}
   </section>
   <section className="home-measurements" aria-label="成长曲线"><div className="section-title home-section-title"><h2>成长记录</h2><button type="button" className="text-btn" onClick={()=>setActive('growth')}>查看记录 <ChevronRight size={16}/></button></div><GrowthChart items={growthHistory} limited={historyLimited}/></section>
