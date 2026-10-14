@@ -419,8 +419,19 @@ export class WechatSession {
                 const reservedIds=await reserveWechatMedia(this.env,sourceRaw,baby,unique);
                  const queued=await workerMediaBot(this.env,connectionId).fetch('https://bot.internal/media/enqueue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceId:unique,payload})});
                 if(!queued.ok)throw Error('WECHAT_MEDIA_QUEUE_UNAVAILABLE');
-                const result=await queued.json() as {accepted:boolean};
-                if(!result.accepted){
+                const result=await queued.json() as {accepted:boolean;alreadyDone?:boolean};
+                if(result.alreadyDone){
+                  const rows=await this.env.DB.prepare('SELECT id,upload_state FROM media WHERE baby_id=? AND deleted_at IS NULL AND id IN ('+reservedIds.map(()=>'?').join(',')+')')
+                   .bind(baby.id,...reservedIds).all<{id:string;upload_state:string}>();
+                  if(rows.results.length===reservedIds.length&&rows.results.every(row=>row.upload_state==='ready')){
+                   thread.selectedBabyId=baby.id;
+                   thread.lastMedia={babyId:baby.id,ids:reservedIds,expiresAt:receivedAt+1200000};
+                   reply='这些照片或视频之前已经保存过，无需重复导入。';
+                  }else{
+                   await failWechatMediaReservations(this.env,sourceRaw,baby.id,unique);
+                   reply='此前照片任务已经结束，但仍有媒体未保存成功。请重新发送未保存的照片或视频。';
+                  }
+                 }else if(!result.accepted){
                   await failWechatMediaReservations(this.env,sourceRaw,baby.id,unique);
                   reply='当前待保存的照片或视频较多，本条尚未接收。请稍后重新发送；文字记录仍可继续。';
                  }else{
