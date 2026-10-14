@@ -1,5 +1,5 @@
 export type MediaJob={payload:string;generation:string;phase:'pending'|'saving'|'reply';attempts:number;nextAt:number;createdAt:string;result?:string;ok?:boolean};
-export type MediaQueueHooks={permission:(payload:string)=>Promise<'active'|'paused'|'stale'>;execute:(payload:string)=>Promise<{payload:string;ok:boolean}>;failure:(payload:string,error:unknown,attempt:number)=>Promise<{payload:string;ok:boolean}|null>;deliver:(payload:string,result:string,clientId:string)=>Promise<void>;errorCode:(error:unknown)=>string};
+export type MediaQueueHooks={permission:(payload:string)=>Promise<'active'|'paused'|'stale'>;execute:(payload:string)=>Promise<{payload:string;ok:boolean}>;failure:(payload:string,error:unknown,attempt:number)=>Promise<{payload:string;ok:boolean}|null>;deliver:(payload:string,result:string,clientId:string)=>Promise<void>;abandon?:(payload:string)=>Promise<void>;errorCode:(error:unknown)=>string};
 export type MediaQueueStatus={pending:number;saving:boolean;notifying:boolean;retrying:boolean;lastError:{code:string;attempt:number;at:string}|null;lastCompleted:string|null};
 // One durable consumer per WeChat connection, using the existing BOT namespace.
 // Payloads/results are encrypted by the caller. Status never contains payloads.
@@ -82,7 +82,7 @@ export class DurableMediaQueue {
    let job=await this.storage.get<MediaJob>(key(id));if(!job)return;
    let permission=await this.hooks.permission(job.payload);
    if(permission==='paused')return;
-   if(permission!=='active'){await this.finish(id,job);return}
+   if(permission!=='active'){await this.hooks.abandon?.(job.payload);await this.finish(id,job);return}
    if(job.nextAt>Date.now())return;
    if(job.phase!=='reply'){
     job={...job,phase:'saving',attempts:job.attempts+1,nextAt:0};
@@ -102,7 +102,7 @@ export class DurableMediaQueue {
    }
    permission=await this.hooks.permission(job.payload);
    if(permission==='paused')return;
-   if(permission!=='active'){await this.finish(id,job);return}
+   if(permission!=='active'){await this.hooks.abandon?.(job.payload);await this.finish(id,job);return}
    try{await this.hooks.deliver(job.payload,job.result??'','media-'+id.slice(0,40))}
    catch(error){
     if(await this.owns(id,job)){
