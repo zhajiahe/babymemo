@@ -62,7 +62,7 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   const sourceId=messageId+':'+kind+':'+i,id=photoRecordId(sourceId);
   const existing=await env.DB.prepare('SELECT id,baby_id,deleted_at,upload_state FROM media WHERE source_message_id=?').bind(sourceId).first<{id:string;baby_id:string;deleted_at?:string|null;upload_state:string}>();
   if(existing&&(existing.baby_id!==baby.id||existing.deleted_at))throw Error('WECHAT_MEDIA_RESERVATION_CONFLICT');
-  if(existing?.upload_state==='ready')return {id:existing.id,kind,already:true};
+  if(existing&&(!existing.upload_state||existing.upload_state==='ready'))return {id:existing.id,kind,already:true};
   const objectKey='private/'+baby.id+'/'+id;
   const old=await env.MEDIA.head(objectKey);
   let size=old?.size||0,mime:string|null|undefined=old?.httpMetadata?.contentType;
