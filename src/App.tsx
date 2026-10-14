@@ -11,7 +11,7 @@ import { Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
 import { MediaViewer, type MediaItem } from './components/MediaViewer';
 import { createAlbumThumbnail, createStoredThumbnail, createVideoThumbnail, fingerprintFile } from './media-upload';
 import { pickMatchingUpload, remainingPartNumbers } from './upload-plan.mjs';
-import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Play, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
+import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Play, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
 
 function Gate({onReady}:{onReady:()=>void}){
  const [mode,setMode]=useState<'loading'|'setup'|'login'|'unavailable'>('loading');
@@ -40,7 +40,7 @@ function Gate({onReady}:{onReady:()=>void}){
 }
 function Nav({active,setActive,logout,familyName}:{active:Tab;setActive:(t:Tab)=>void;logout:()=>void;familyName:string}){
  const sections:[Tab,string,ReactNode][]=[['overview','首页',<Baby size={19}/>],['album','相册',<Camera size={19}/>],['growth','成长',<TrendingUp size={19}/>],['moments','瞬间',<BookHeart size={19}/>],['settings','设置',<Settings2 size={19}/>]];
- return <><aside className="sidebar"><Logo/><div className="side-label side-space-name" title={familyName}>{familyName}</div><nav>{sections.map(([tab,label,icon])=><button className={'nav-link '+(tab===active?'active':'')} key={tab} type="button" aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)}>{icon}{label}{tab===active&&<span className="active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16}/> 私密家庭空间</div><button className="nav-link" onClick={logout}><LogOut size={18}/> 安全退出</button></div></aside><nav className="mobile-nav">{sections.filter(([tab])=>tab!=='moments').map(([tab,label,icon])=><button key={tab} type="button" aria-label={label} aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)} className={tab===active?'active':''}>{icon}<span>{label}</span></button>)}</nav></>;
+ return <><aside className="sidebar"><Logo/><div className="side-label side-space-name" title={familyName}>{familyName}</div><nav>{sections.map(([tab,label,icon])=><button className={'nav-link '+(tab===active?'active':'')} key={tab} type="button" aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)}>{icon}{label}{tab===active&&<span className="active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16}/> 私密家庭空间</div><button className="nav-link" onClick={logout}><LogOut size={18}/> 安全退出</button></div></aside><nav className="mobile-nav" aria-label="底部主导航">{sections.filter(([tab])=>tab!=='moments').map(([tab,label,icon])=><button key={tab} type="button" aria-label={label} aria-current={tab===active?'page':active==='moments'&&tab==='overview'?'location':undefined} onClick={()=>setActive(tab)} className={tab===active||active==='moments'&&tab==='overview'?'active':''}><span className="mobile-nav-icon" aria-hidden="true">{icon}</span><span className="mobile-nav-label">{label}</span></button>)}</nav></>;
 }
 export default function App(){
  const [mode,setMode]=useState<'loading'|'gate'|'app'|'unavailable'>('loading');
@@ -51,9 +51,41 @@ export default function App(){
  const [hasMore,setHasMore]=useState({growth:false,moments:false,album:false});
  const [busy,setBusy]=useState(false);
  const [revision,setRevision]=useState(0);
+ const [keyboardVisible,setKeyboardVisible]=useState(false);
+ useEffect(()=>{
+  const viewport=window.visualViewport;
+  if(!viewport)return;
+  // Do not hide tabs merely because an input is focused: only a real software
+  // keyboard shrinks the visual viewport. This keeps hardware keyboards usable.
+  function syncKeyboard(){
+   const focused=document.activeElement;
+   const textEditing=focused instanceof HTMLTextAreaElement
+     ||(focused instanceof HTMLInputElement&&['text','password','number','email','search','tel','url'].includes(focused.type));
+   setKeyboardVisible(textEditing&&window.innerWidth<=800&&window.innerHeight-viewport!.height>140);
+  }
+  viewport.addEventListener('resize',syncKeyboard);
+  viewport.addEventListener('scroll',syncKeyboard);
+  window.addEventListener('resize',syncKeyboard);
+  document.addEventListener('focusin',syncKeyboard);
+  document.addEventListener('focusout',syncKeyboard);
+  syncKeyboard();
+  return ()=>{
+   viewport.removeEventListener('resize',syncKeyboard);
+   viewport.removeEventListener('scroll',syncKeyboard);
+   window.removeEventListener('resize',syncKeyboard);
+   document.removeEventListener('focusin',syncKeyboard);
+   document.removeEventListener('focusout',syncKeyboard);
+  };
+ },[]);
  const refreshSequence=useRef(0);
  const [growthFilters,setGrowthFilters]=useState<RecordFilters>(emptyFilters),[momentFilters,setMomentFilters]=useState<RecordFilters>(emptyFilters),[albumFilters,setAlbumFilters]=useState<RecordFilters>(emptyFilters);
  useEffect(()=>{localStorage.setItem('babymemo-view',active);localStorage.setItem('babymemo-baby',babyId)},[active,babyId]);
+  // A new tab begins at its top, like iPhone tab navigation.
+  useEffect(()=>{window.scrollTo(0,0)},[active]);
+  function selectTab(tab:Tab){
+    if(tab!==active){setActive(tab);return;}
+    window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+  }
  useEffect(()=>{if(!toast)return;const timer=setTimeout(()=>setToast(''),5000);return()=>clearTimeout(timer)},[toast]);
  const baby=state?.babies.find(b=>b.id===babyId)||state?.babies[0];
  async function refresh(){
@@ -110,7 +142,7 @@ export default function App(){
  if(mode==='unavailable')return <div className="loading-screen"><Logo/><p>暂时无法连接家庭空间，已保留你的会话。</p><button className="secondary" onClick={()=>void refresh()}><RefreshCw size={16}/>重新连接</button></div>;
  if(!state||!baby)return <div className="loading-screen">家庭空间中暂无宝宝档案</div>;
  const titles:Record<Tab,string>={overview:'成长日记',growth:'成长记录',moments:'成长瞬间',album:'相册',settings:'设置'};
- return <div className="app"><Nav active={active} setActive={setActive} logout={logout} familyName={state.familyName||"家庭空间"}/><main className="workspace"><div className="topbar"><div className="crumb"><span className="space-name" aria-label="家庭空间名称" title={state.familyName||'家庭空间'}>{state.familyName||'家庭空间'}</span> <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
+ return <div className={'app'+(keyboardVisible?' keyboard-open':'')}><Nav active={active} setActive={selectTab} logout={logout} familyName={state.familyName||"家庭空间"}/><main className="workspace"><div className={'topbar'+(active==='moments'?' has-back':'')}>{active==='moments'&&<button type="button" className="mobile-back-button" onClick={()=>selectTab('overview')} aria-label="返回首页"><ChevronLeft size={19}/>首页</button>}<div className="crumb"><span className="space-name" aria-label="家庭空间名称" title={state.familyName||'家庭空间'}>{state.familyName||'家庭空间'}</span> <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
  <div className="page"><OfflineStatus changed={changed} notify={setToast}/><header className={"page-heading"+(active==="album"?" page-heading-album":"")}><div className={"page-heading-content"+(baby.avatar_key?" has-avatar":"")}>{baby.avatar_key&&<img className="baby-portrait" src={'/api/babies/'+baby.id+'/avatar?v='+encodeURIComponent(baby.updated_at||'')} alt={baby.name+'的头像'}/>}<h1>{active==='overview'?baby.name:titles[active]}</h1>
  <p className="muted">{active==='overview'
  ? ageLabel(baby.birthday,baby.birth_time,baby.time_zone)+' · 成长日记'
