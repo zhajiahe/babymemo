@@ -6,7 +6,7 @@ import {DEFAULT_OPENROUTER_MODEL} from '../src/openrouter-model.mjs';
 
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
 test('one shared default is used in Worker, WeChat commands and settings UI',()=>{
-  assert.equal(DEFAULT_OPENROUTER_MODEL,'meta/muse-spark-1.3-contributor');
+  assert.equal(DEFAULT_OPENROUTER_MODEL,'deepseek/deepseek-v4.1-flash');
   for(const path of ['src/worker.ts','src/wechat.ts','src/features/settings/Settings.tsx']){
     assert.match(read(path),/DEFAULT_OPENROUTER_MODEL/,path);
     assert.doesNotMatch(read(path),/openai\/gpt-4\.1-mini/,path);

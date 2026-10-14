@@ -75,6 +75,9 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 
 ## 5.2 OpenRouter 新增模型与固定路由（2026-10-14）
 
+**默认模型变更**：OpenRouter 模型默认值现为 `deepseek/deepseek-v4.1-flash`，固定 Relace 并优先 `reasoning.enabled=false`。Muse 保留为手动可选。已有明确保存的 OpenRouter 模型 ID 不被默认值更改覆盖；无 `ai_provider` 偏好的用户依然默认使用 Workers AI Qwen。如需实际切换线上已有 Muse 配置，请在设置里保存 DeepSeek 模型并将提供方设为 OpenRouter。
+
+
 | OpenRouter 模型 ID | 服务商选择 | 思考设置 |
 | --- | --- | --- |
 | `deepseek/deepseek-v4.1-flash` | **固定 Relace**：`provider: {only: ['relace'], allow_fallbacks: false}`，其他服务商不会自动接管 | 优先 `reasoning.enabled=false` |

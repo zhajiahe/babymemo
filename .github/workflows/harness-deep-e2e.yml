@@ -39,11 +39,11 @@ on:
         description: "OpenRouter model preset for the ten synthetic scenarios"
         type: choice
         options:
-          - meta/muse-spark-1.3-contributor
           - deepseek/deepseek-v4.1-flash
+          - meta/muse-spark-1.3-contributor
           - openai/gpt-6-luna
           - anthropic/claude-haiku-5.5
-        default: meta/muse-spark-1.3-contributor
+        default: deepseek/deepseek-v4.1-flash
       model_id:
         description: "Optional custom OpenRouter model ID (overrides model_preset when nonempty)"
         type: string
