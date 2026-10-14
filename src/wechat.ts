@@ -214,7 +214,11 @@ export class WechatSession {
   constructor(private readonly ctx: DurableObjectState,private readonly env: Env){
    const decode=async(payload:string)=>JSON.parse(await decryptSecret(env,payload)) as MediaTask;
    this.mediaQueue=new DurableMediaQueue(ctx.storage,{
-    permission:async payload=>{
+    abandon:async payload=>{
+      const task=await decode(payload);
+      await failWechatMediaReservations(env,task.raw,task.babyId,task.sourceId);
+     },
+     permission:async payload=>{
      const task=await decode(payload),c=await getWechatConnection(env,task.connectionId);
      if(!c||c.bot_id!==task.botId||c.user_id!==task.userId||await mediaTaskId(c.token_cipher)!==task.credentialHash)return 'stale';
      return c.enabled===1?'active':'paused';
@@ -224,6 +228,7 @@ export class WechatSession {
      const task=await decode(payload),thread=structuredClone(task.thread);
      let reply=await handleWechatPhotoMessage(env,task.raw,task.sourceId,thread,task.babyId);
      const ok=reply.startsWith('已保存')||reply.startsWith('这些照片或视频已经保存过');
+      if(!ok)await failWechatMediaReservations(env,task.raw,task.babyId,task.sourceId);
      const text=wechatMessageText(task.raw);
      if(ok){
       const ids=await savedWechatMediaIds(env,task.raw,task.babyId,task.sourceId);
