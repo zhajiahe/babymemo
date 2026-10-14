@@ -1,6 +1,6 @@
 # Qwen3.8-27B 作为 BabyMemo 微信默认模型：实测与迁移
 
-> 2026-10-14 · 本变更**尚未合并/部署**；不读取或写入生产家庭记录。
+> 历史记录：2026-10-14 · 默认模型于 PR #59 合并并部署；下列 10 题是上线前的旧测试，非最新统一 Benchmark。
 > 与旧的 `anthropic/claude-haiku-5.5` 不同，本方案使用 **Cloudflare-hosted Workers AI**，无需 AI Gateway 充值或 OpenRouter Key。
 
 ## 接入决策
@@ -71,10 +71,12 @@ node scripts/qwen38-live-e2e.mjs
 
 另有 `scripts/qwen-workers-ai.test.mjs` 离线单测：模型参数必须关闭思考、默认路由正确、ReAct 工具执行与真实工具观察转发正确、无 AI binding 时明确报错、限额异常屏蔽底层消息。离线测试不是新增的真实模型测试。
 
-## 上线前必须满足
+## 部署后的后续验收（原清单）
 
-- [ ] TypeScript、完整 unit/Worker/browser CI 均通过。
-- [ ] 网页设置默认显示 Workers AI，用户不用 OpenRouter Key 能正常启动微信连接；可选 OpenRouter 切回。
+- [x] TypeScript、完整 unit/Worker/browser CI 均通过（PR #59）。
+- [x] 设置页默认 Workers AI，允许保留并手动切换 OpenRouter；真实微信重连需验证。
 - [ ] 首次发送消息（DO Alarm 正常时）能够真实收取、调用 Qwen、执行有限工具并回复；不要通过在线家庭数据做破坏性测试。
 - [ ] 测试较长的多轮对话、模型重复工具调用、429/配额不足、空模型答复、网络超时、DO Alarm 重启。
 - [ ] 监控 Neurons 和 DO duration，尤其模型调用仍运行在 DO 的现有架构限制。只有经过真实微信验收后才适合正式部署为生产默认。
+
+统一公平评估、历史 Muse 5/16/60 场景结果、Actions 使用方法及账号免费额度详见 [AI 模型 Benchmark 与配额](ai-model-benchmark-and-quotas.md)。
