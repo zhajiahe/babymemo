@@ -2,7 +2,7 @@ import {queueMedia,syncOffline} from '../../offline';
 import {downloadFamilyArchive} from '../../export-download';
 import {useEffect,useState,type FormEvent} from 'react';
 import {Card,Field,Primary} from '../../components/ui';
-import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,BrainCircuit} from 'lucide-react';
+import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi,BrainCircuit} from 'lucide-react';
 import {api,post,today,type BabyInfo,type State,type WechatRunStatus} from '../../lib/client';
 import {DEFAULT_OPENROUTER_MODEL} from '../../openrouter-model.mjs';
 import {wechatStatusView,wechatStatusTime} from '../../wechat-status.mjs';
