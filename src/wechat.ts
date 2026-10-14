@@ -240,7 +240,7 @@ export class WechatSession {
      // Process deferred captions against the actual saved photo IDs, never an AI guess.
      const deferred=await ctx.storage.get<{sourceId:string;babyId:string;items:{messageId:string;text:string}[]}>('pendingCaption');
      if(deferred?.sourceId===task.sourceId&&deferred.babyId===task.babyId){
-      if(ok&&thread.lastMedia?.ids?.length){
+      if(ok&&Array.isArray(thread.lastMedia?.ids)&&thread.lastMedia.ids.length){
        for(const item of deferred.items){
         const caption=item.text.trim();
         if(caption){
