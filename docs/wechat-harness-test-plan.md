@@ -1,6 +1,6 @@
 # BabyMemo 微信 Harness 自动化测试方案
 
-> 状态：**历史 T-001～T-024 计划 + ReAct R-001～R-014 的新验收矩阵**。下表不是已通过报告；PR 里的新增测试要等 CI 通过后才计为验证。场景依据见 [真实场景审查](./wechat-harness-review.md)。现有自动化与执行命令分别见 [QA 回归矩阵](./qa-regression-matrix.md)、[E2E 执行指南](./e2e-testing.md)。固定代码基线 main@61c0ecd，2026-10-13。
+> 状态：**历史 T-001～T-024 计划 + ReAct R-001～R-014 的新验收矩阵**。下表不是已通过报告；PR 里的新增测试要等 CI 通过后才计为验证。场景依据见 [真实场景审查](./wechat-harness-review.md)。现有自动化与执行命令分别见 [QA 回归矩阵](./qa-regression-matrix.md)、[E2E 执行指南](./qa-regression-matrix.md)。固定代码基线 main@61c0ecd，2026-10-13。
 
 ## 2026-10-13 新增：ReAct 闭环专项验收（PR #37）
 
