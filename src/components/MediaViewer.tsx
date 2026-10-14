@@ -14,6 +14,7 @@ export type MediaItem = {
   thumbnail_ready?: number;
   updated_at?: string;
   pending?: boolean;
+  upload_state?: 'processing'|'ready'|'failed';
 };
 type MediaEdit = { day: string;description: string;requestId?:string;expectedUpdatedAt?:string };
 type MediaReply = {updated_at?:string;id?:string;queued?:boolean};
