@@ -1,0 +1,131 @@
+#!/usr/bin/env node
+// Manual ONLY: same ten virtual-family tasks, exact BabyMemo tool schema,
+// same prompts/observations/scoring for Qwen Workers AI and Muse OpenRouter.
+// No production WeChat, D1, R2, personal messages or real tool side effects.
+import {writeFile} from 'node:fs/promises';
+import {wechatTools} from '../src/wechat-harness.mjs';
+import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
+import {qwenCompletion,qwenRequest,DEFAULT_QWEN_MODEL} from '../src/qwen-workers-ai.mjs';
+import {openRouterCompletion} from '../src/openrouter-retry.mjs';
+import {DEFAULT_OPENROUTER_MODEL} from '../src/openrouter-model.mjs';
+import {MODEL_BENCH_CASES,BENCHMARK_SYSTEM,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
+
+if(process.env.MODEL_BENCH_CONFIRM!=='YES')throw Error('MANUAL_CONFIRMATION_REQUIRED');
+const provider=process.env.MODEL_BENCH_PROVIDER||'both';
+if(!['workers-ai','openrouter','both'].includes(provider))throw Error('INVALID_PROVIDER');
+const repetitions=Number(process.env.MODEL_BENCH_REPETITIONS||1);
+if(!Number.isInteger(repetitions)||repetitions<1||repetitions>3)throw Error('REPETITIONS_OUT_OF_RANGE');
+const maxNeurons=Number(process.env.MODEL_BENCH_MAX_NEURONS||3000);
+const maxUSD=Number(process.env.MODEL_BENCH_MAX_USD||0.10);
+if(!Number.isFinite(maxNeurons)||maxNeurons<=0||maxNeurons>10000||!Number.isFinite(maxUSD)||maxUSD<=0||maxUSD>1)
+ throw Error('INVALID_BENCHMARK_BUDGET');
+const openRouterModel=process.env.MODEL_BENCH_OPENROUTER_MODEL||DEFAULT_OPENROUTER_MODEL;
+if(!/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/i.test(openRouterModel))throw Error('INVALID_OPENROUTER_MODEL');
+const selected=provider==='both'?['workers-ai','openrouter']:[provider];
+const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,apiToken=process.env.CLOUDFLARE_API_TOKEN,openRouterKey=process.env.OPENROUTER_API_KEY;
+if(selected.includes('workers-ai')&&(!accountId||!apiToken))throw Error('WORKERS_AI_CREDENTIALS_MISSING');
+if(selected.includes('openrouter')&&(!openRouterKey||!openRouterKey.startsWith('sk-or-')))throw Error('OPENROUTER_KEY_MISSING');
+
+const spent={neurons:0,usd:0,requests:0},maximumRequests=repetitions*10*6*selected.length;
+async function request(provider,messages,tools,maxTokens=1200){
+ if(spent.requests>=maximumRequests)throw Error('MODEL_REQUEST_LIMIT');
+ if(provider==='workers-ai'){
+  if(spent.neurons>=maxNeurons)throw Error('WORKERS_AI_SOFT_BUDGET_REACHED');
+  spent.requests++;
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),45000);
+  try{
+   const response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+accountId+'/ai/run/'+DEFAULT_QWEN_MODEL,{
+    method:'POST',headers:{Authorization:'Bearer '+apiToken,'Content-Type':'application/json'},
+    body:JSON.stringify(qwenRequest({messages,tools,max_tokens:maxTokens})),signal:controller.signal
+   });
+   const json=await response.json().catch(()=>null);
+   if(!response.ok||json?.success===false)throw Error('WORKERS_AI_HTTP_'+String(json?.errors?.[0]?.code||response.status).replace(/[^0-9]/g,'').slice(0,6));
+   const raw=json?.result??json,usage=raw?.usage;
+   if(!usage||!Number.isFinite(usage.neurons))throw Error('WORKERS_AI_USAGE_MISSING');
+   spent.neurons+=usage.neurons;
+   return {response:raw,usage:{
+    inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,
+    neurons:usage.neurons,reportedUSD:null
+   }};
+  }finally{clearTimeout(timeout)}
+ }
+ if(spent.usd>=maxUSD)throw Error('OPENROUTER_SOFT_BUDGET_REACHED');
+ spent.requests++;
+ const response=await openRouterCompletion({key:openRouterKey,model:openRouterModel,messages,tools,max_tokens:maxTokens,maxAttempts:1});
+ const usage=response?.usage??{};
+ // OpenRouter cost is USD when present. Do not invent billed dollars when absent.
+ const cost=typeof usage.cost==='number'&&Number.isFinite(usage.cost)?usage.cost:
+   typeof response?.total_cost==='number'&&Number.isFinite(response.total_cost)?response.total_cost:null;
+ if(cost!==null)spent.usd+=cost;
+ return {response,usage:{
+  inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,
+  neurons:null,reportedUSD:cost
+ }};
+}
+async function evaluate(modelProvider,item,iteration){
+ const calls=[],issues=[],usage={inputTokens:0,outputTokens:0,neurons:modelProvider==='workers-ai'?0:null,reportedUSD:modelProvider==='openrouter'?0:null};
+ const started=Date.now();let modelRequests=0,reply='',error=null,modelFinal='';
+ const complete=async({messages,tools},maxTokens=1200)=>{
+  const result=await request(modelProvider,messages,tools,maxTokens);modelRequests++;
+  for(const key of ['inputTokens','outputTokens','neurons','reportedUSD']){
+   if(usage[key]===null||result.usage[key]===null){usage[key]=null;continue}
+   usage[key]+=result.usage[key];
+  }
+  const text=result.response?.choices?.[0]?.message?.content;
+  if(typeof text==='string'&&!result.response?.choices?.[0]?.message?.tool_calls?.length)
+   modelFinal=text;
+  return result.response;
+ };
+ try{
+  reply=await runWechatAgentLoop({
+   messages:[{role:'system',content:BENCHMARK_SYSTEM},{role:'user',content:item.message}],
+   tools:wechatTools,
+   complete:({messages,tools})=>complete({messages,tools},1200),
+   finalize:({messages})=>complete({messages,tools:undefined},360),
+   execute:async call=>{
+    const checked=validateBenchmarkTool(item,call,wechatTools,calls);
+    calls.push({name:checked.name,args:checked.args});
+    if(checked.issue){issues.push(checked.issue);return {content:'测试工具调用被拒绝，未执行真实写入。',committed:false,halt:true}}
+    return {content:syntheticObservation(checked.name),committed:/^(create_|update_|delete_|restore_)/.test(checked.name)};
+   }
+  });
+ }catch(e){error=e instanceof Error?e.message:'UNKNOWN_ERROR'}
+ const score=scoreModelCase(item,{calls,issues,reply,error});
+ if(item.id!=='negated-save'&&calls.length&&(!modelFinal||modelFinal.trim()===''))score.issues.push('NO_NATURAL_MODEL_FINAL');
+ score.passed=score.issues.length===0;
+ return {caseId:item.id,name:item.name,iteration,passed:score.passed,issues:score.issues,
+  tools:calls.map(x=>x.name),modelRequests,latencyMs:Date.now()-started,usage,
+  finalReplyPresent:!!modelFinal?.trim(),errorCode:error?String(error).replace(/[^A-Z0-9_]/gi,'').slice(0,42):null};
+}
+const models=[];
+for(const id of selected){
+ const tasks=[];
+ for(let repeat=0;repeat<repetitions;repeat++){
+  for(const item of MODEL_BENCH_CASES){
+   const result=await evaluate(id,item,repeat+1);tasks.push(result);
+   if(result.errorCode&&/BUDGET|REQUEST_LIMIT/.test(result.errorCode))break;
+  }
+  if(tasks.some(x=>x.errorCode&&/BUDGET|REQUEST_LIMIT/.test(x.errorCode)))break;
+ }
+ const model=id==='workers-ai'?DEFAULT_QWEN_MODEL:openRouterModel;
+ models.push({provider:id,model,summary:aggregateBenchmark(tasks),results:tasks});
+}
+const report={benchmark:'babymemo-model-parity-v1',timestamp:new Date().toISOString(),
+ setup:{tasksPerModel:MODEL_BENCH_CASES.length,repetitions,identicalPromptsSchemasObservationsScoring:true,
+  providerProductionTemperatures:{'workers-ai':1,'openrouter':0},
+  sideEffects:'synthetic only; productionWrites=0',softLimits:{neurons:maxNeurons,usd:maxUSD}},
+ results:models};
+const output=JSON.stringify(report,null,2);
+console.log(output);
+if(process.env.MODEL_BENCH_REPORT_FILE)await writeFile(process.env.MODEL_BENCH_REPORT_FILE,output+'\n','utf8');
+if(process.env.GITHUB_STEP_SUMMARY){
+ const s=['## BabyMemo 模型同题 Benchmark','','- 全部数据为虚构测试数据；**未修改生产家庭记录**','- 相同的 10 道题、工具 Schema、系统提示词、工具结果和评分规则','- 温度沿用现有生产配置（Qwen 1、Muse 0），不代表仅比较模型权重','',
+ '|模型|完成任务|总任务数|调用模型次数|输入 tokens|输出 tokens|Neurons|OpenRouter 实际报告 USD|',
+ '|---|---:|---:|---:|---:|---:|---:|---:|'];
+ for(const x of models){const u=x.summary.usage;s.push('|'+x.model+'|'+x.summary.passed+'|'+x.summary.cases+'|'+x.summary.modelRequests+'|'+(u.inputTokens??'未报告')+'|'+(u.outputTokens??'未报告')+'|'+(u.neurons??'不适用/未报告')+'|'+(u.reportedUSD??'未报告')+'|')}
+ s.push('','详细的每场景报告保存在 workflow artifact（人工触发，不由 CI 自动计费）。');
+ await writeFile(process.env.GITHUB_STEP_SUMMARY,s.join('\n')+'\n',{flag:'a'});
+}
+// A scored miss is a benchmark result, not a CI failure; security/credential
+// errors and unexpected fatal errors still fail the workflow.
+if(models.some(x=>x.results.some(r=>r.errorCode&&/BUDGET|HTTP|CREDENTIAL|REQUEST_LIMIT/.test(r.errorCode))))process.exitCode=2;
