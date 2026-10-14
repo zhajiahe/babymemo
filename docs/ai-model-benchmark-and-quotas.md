@@ -75,21 +75,23 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 
 **当前状态**：已准备代码和手动测试入口，**尚未实际运行 DeepSeek 的 10 题**。不得虚构准确率或费用，也不应为这项测试修改 BabyMemo 线上默认模型。
 
-## 5.2 OpenRouter 新增模型与固定路由（2026-10-14）
+## 5.2 OpenRouter 模型统一优先 Relace，可自动回退（2026-10-14）
 
-**默认模型变更**：OpenRouter 模型默认值现为 `deepseek/deepseek-v4.1-flash`，固定 Relace 并优先 `reasoning.enabled=false`。Muse 保留为手动可选。已有明确保存的 OpenRouter 模型 ID 不被默认值更改覆盖；无 `ai_provider` 偏好的用户依然默认使用 Workers AI Qwen。如需实际切换线上已有 Muse 配置，请在设置里保存 DeepSeek 模型并将提供方设为 OpenRouter。
+**统一 Provider 路由**：所有 OpenRouter 模型（包括自定义 ID、Muse、DeepSeek、GPT-6 Luna、Haiku）统一使用 `provider: {order: ['relace'], allow_fallbacks: true}`：若 Relace 能提供该模型且满足请求条件则优先选用；若 Relace 不支持、不可用或拒绝请求，OpenRouter 允许按其路由策略改用其他提供同**一个模型**的服务商。**不使用 `only`，也不进行跨模型回退**。其他服务商可能具有不同价格、延迟和行为，实际费用以 OpenRouter 返回的用量为准。
+
+**默认模型**仍为 `deepseek/deepseek-v4.1-flash`，默认优先 `reasoning.enabled=false`；Muse 保留为手动可选。原有用户保存的模型 ID 不受影响；无 `ai_provider` 偏好的用户仍默认使用 Workers AI Qwen。如需切换已有生产 Muse 配置，可在设置页手动修改。
 
 
 | OpenRouter 模型 ID | 服务商选择 | 思考设置 |
 | --- | --- | --- |
-| `deepseek/deepseek-v4.1-flash` | **固定 Relace**：`provider: {only: ['relace'], allow_fallbacks: false}`，其他服务商不会自动接管 | 优先 `reasoning.enabled=false` |
-| `openai/gpt-6-luna` | OpenRouter 自动路由 | 优先关闭；若上游明确拒绝关闭思考，自动重试一次 `reasoning.effort='minimal'` |
-| `anthropic/claude-haiku-5.5` | OpenRouter 自动路由 | 优先关闭；若上游明确拒绝关闭思考，自动重试一次 `reasoning.effort='low'` |
-| `meta/muse-spark-1.3-contributor` | 保持以前路由策略 | 保持以前默认请求参数 |
+| `deepseek/deepseek-v4.1-flash` | 优先 Relace，可自动回退其他提供方 | 优先 `reasoning.enabled=false` |
+| `openai/gpt-6-luna` | 优先 Relace，可自动回退其他提供方 | 优先关闭；若上游明确拒绝关闭思考，自动重试一次 `reasoning.effort='minimal'` |
+| `anthropic/claude-haiku-5.5` | 优先 Relace，可自动回退其他提供方 | 优先关闭；若上游明确拒绝关闭思考，自动重试一次 `reasoning.effort='low'` |
+| `meta/muse-spark-1.3-contributor` | 优先 Relace，可自动回退其他提供方 | 保持以前默认请求参数 |
 
-参见 [DeepSeek 服务商列表](https://openrouter.ai/deepseek/deepseek-v4.1-flash/providers)、[GPT-6 Luna](https://openrouter.ai/openai/gpt-6-luna)、[Haiku 5.5](https://openrouter.ai/anthropic/claude-haiku-5.5) 和 [OpenRouter 推理配置](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)。
+参见 [OpenRouter Provider 排序与回退说明](https://openrouter.ai/docs/guides/routing/provider-selection)、[DeepSeek 服务商列表](https://openrouter.ai/deepseek/deepseek-v4.1-flash/providers)、[GPT-6 Luna](https://openrouter.ai/openai/gpt-6-luna)、[Haiku 5.5](https://openrouter.ai/anthropic/claude-haiku-5.5) 和 [OpenRouter 推理配置](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)。
 
-兼容性重试**只**在服务商返回与 `reasoning` 参数直接相关的 HTTP 400 时发生；认证错误、工具参数错误、余额不足、一般模型错误不重试，并限制最多一次。若实际输出 `reasoning_tokens>0` 且没有发生合法最低思考回退，Benchmark 将标为思考配置未生效；**缺少该字段不等于零思考**。实际最低思考回退状态与服务商路由信息将写入日志和 JSON Artifact。
+兼容性重试**只**在服务商返回与 `reasoning` 参数直接相关的 HTTP 400 时发生；认证错误、工具参数错误、余额不足、一般模型错误不重试，并限制最多一次。若实际输出 `reasoning_tokens>0` 且没有发生合法最低思考回退，Benchmark 将标为思考配置未生效；**缺少该字段不等于零思考**。实际最低思考回退状态、请求首选 Provider 与服务商实际返回的 Provider 信息（若上游提供）将写入日志和 JSON Artifact。Provider 回退由 OpenRouter 服务端处理，**不保证 Relace 支持所有模型，也不保证每个响应都报告真实服务商**。
 
 **目前新增两款模型尚未实测**。测试入口为 GitHub Actions 的 `Manual Harness Deep E2E`，只发送虚构家庭指令，不读写真实数据，也不更改默认 Qwen 模型。留空 `model_ids` 则使用单个 `model_preset`；填写 1–6 个模型 ID 则并行评估。
 
