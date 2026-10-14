@@ -6,7 +6,7 @@ async function cdnFetch(item:WechatMediaItem,{fetchImpl=fetch,maxBytes=MAX_WECHA
  const startedAt=performance.now();
  const {media,key,kind}=mediaReference(item);
  const aesKey=decodeWeChatAesKey(key),url=wechatCdnUrl(media);
- const expected=kind==='video'?item.video_item.video_size:item.image_item?.mid_size;
+ const expected=kind==='video'?item.video_item?.video_size:item.image_item?.mid_size;
  if(expected!==undefined&&Number(expected)>maxBytes+16)bad('微信图片或视频超过 50 MB 限制');
  let response;
  try{response=await fetchImpl(url,{method:'GET',redirect:'manual',signal:AbortSignal.timeout(60000)})}
@@ -18,7 +18,7 @@ async function cdnFetch(item:WechatMediaItem,{fetchImpl=fetch,maxBytes=MAX_WECHA
  }
  const length=response.headers.get('Content-Length');
  if(length!==null&&Number(length)>maxBytes+16)bad('微信图片或视频超过 50 MB 限制');
- if(!response.body)bad('微信媒体响应为空');
+ if(!response.body)throw new WechatPhotoError('微信媒体响应为空');
  mediaTiming({channel:'wechat',stage:'cdn',size:Number(length||0),startedAt});
  return {reader:response.body.getReader(),aesKey,kind};
 }
@@ -47,8 +47,8 @@ async function decryptAndSink(item:WechatMediaItem,write:(chunk:Buffer,mime:stri
   if(!encrypted||encrypted%16!==0)bad('微信媒体加密内容长度无效');
   try{await consume(cipher.final())}
   catch(e){if(e instanceof WechatPhotoError)throw e;bad('微信媒体 AES 解密失败')}
-  if(!mime)bad('不支持的微信图片或视频格式');
-  return {size:plain,mime};
+  if(!mime)throw new WechatPhotoError('不支持的微信图片或视频格式');
+  return {size:plain,mime:mime as string};
  }finally{try{await reader.cancel()}catch{}reader.releaseLock()}
 }
 // For thumbnail parsing and isolated tests only. Originals use bounded multipart sink.
@@ -59,7 +59,7 @@ export async function downloadWeChatImage(item:WechatMediaItem,options:MediaTran
  return {bytes:new Uint8Array(Buffer.concat(chunks)),mime:result.mime};
 }
 export async function downloadWeChatVideo(item:WechatMediaItem,options:MediaTransferOptions={}){
- const chunks=[];
+ const chunks:Buffer[]=[];
  const result=await decryptAndSink(item,async bytes=>{chunks.push(Buffer.from(bytes))},options);
  if(!result.mime.startsWith('video/'))bad('不是有效视频');
  return {bytes:new Uint8Array(Buffer.concat(chunks)),mime:result.mime};
@@ -88,7 +88,7 @@ export async function storeEncryptedMedia(bucket:R2Bucket,objectKey:string,item:
    const number=++partNo,startedAt=performance.now();
    // Convert rejected promises into values, so draining/abort never creates
    // unhandled rejections if a second in-flight part fails first.
-   const task=multipart.uploadPart(number,block).then(
+   const task=(multipart as R2MultipartUpload).uploadPart(number,block).then(
     part=>{mediaTiming({channel:'wechat',stage:'r2',size:block.length,startedAt});return {ok:true,number,etag:part.etag}},
     error=>{mediaTiming({channel:'wechat',stage:'r2',size:block.length,startedAt,status:'error'});return {ok:false,number,error}}
    );
@@ -104,7 +104,7 @@ export async function storeEncryptedMedia(bucket:R2Bucket,objectKey:string,item:
   },options);
   if(!multipart){
    const startedAt=performance.now();
-   await bucket.put(objectKey,Buffer.concat(pending),metadata(result.mime));
+   await bucket.put(objectKey,Buffer.concat(pending),metadata(result.mime||'application/octet-stream'));
    mediaTiming({channel:'wechat',stage:'r2',size:result.size,startedAt});
   }else{
    if(pendingSize){
@@ -117,7 +117,7 @@ export async function storeEncryptedMedia(bucket:R2Bucket,objectKey:string,item:
    while(active.length)await drainOne();
    parts.sort((a,b)=>a.partNumber-b.partNumber);
    const finishAt=performance.now();
-   await multipart.complete(parts);
+   await (multipart as R2MultipartUpload).complete(parts);
    mediaTiming({channel:'wechat',stage:'finish',size:result.size,startedAt:finishAt});
   }
   return result;
@@ -125,7 +125,7 @@ export async function storeEncryptedMedia(bucket:R2Bucket,objectKey:string,item:
   // Wait for any outstanding uploadPart calls before aborting the multipart
   // session; otherwise parts could land after abort and leak R2 storage.
   await Promise.all(active);
-  if(multipart)try{await multipart.abort()}catch{}
+  if(multipart)try{await (multipart as R2MultipartUpload).abort()}catch{}
   throw error;
  }
 }
