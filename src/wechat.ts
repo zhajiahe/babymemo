@@ -269,7 +269,14 @@ export class WechatSession {
      await this.ctx.storage.put('role','media');
      if(path==='/media/start')await this.mediaQueue.start();
      else if(path==='/media/pause')await this.mediaQueue.pause();
-     else if(path==='/media/reset')await this.mediaQueue.reset();
+     else if(path==='/media/reset'){
+       const canceled=await this.mediaQueue.reset();
+       // A canceled job must not leave a permanent 'processing' photo in D1.
+       for(const encrypted of canceled){
+        const task=await decode(encrypted);
+        await failWechatMediaReservations(env,task.raw,task.babyId,task.sourceId);
+       }
+      }
      else{
       const data=await request.json() as {sourceId:string;payload:string};
       if(typeof data.sourceId!=='string'||typeof data.payload!=='string'||data.payload.length>120000)return Response.json({error:'WECHAT_MEDIA_TASK_INVALID'},{status:400});
