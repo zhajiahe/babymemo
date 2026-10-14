@@ -109,7 +109,7 @@ export async function storeEncryptedMedia(bucket:R2Bucket,objectKey:string,item:
   }else{
    if(pendingSize){
     const number=++partNo,block=Buffer.concat(pending),startedAt=performance.now();
-    active.push(multipart.uploadPart(number,block).then(
+    active.push((multipart as R2MultipartUpload).uploadPart(number,block).then(
      part=>{mediaTiming({channel:'wechat',stage:'r2',size:block.length,startedAt});return {ok:true,number,etag:part.etag}},
      error=>{mediaTiming({channel:'wechat',stage:'r2',size:block.length,startedAt,status:'error'});return {ok:false,number,error}}
     ));
