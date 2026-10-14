@@ -15,6 +15,7 @@ import {wechatSystemPrompt,wechatFinalMessages} from './wechat-prompt.mjs';
 import {runWechatAgentLoop} from './wechat-agent-loop.mjs';
 import {getWechatConnection} from './wechat-connections';
 import {DurableMediaQueue,mediaTaskId} from './wechat-media-queue.mjs';
+import {WECHAT_LISTEN_TIMEOUT_MS,nextWechatPollDelay,isWechatIdleTimeout,type PollOutcome} from './wechat-poll-budget';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
 const wireJSON=JSONBig({storeAsString:true,strict:true,protoAction:'error',constructorAction:'error'});
@@ -38,7 +39,12 @@ async function ilink(base:string,path:string,data?:unknown,token?:string,timeout
       headers['X-WECHAT-UIN']=btoa(String(crypto.getRandomValues(new Uint32Array(1))[0]));
     }
     if(token)headers.Authorization='Bearer '+token;
-    const r=await fetch(trustedBase(base)+'/'+path,{method:isPost?'POST':'GET',headers,body:isPost?JSON.stringify(data):undefined,signal:ctrl.signal,redirect:'manual'});
+    let r:Response;
+    try{r=await fetch(trustedBase(base)+'/'+path,{method:isPost?'POST':'GET',headers,body:isPost?JSON.stringify(data):undefined,signal:ctrl.signal,redirect:'manual'});}
+    catch(error){
+      if(path==='ilink/bot/getupdates'&&ctrl.signal.aborted)throw Error('WECHAT_GETUPDATES_TIMEOUT');
+      throw error;
+    }
     if(!r.ok)throw Error(r.status===401||r.status===403?'WECHAT_AUTH_EXPIRED':'WECHAT_HTTP_'+r.status);
     const o=wireJSON.parse(await r.text()) as Json;
     if(!o||typeof o!=='object'||(o.ret!==undefined&&o.ret!==0)||(o.errcode!==undefined&&o.errcode!==0))throw Error('WECHAT_PROTOCOL_ERROR');
@@ -279,6 +285,8 @@ export class WechatSession {
         lastError:await this.ctx.storage.get('lastError')||null,lastMessage:await this.ctx.storage.get('lastMessage')||null,
         lastProcessing:await this.ctx.storage.get('lastProcessing')||null,
         startedAt:await this.ctx.storage.get('startedAt')||null,
+        pollOutcome:await this.ctx.storage.get('pollOutcome')||null,
+        lastPollDurationMs:await this.ctx.storage.get('lastPollDurationMs')||null,
         media:await (await workerMediaBot(this.env,id).fetch('https://bot.internal/media/status')).json()});
     }
     if(request.method!=='POST')return new Response('Not found',{status:404});
@@ -288,6 +296,7 @@ export class WechatSession {
       if(!/^(legacy|[0-9a-f-]{36})$/.test(id)||!await getWechatConnection(this.env,id))return Response.json({error:'WECHAT_CONNECTION_NOT_FOUND'},{status:404});
       await this.ctx.storage.put('connectionId',id);
       await this.ctx.storage.put('lastError',null);
+      await this.ctx.storage.delete('pollOutcome');
       await this.ctx.storage.put('startedAt',new Date().toISOString());
       await workerMediaBot(this.env,id).fetch('https://bot.internal/media/start',{method:'POST'});
       await this.ctx.storage.setAlarm(Date.now()+1000);
@@ -305,7 +314,7 @@ export class WechatSession {
       await this.ctx.storage.put('connectionId',id);
       await workerMediaBot(this.env,id).fetch('https://bot.internal/media/reset',{method:'POST'});
       await this.ctx.storage.put('conversationEpoch',crypto.randomUUID());
-      await Promise.all(['cursor','lastPoll','lastError','lastMessage','lastProcessing','lastMediaError','conversation','mediaResult','startedAt','conversationVersion'].map(key=>this.ctx.storage.delete(key)));
+      await Promise.all(['cursor','lastPoll','lastError','lastMessage','lastProcessing','lastMediaError','conversation','mediaResult','startedAt','conversationVersion','pollOutcome','lastPollDurationMs'].map(key=>this.ctx.storage.delete(key)));
       return Response.json({ok:true});
     }
     return new Response('Not found',{status:404});
@@ -321,13 +330,15 @@ export class WechatSession {
     const botId=connection.bot_id,userId=connection.user_id;
     const base=connection.base_url||API_BASE;
     if(!tokenEncrypted||!botId||!userId)return;
-    let delay=2500;
+    let outcome:PollOutcome='error';
+    const pollStarted=Date.now();
     try{
       const token=await decryptSecret(this.env,tokenEncrypted);
       const cursor=(await this.ctx.storage.get<string>('cursor'))||'';
       const cached=await this.ctx.storage.get<any>('conversation');
       if(cached?.expiresAt&&cached.expiresAt<=Date.now())await this.ctx.storage.delete('conversation');
-      const response=await ilink(base,'ilink/bot/getupdates',{get_updates_buf:cursor,base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token,45000);
+      const response=await ilink(base,'ilink/bot/getupdates',{get_updates_buf:cursor,base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token,WECHAT_LISTEN_TIMEOUT_MS);
+      outcome=Array.isArray(response.msgs)&&response.msgs.length?'messages':'empty';
       await this.ctx.storage.put('lastPoll',new Date().toISOString());
       await this.ctx.storage.put('lastError',null);
       for(const raw of (Array.isArray(response.msgs)?response.msgs:[])){
@@ -421,16 +432,26 @@ export class WechatSession {
       // Acknowledgement advances only after all supported messages are durable.
       if(typeof response.get_updates_buf==='string')await this.ctx.storage.put('cursor',response.get_updates_buf);
     }catch(e){
-      const code=e instanceof Error&&/^WECHAT_[A-Z_0-9]+$/.test(e.message)?e.message:'POLL_OR_NETWORK_ERROR';
-      await this.ctx.storage.put('lastError',code);
-      delay=30000;
-      if(code==='WECHAT_AUTH_EXPIRED'){
+      if(isWechatIdleTimeout(e)){
+        // The iLink long-poll deadline expired without a complete batch.
+        // Do not advance the cursor, change D1, or report this as a broken bot.
+        outcome='idle-timeout';
+        await this.ctx.storage.put('lastPoll',new Date().toISOString());
+        await this.ctx.storage.put('lastError',null);
+      }else{
+       const code=e instanceof Error&&/^WECHAT_[A-Z_0-9]+$/.test(e.message)?e.message:'POLL_OR_NETWORK_ERROR';
+       await this.ctx.storage.put('lastError',code);
+       if(code==='WECHAT_AUTH_EXPIRED'){
         await this.env.DB.prepare('UPDATE wechat_connections SET enabled=0,updated_at=? WHERE id=?').bind(new Date().toISOString(),connectionId).run();
         await this.ctx.storage.deleteAlarm();
         return;
+       }
       }
     }finally{
-      if((await getWechatConnection(this.env,connectionId))?.enabled===1)await this.ctx.storage.setAlarm(Date.now()+delay);
+      await this.ctx.storage.put('pollOutcome',outcome);
+      await this.ctx.storage.put('lastPollDurationMs',Math.max(0,Date.now()-pollStarted));
+      if((await getWechatConnection(this.env,connectionId))?.enabled===1)
+        await this.ctx.storage.setAlarm(Date.now()+nextWechatPollDelay(outcome));
     }
   }
 }
