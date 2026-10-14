@@ -287,3 +287,10 @@ test('a paraphrased raw profile dump is not a conversational answer',async()=>{
  assert.equal(tries,1);
  assert.equal(res,'小好现在 1 岁 4 个月啦。');
 });
+
+test('photo caption update cannot claim success without a committed tool',async()=>{
+ const message='收到，我已把刚才那张照片的描述更新为“像是 3 岁小孩的样子，靓仔”。';
+ const result=await runWechatAgentLoop({...args,complete:async()=>done(message),execute:async()=>{throw Error('unexpected write')}});
+ assert.doesNotMatch(result,/描述更新为/);
+ assert.match(result,/没有实际保存或修改/);
+});
