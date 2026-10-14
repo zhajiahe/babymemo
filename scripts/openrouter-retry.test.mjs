@@ -123,3 +123,23 @@ test('default OpenRouter model is DeepSeek Flash via Relace with thinking disabl
  assert.ok(OPENROUTER_MODEL_PRESETS.some(x=>x.id===LEGACY_MUSE_MODEL),'Muse must remain manually selectable');
  assert.equal(openRouterReasoningForModel(LEGACY_MUSE_MODEL),null);
 });
+
+test('benchmark explicit off requests reasoning disabled on arbitrary OpenRouter models',async()=>{
+ const requests=[];let count=0;
+ const response=await openRouterCompletion({...opts(async(_url,init)=>{
+  count++;requests.push(JSON.parse(init.body));
+  return count===1?Response.json({error:{message:'Reasoning cannot be disabled for this model'}},{status:400}):
+   Response.json({choices:[{message:{content:'OK'}}]});
+ },async()=>{}),model:'other/custom-model',reasoningMode:'off',maxAttempts:1});
+ assert.equal(count,2);
+ assert.deepEqual(requests[0].reasoning,{enabled:false});
+ assert.deepEqual(requests[1].reasoning,{enabled:true,effort:'low'});
+ assert.equal(response._babymemo_request.reasoningFallbackUsed,true);
+});
+test('unrelated 400 with explicit off never triggers low compatibility retry',async()=>{
+ let count=0;
+ await assert.rejects(openRouterCompletion({...opts(async()=>{
+  count++;return Response.json({error:{message:'Invalid tools schema'}},{status:400});
+ },async()=>{}),model:'other/custom-model',reasoningMode:'off',maxAttempts:1}),/OPENROUTER_HTTP_400/);
+ assert.equal(count,1);
+});

@@ -37,4 +37,5 @@ test('Actions Markdown summary exposes per-case model, tools, tokens, results an
  assert.match(summary,/先查再更正/);
  assert.match(summary,/list_growth → update_growth/);
  assert.match(summary,/100\/20/);
+ assert.match(summary,/每模型 20 题/);
 });

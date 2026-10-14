@@ -5,12 +5,12 @@ import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
 import {MODEL_BENCH_CASES,BENCHMARK_SYSTEM,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
 
 const call=(name,args={})=>({id:'fixture_'+name,type:'function',function:{name,arguments:JSON.stringify(args)}});
-test('both providers share exactly ten synthetic BabyMemo tasks',()=>{
- assert.equal(MODEL_BENCH_CASES.length,10);
+test('both providers share exactly twenty synthetic BabyMemo tasks',()=>{
+ assert.equal(MODEL_BENCH_CASES.length,20);
  assert.ok(BENCHMARK_SYSTEM.includes('不要反复调用'));
  assert.ok(MODEL_BENCH_CASES.every(x=>x.id&&x.message));
- assert.equal(new Set(MODEL_BENCH_CASES.map(x=>x.id)).size,10);
- assert.equal(MODEL_BENCH_CASES.filter(x=>x.forbidWrites).length,5);
+ assert.equal(new Set(MODEL_BENCH_CASES.map(x=>x.id)).size,20);
+ assert.equal(MODEL_BENCH_CASES.filter(x=>x.forbidWrites).length,9);
 });
 test('correct read and update order plus grounded target passes',()=>{
  const item=MODEL_BENCH_CASES.find(x=>x.id==='growth-update'),calls=[];
@@ -63,4 +63,37 @@ test('real ReAct loop synthetic read still needs a natural final answer',async()
  });
  assert.match(answer,/10.5kg/);
  assert.equal(scoreModelCase(item,{calls,reply:answer}).passed,true);
+});
+
+test('twenty-task rubric verifies multi-action success and missing second action',()=>{
+ const item=MODEL_BENCH_CASES.find(x=>x.id==='dual-create');
+ const calls=[call('create_growth',{day:'2026-10-14',weight:10.8,height:83}),call('create_milestone',{day:'2026-10-14',title:'第一次自己拿勺子吃饭'})]
+  .map(x=>validateBenchmarkTool(item,x,wechatTools));
+ assert.ok(calls.every(x=>x.issue===null));
+ assert.equal(scoreModelCase(item,{calls,reply:'两件事均已记录'}).passed,true);
+ assert.match(scoreModelCase(item,{calls:[calls[0]],reply:'已记录体重'}).issues.join(','),/MISSING_CREATE_MILESTONE/);
+});
+test('a same-day image/video selection needs observed ID; correct read-before-delete passes',()=>{
+ const item=MODEL_BENCH_CASES.find(x=>x.id==='video-delete');
+ const list=validateBenchmarkTool(item,call('list_media',{day:'2026-10-01'}),wechatTools);
+ const wrong=validateBenchmarkTool(item,call('delete_media',{id:'dddddddd'}),wechatTools,[list]);
+ const right=validateBenchmarkTool(item,call('delete_media',{id:'abcd1234'}),wechatTools,[list]);
+ assert.equal(wrong.issue,'UPDATE_TARGET_NOT_GROUNDED');
+ assert.equal(right.issue,null);
+ assert.match(syntheticObservation('list_media'),/video\/quicktime/);
+ assert.equal(scoreModelCase(item,{calls:[list,right],reply:'仅视频已放入回收站'}).passed,true);
+ assert.equal(scoreModelCase(item,{calls:[right,list],reply:'已删除'}).passed,false);
+});
+test('conditional no-results search prohibits invention and writes',()=>{
+ const item=MODEL_BENCH_CASES.find(x=>x.id==='conditional-search');
+ const found=validateBenchmarkTool(item,call('search_records',{kind:'milestones',startDay:'2026-10-01',endDay:'2026-10-10',keyword:'疫苗'}),wechatTools);
+ assert.equal(found.issue,null);
+ assert.match(syntheticObservation('search_records',found.args),/没有找到/);
+ assert.equal(scoreModelCase(item,{calls:[found],reply:'没有找到相关事件'}).passed,true);
+ assert.ok(scoreModelCase(item,{calls:[found],reply:'已找到一条疫苗记录'}).issues.includes('FALSE_SEARCH_CLAIM'));
+ assert.equal(validateBenchmarkTool(item,call('create_milestone',{day:'2026-10-01',title:'疫苗'}),wechatTools).issue,'UNAUTHORIZED_MUTATION');
+});
+test('new profile update cannot silently overwrite unrelated fields',()=>{
+ const item=MODEL_BENCH_CASES.find(x=>x.id==='profile-allergy');
+ assert.equal(validateBenchmarkTool(item,call('update_baby',{allergies:'对测试食物甲过敏',notes:'擅自覆盖'}),wechatTools).issue,'UNREQUESTED_WRITE_FIELD');
 });

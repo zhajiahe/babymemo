@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Manual ONLY: same ten virtual-family tasks, exact BabyMemo tool schema,
+// Manual ONLY: same twenty virtual-family tasks, exact BabyMemo tool schema,
 // same prompts/observations/scoring for Qwen Workers AI and Muse OpenRouter.
 // No production WeChat, D1, R2, personal messages or real tool side effects.
 import {writeFile} from 'node:fs/promises';
 import {wechatTools} from '../src/wechat-harness.mjs';
 import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
-import {qwenCompletion,qwenRequest,DEFAULT_QWEN_MODEL} from '../src/qwen-workers-ai.mjs';
+import {qwenRequest,DEFAULT_QWEN_MODEL} from '../src/qwen-workers-ai.mjs';
 import {openRouterCompletion} from '../src/openrouter-retry.mjs';
-import {DEFAULT_OPENROUTER_MODEL,GPT_6_LUNA,CLAUDE_HAIKU_55} from '../src/openrouter-model.mjs';
-import {openRouterReasoningForModel,DEEPSEEK_V41_FLASH} from '../src/openrouter-retry.mjs';
+import {DEFAULT_OPENROUTER_MODEL} from '../src/openrouter-model.mjs';
+import {DEEPSEEK_V41_FLASH} from '../src/openrouter-retry.mjs';
 import {diagnosticEvent,safeBenchPreview,benchmarkFailureKind,isFatalBenchmarkError,benchmarkMarkdownReport} from './model-benchmark-logging.mjs';
 import {MODEL_BENCH_CASES,BENCHMARK_SYSTEM,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
 
@@ -22,17 +22,17 @@ const maxUSD=Number(process.env.MODEL_BENCH_MAX_USD||0.10);
 if(!Number.isFinite(maxNeurons)||maxNeurons<=0||maxNeurons>10000||!Number.isFinite(maxUSD)||maxUSD<=0||maxUSD>1)
  throw Error('INVALID_BENCHMARK_BUDGET');
 const openRouterModel=process.env.MODEL_BENCH_OPENROUTER_MODEL||DEFAULT_OPENROUTER_MODEL;
-if(!/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/i.test(openRouterModel))throw Error('INVALID_OPENROUTER_MODEL');
-const reasoningMode=process.env.MODEL_BENCH_REASONING_MODE||'auto';
-if(!['auto','off','low'].includes(reasoningMode))throw Error('INVALID_REASONING_MODE');
-const effectiveReasoning=reasoningMode==='auto'&&[DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55].includes(openRouterModel)?'off':reasoningMode;
+if(provider!=='workers-ai'&&!/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/i.test(openRouterModel))throw Error('INVALID_OPENROUTER_MODEL');
+// Benchmark always requests zero reasoning. Only explicit upstream rejection can fallback to low.
+if(process.env.MODEL_BENCH_REASONING_MODE&&process.env.MODEL_BENCH_REASONING_MODE!=='off')throw Error('BENCHMARK_REASONING_MUST_BE_OFF');
+const reasoningMode='off',effectiveReasoning='off';
 const selected=provider==='both'?['workers-ai','openrouter']:[provider];
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,apiToken=process.env.CLOUDFLARE_AI_API_TOKEN||process.env.CLOUDFLARE_API_TOKEN,openRouterKey=process.env.OPENROUTER_API_KEY;
 if(selected.includes('workers-ai')&&!process.env.CLOUDFLARE_AI_API_TOKEN)console.warn('[model-benchmark] Dedicated CLOUDFLARE_AI_API_TOKEN not provided; deploy token may lack Workers AI → Read. Authentication failures stop after first request.');
 if(selected.includes('workers-ai')&&(!accountId||!apiToken))throw Error('WORKERS_AI_CREDENTIALS_MISSING');
 if(selected.includes('openrouter')&&(!openRouterKey||!openRouterKey.startsWith('sk-or-')))throw Error('OPENROUTER_KEY_MISSING');
 
-const spent={neurons:0,usd:0,requests:0},maximumRequests=repetitions*10*6*selected.length;
+const spent={neurons:0,usd:0,requests:0},maximumRequests=repetitions*MODEL_BENCH_CASES.length*6*selected.length;
 const log=(stage,details)=>console.log(diagnosticEvent(stage,details));
 async function request(provider,messages,tools,maxTokens=1200,meta={}){
  const model=provider==='workers-ai'?DEFAULT_QWEN_MODEL:openRouterModel;
@@ -118,7 +118,7 @@ async function evaluate(modelProvider,item,iteration){
     calls.push({name:checked.name,args:checked.args});
     log('tool_call',{...caseContext,toolNames:[checked.name],arguments:JSON.stringify(checked.args),status:checked.issue?'REJECTED_'+checked.issue:'SYNTHETIC_OBSERVATION'});
     if(checked.issue){issues.push(checked.issue);return {content:'测试工具调用被拒绝，未执行真实写入。',committed:false,halt:true}}
-    return {content:syntheticObservation(checked.name),committed:/^(create_|update_|delete_|restore_)/.test(checked.name)};
+    return {content:syntheticObservation(checked.name,checked.args),committed:/^(create_|update_|delete_|restore_)/.test(checked.name)};
    }
   });
  }catch(e){error=e instanceof Error?e.message:'UNKNOWN_ERROR'}
@@ -172,7 +172,7 @@ const output=JSON.stringify(report,null,2);
 console.log(output);
 if(process.env.MODEL_BENCH_REPORT_FILE)await writeFile(process.env.MODEL_BENCH_REPORT_FILE,output+'\n','utf8');
 if(process.env.GITHUB_STEP_SUMMARY)
- await writeFile(process.env.GITHUB_STEP_SUMMARY,benchmarkMarkdownReport(models,{repetitions}),{flag:'a'});
+ await writeFile(process.env.GITHUB_STEP_SUMMARY,benchmarkMarkdownReport(models,{repetitions,tasksPerModel:MODEL_BENCH_CASES.length}),{flag:'a'});
 console.log(diagnosticEvent('benchmark_finish',{status:blocked?'BLOCKED':'COMPLETED',modelRequests:spent.requests,neurons:spent.neurons,reportedUSD:spent.usd}));
 
 // A scored miss is a benchmark result, not a CI failure; security/credential
