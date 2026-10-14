@@ -77,6 +77,8 @@ async function repair(item:Candidate){
  await api('/api/media/'+encodeURIComponent(item.id)+'/thumbnail',{
   method:'PUT',headers:{'Content-Type':'image/jpeg'},body:blob
  });
+ // Update visible album/milestone thumbnails without refetching every page.
+ window.dispatchEvent(new CustomEvent('babymemo:thumbnail-repaired',{detail:{id:item.id}}));
 }
 async function execute(token:number){
  try{
