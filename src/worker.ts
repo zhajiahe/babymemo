@@ -177,6 +177,15 @@ app.delete('/api/records/:kind/:id',async c=>{
   if(!changes)return fail(c,404,'NOT_FOUND');
   return c.json({ok:true});
 });
+// Lightweight synchronization marker for captions and new/deleted media.
+// Include row count and newest update; deletion is reflected via the active count.
+app.get('/api/media/revision',async c=>{
+ const babyId=c.req.query('babyId');
+ if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
+ const row=await c.env.DB.prepare("SELECT COUNT(*) AS total, MAX(COALESCE(NULLIF(updated_at,''),created_at)) AS latest FROM media WHERE baby_id=? AND deleted_at IS NULL").bind(babyId).first<{total:number;latest:string|null}>();
+ c.header('Cache-Control','private, no-store');
+ return c.json({version:String(row?.total||0)+':'+(row?.latest||'')});
+});
 app.get('/api/media',async c=>{
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const page=Math.min(1000,Math.max(0,Number.parseInt(c.req.query('page')||'0',10)||0));
