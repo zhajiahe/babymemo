@@ -100,7 +100,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
   if(thread.babyId&&thread.babyId!==baby.id){thread.pending=null;thread.lastQuery=null;thread.lastMedia=null;thread.lastOperation=null;thread.pendingMedia=null}
   thread.selectedBabyId=baby.id;
  }
- if(thread?.pendingMedia?.babyId===baby.id&&/刚才|刚发|这些|这张|这段|最近/.test(command)&&/照片|视频|图片/.test(command))return '刚发送的照片或视频仍在保存，请收到保存结果后再操作。其他成长记录可以继续发送。';
+ // Media operations are gated by real DB records in the tool layer; do not block unrelated chat messages based on photo upload timing.
  const fast=forwarded?null:await quickCommand(env,baby,command,thread,at);
  if(fast!==null)return fast;
  const context=thread?buildCommandContext(command,thread,at,baby.id):{modelMessages:[{role:'user',content:command}],groundedText:command,milestoneGroundedText:null};
