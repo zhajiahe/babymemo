@@ -2,6 +2,7 @@ export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   BOT: DurableObjectNamespace;
+  AI?: Ai;
   ASSETS: Fetcher;
   SESSION_SECRET?: string;
   DATA_KEY?: string;
