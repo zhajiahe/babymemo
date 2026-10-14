@@ -276,3 +276,13 @@ h1,h2,h3 { letter-spacing:normal; }
 .settings-ai-note{font-size:12px;margin:10px 0 0;line-height:1.6}
 .wechat-status .muted{margin:8px 0 0;line-height:1.6}
 @media(max-width:650px){.settings-ai-overview{align-items:flex-start;flex-direction:column}.settings-ai-actions button{width:100%}}
+
+/* Opt-in repair job is informative without competing with the family gallery. */
+.thumbnail-repair-card .section-title{margin-bottom:10px}
+.thumbnail-repair-card>.muted{line-height:1.65}
+.thumbnail-repair-actions{display:flex;flex-wrap:wrap;gap:10px;margin:13px 0}
+.thumbnail-repair-actions button{min-height:44px;justify-content:center}
+.thumbnail-repair-progress{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--bm-border);border-radius:12px;background:var(--bm-surface-soft);font-size:13px;color:var(--bm-muted)}
+.thumbnail-repair-progress strong{color:var(--bm-ink);font-size:14px}
+.thumbnail-repair-progress progress{width:100%;height:8px;accent-color:var(--bm-brand)}
+@media(max-width:650px){.thumbnail-repair-actions button{width:100%}}
