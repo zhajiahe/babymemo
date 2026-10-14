@@ -195,12 +195,16 @@ app.get('/api/media/thumbnail-backfill',async c=>{
   const babyId=c.req.query('babyId');
   if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const after=c.req.query('after')||'';
+  const type=c.req.query('type')||'image';
   if(after.length>80)return fail(c,400,'INVALID_CURSOR');
+  if(type!=='image'&&type!=='all')return fail(c,400,'INVALID_TYPE');
+  // Keep the manual legacy photo backfill image-only by default.
+  const missing=type==='all'?"(mime LIKE 'image/%' OR mime LIKE 'video/%')":"mime LIKE 'image/%'";
   const batch=await c.env.DB.prepare(
-    "SELECT id,mime,size FROM media WHERE baby_id=? AND deleted_at IS NULL AND thumbnail_ready=0 AND mime LIKE 'image/%' AND id>? ORDER BY id LIMIT 10"
+    'SELECT id,mime,size FROM media WHERE baby_id=? AND deleted_at IS NULL AND thumbnail_ready=0 AND '+missing+' AND id>? ORDER BY id LIMIT 10'
   ).bind(babyId,after).all<{id:string;mime:string;size:number}>();
   const count=await c.env.DB.prepare(
-    "SELECT COUNT(*) AS total FROM media WHERE baby_id=? AND deleted_at IS NULL AND thumbnail_ready=0 AND mime LIKE 'image/%'"
+    'SELECT COUNT(*) AS total FROM media WHERE baby_id=? AND deleted_at IS NULL AND thumbnail_ready=0 AND '+missing
   ).bind(babyId).first<{total:number}>();
   return c.json({items:batch.results,remaining:count?.total||0,cursor:batch.results.at(-1)?.id||after});
 });
