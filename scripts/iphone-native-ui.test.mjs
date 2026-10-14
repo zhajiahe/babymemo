@@ -24,6 +24,12 @@ test('sticky family title, labeled tabs and iPhone safe areas',()=>{
  assert.match(css,/padding:7px 10px calc\(7px \+ env\(safe-area-inset-bottom\)\)/);
  assert.match(css,/\.media-viewer-header \{ padding:calc\(12px \+ env\(safe-area-inset-top\)\)/);
  assert.match(css,/\.mobile-nav button:active/);
+ assert.match(app,/aria-label="返回首页"/);
+ assert.match(app,/active==='moments'&&tab==='overview'/);
+ assert.match(app,/if\(tab!==active\)\{setActive\(tab\);return;\}/);
+ assert.match(css,/\.topbar\.has-back \.crumb/);
+ assert.match(css,/\.topbar \.mobile-back-button/);
+ assert.match(css,/\.app:has\(input:focus,textarea:focus/);
  assert.doesNotMatch(app,/aria-label="选择宝宝"/);
 });
 
@@ -36,6 +42,12 @@ test('photo swipes require horizontal intent, honor bounds and skip videos',()=>
  assert.match(viewer,/dx<0&&index<count-1/);
  assert.match(viewer,/dx>0&&index>0/);
  assert.match(viewer,/<video key=\{item\.id\} src=\{src\} controls playsInline/);
+ assert.match(viewer,/onKeyDown=\{handleViewerKey\}/);
+ assert.match(viewer,/aria-keyshortcuts=\{video\?undefined:'ArrowLeft ArrowRight'\}/);
+ assert.match(viewer,/aria-live="polite" aria-atomic="true"/);
+ assert.match(viewer,/currentImageStatus==='loading'/);
+ assert.match(viewer,/currentImageStatus==='error'/);
+ assert.match(viewer,/media-swipe-hint/);
  assert.match(viewer,/aria-label="移入回收站"/);
  assert.match(css,/touch-action:pan-y/);
 });
