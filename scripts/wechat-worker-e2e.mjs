@@ -505,7 +505,30 @@ await step('CDN failures retain sanitized diagnostics through idle polling until
   const r=await run({mode:'alarm',alarms:2,messages:[message],followupMessages:[textFrom('caption-query-followup','synthetic-user','synthetic-bot','修改第一条体重为12kg')],responses:[tool('list_growth',{day:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})}),natural('已经找到今天的成长测量。'),tool('update_growth',{id:savedCaptionWeightRecordId.slice(0,8),weight:12}),natural('好的，体重已更正为 12 公斤。')],encryptedBase64:encrypt(jpeg)});
   assert.equal(r.error,undefined);assert.equal(r.models,4,r.reply);assert.equal(r.growth.find(x=>x.id===savedCaptionWeightRecordId).weight,12,r.reply);
  });
- await step('multiple pictures share one pending batch and keep both edited descriptions',async()=>{
+ await step('EXIF date survives a description-only edit while the original is uploading',async()=>{
+ const bytes=exifJpeg();
+ const r=await run({mode:'alarm',holdMedia:true,messages:[raw('placeholder-exif-caption')],
+  followupMessages:[textFrom('exif-caption','synthetic-user','synthetic-bot','这张照片是第一次坐秋千')],
+  responses:[tool('update_recent_media',{description:'第一次坐秋千'}),natural('描述已经补上。')],
+  encryptedBase64:encrypt(bytes)});
+ assert.equal(r.error,undefined);
+ const item=r.media.find(x=>x.source_message_id==='synthetic-bot:placeholder-exif-caption:image:0');
+ assert.equal(item.day,'2020-09-03');
+ assert.equal(item.description,'第一次坐秋千');
+ assert.equal(item.upload_state,'ready');
+});
+await step('an explicit date edit while uploading wins over EXIF metadata',async()=>{
+ const bytes=exifJpeg();
+ const r=await run({mode:'alarm',holdMedia:true,messages:[raw('placeholder-date-override')],
+  followupMessages:[textFrom('date-override','synthetic-user','synthetic-bot','把刚才的照片日期改到2025年5月6日')],
+  responses:[tool('update_recent_media',{newDay:'2025-05-06'}),natural('已经修改日期。')],
+  encryptedBase64:encrypt(bytes)});
+ assert.equal(r.error,undefined);
+ const item=r.media.find(x=>x.source_message_id==='synthetic-bot:placeholder-date-override:image:0');
+ assert.equal(item.day,'2025-05-06');
+ assert.equal(item.upload_state,'ready');
+});
+await step('multiple pictures share one pending batch and keep both edited descriptions',async()=>{
  const message=raw('placeholder-two');
  message.item_list.push(structuredClone(message.item_list[0]));
  const r=await run({mode:'alarm',holdMedia:true,messages:[message],
