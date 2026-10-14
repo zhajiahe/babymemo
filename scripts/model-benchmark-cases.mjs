@@ -14,7 +14,7 @@ export const MODEL_BENCH_CASES=Object.freeze([
  {id:'media-read',name:'按日期查相册',message:'看看测试宝宝10月1日的照片',required:['list_media'],forbidWrites:true},
  {id:'media-update',name:'更正刚发照片日期',message:'把刚才发的照片日期改成昨天',required:['update_recent_media'],args:{update_recent_media:{newDay:'2026-10-13'}}},
  {id:'trash-restore',name:'查询并恢复记录',message:'从测试宝宝回收站找出10月1日的体重记录并恢复',required:['list_trash','restore_trash'],ordered:true,args:{restore_trash:{kind:'growth'}}},
- {id:'profile-allergy',name:'先读档案再补充过敏信息',message:'先看看测试宝宝目前的过敏备注，再把过敏信息更新成“对测试食物甲过敏”，其他资料不要动',required:['get_baby','update_baby'],ordered:true,args:{update_baby:{allergies:'对测试食物甲过敏'}}},
+ {id:'profile-allergy',name:'先读档案再补充过敏信息',message:'先看看测试宝宝目前的过敏备注，再把过敏信息更新成“对测试食物甲过敏”，其他资料不要动',required:['get_baby','update_baby'],ordered:true,noExtraWrites:true,args:{update_baby:{allergies:'对测试食物甲过敏'}}},
  {id:'media-description',name:'辨别同日照片与视频并更新描述',message:'先查测试宝宝10月1日的相册。只把那张照片（不是视频）的描述改成“第一次去公园”，不要改视频',required:['list_media','update_media'],ordered:true,args:{update_media:{description:'第一次去公园'}},targets:{update_media:'dddddddd'}},
  {id:'milestone-delete',name:'查明事件后定向删除',message:'先找出测试宝宝10月1日独立走路的里程碑，再把这一条移入回收站，其他记录保留',required:['list_milestones','delete_milestone'],ordered:true,targets:{delete_milestone:'cccccccc'}},
  {id:'growth-delete',name:'定位历史测量后删除',message:'先查测试宝宝10月1日的体重，确认对应记录后只删除这一条测量',required:['list_growth','delete_growth'],ordered:true,targets:{delete_growth:'bbbbbbbb'}},
@@ -71,6 +71,10 @@ export function validateBenchmarkTool(caseItem,call,tools,history=[]){
  if(isWrite(x.name)&&(caseItem.forbidWrites||!expected.has(x.name)))return {...x,issue:'UNAUTHORIZED_MUTATION'};
  if((caseItem.required||[]).includes(x.name)&&history.some(h=>h.name===x.name)&&x.name!=='get_runtime_context')
   return {...x,issue:'REPEATED_REQUIRED_TOOL'};
+ if(isWrite(x.name)&&caseItem.noExtraWrites){
+  const permitted=new Set([...Object.keys(caseItem.args?.[x.name]||{}),'id','day']);
+  if(Object.keys(x.args).some(key=>!permitted.has(key)))return {...x,issue:'UNREQUESTED_WRITE_FIELD'};
+ }
  for(const [k,value] of Object.entries(caseItem.args?.[x.name]||{})){
   if(x.args[k]!==value)return {...x,issue:'WRONG_'+k.toUpperCase()};
  }
