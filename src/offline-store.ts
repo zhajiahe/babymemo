@@ -21,7 +21,7 @@ export function projectMutation<T>(resource:{id:string;value:T},job:{id:string;p
  const avatarMatch=path.match(/^\/api\/babies\/([^/]+)\/avatar$/);
  const rowId=match?.[2]||mediaMatch?.[1]||babyMatch?.[1]||body.requestId||job.id;
  const pending='pending:'+job.id;
- const dayMatch=(row:any)=>(!url.searchParams.get('startDay')||row.day>=url.searchParams.get('startDay'))&&(!url.searchParams.get('endDay')||row.day<=url.searchParams.get('endDay'));
+ const dayMatch=(row:any)=>{const from=url.searchParams.get('startDay'),to=url.searchParams.get('endDay');return (!from||row.day>=from)&&(!to||row.day<=to)};
  if(match&&(url.pathname==='/api/records/'+match[1]||match[1]==='growth'&&url.pathname==='/api/growth/history')&&url.searchParams.get('babyId')===body.babyId){
   const existing=value.items.find((row:any)=>row.id===rowId);
   value.items=value.items.filter((row:any)=>row.id!==rowId);
@@ -33,7 +33,7 @@ export function projectMutation<T>(resource:{id:string;value:T},job:{id:string;p
   }
  }
  if(mediaMatch&&url.pathname==='/api/media'){
-  value.items=value.items.flatMap(row=>row.id!==rowId?[row]:job.method==='DELETE'?[]:[{...row,...body,updated_at:pending,pending:true}]).filter(dayMatch);
+  value.items=value.items.flatMap((row:any)=>row.id!==rowId?[row]:job.method==='DELETE'?[]:[{...row,...body,updated_at:pending,pending:true}]).filter(dayMatch);
  }
  if(job.kind==='media'&&url.pathname==='/api/media'&&url.searchParams.get('babyId')===body.babyId){
   const row={id:job.id,baby_id:body.babyId,day:body.day,title:body.title,description:body.description||'',mime:body.mime,size:job.file?.size??0,updated_at:pending,pending:true};
