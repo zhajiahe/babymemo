@@ -118,6 +118,8 @@ async function execute(token:number){
  }finally{
   running=false;
   releaseLease();
+  // A user may press Resume while the previous decode is still finishing.
+  if(snapshot.phase==='running')begin();
  }
 }
 function begin(){
@@ -129,14 +131,22 @@ function begin(){
 export function startThumbnailRepair(babyIds:string[]){
  const ids=[...new Set(babyIds)].filter(Boolean);
  if(!ids.length)return;
- if(running)return;
+ if(running){
+  if(snapshot.phase==='paused'&&sameBabies(ids))update({...snapshot,phase:'running',error:''});
+  return;
+ }
  // Explicit clicks after completion start a new scan (including former failures).
  const reuse=sameBabies(ids)&&snapshot.phase==='paused';
  update(reuse?{...snapshot,phase:'running',error:''}:{...empty(),phase:'running',babyIds:ids});
  begin();
 }
 export function resumeThumbnailRepair(babyIds:string[]){
- if(snapshot.phase==='running'&&sameBabies(babyIds))begin();
+ if(snapshot.phase!=='running')return;
+ if(!sameBabies(babyIds)){
+  update({...snapshot,phase:'paused',error:'宝宝列表已变化，请重新开始本轮封面扫描。'});
+  return;
+ }
+ begin();
 }
 export function pauseThumbnailRepair(){
  currentRun++;
