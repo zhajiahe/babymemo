@@ -172,7 +172,7 @@ const output=JSON.stringify(report,null,2);
 console.log(output);
 if(process.env.MODEL_BENCH_REPORT_FILE)await writeFile(process.env.MODEL_BENCH_REPORT_FILE,output+'\n','utf8');
 if(process.env.GITHUB_STEP_SUMMARY)
- await writeFile(process.env.GITHUB_STEP_SUMMARY,benchmarkMarkdownReport(models,{repetitions}),{flag:'a'});
+ await writeFile(process.env.GITHUB_STEP_SUMMARY,benchmarkMarkdownReport(models,{repetitions,tasksPerModel:MODEL_BENCH_CASES.length}),{flag:'a'});
 console.log(diagnosticEvent('benchmark_finish',{status:blocked?'BLOCKED':'COMPLETED',modelRequests:spent.requests,neurons:spent.neurons,reportedUSD:spent.usd}));
 
 // A scored miss is a benchmark result, not a CI failure; security/credential
