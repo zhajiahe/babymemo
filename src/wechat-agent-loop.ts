@@ -105,7 +105,7 @@ export async function runWechatAgentLoop({
     const response=await finalize({messages:transcript,observations,reason,committedKinds,failedWrite});
     const final=assistantMessage(response?.choices?.[0]?.message);
     if(!final.tool_calls.length&&replyIsValid(final.content)){
-     const answer=finalResult(final.content);
+     const answer=finalResult(final.content??'');
      await saveFinalAnswer(answer);
      return answer;
     }
@@ -141,7 +141,7 @@ export async function runWechatAgentLoop({
    // must not dump the entire raw profile onto the WeChat chat surface.
    if(observations.length&&!replyIsValid(assistant.content))
     return finishAfterTools('inadequate_final');
-   return finalResult(assistant.content);
+   return finalResult(assistant.content??'');
   }
   if(assistant.tool_calls.length>limits.perRound || totalCalls+assistant.tool_calls.length>limits.tools)
    return finalResult('','本次操作达到工具调用上限，剩余步骤未执行。');
