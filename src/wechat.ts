@@ -237,22 +237,8 @@ export class WechatSession {
        reply+='\n'+(context.valid?await handleWechatCommand(env,text,task.sourceId+':caption',thread,messageTime(task.raw),task.babyId):'保存期间会话已有变化，附文操作未执行。请重新发送要记录或修改的文字。');
       }
      }
-     // Process deferred captions against the actual saved photo IDs, never an AI guess.
-     const deferred=await ctx.storage.get<{sourceId:string;babyId:string;items:{messageId:string;text:string}[]}>('pendingCaption');
-     if(deferred?.sourceId===task.sourceId&&deferred.babyId===task.babyId){
-      if(ok&&Array.isArray(thread.lastMedia?.ids)&&thread.lastMedia.ids.length){
-       for(const item of deferred.items){
-        const caption=item.text.trim();
-        if(caption){
-         for(const id of thread.lastMedia.ids as string[]){
-          await env.DB.prepare("UPDATE media SET description=? WHERE id=? AND baby_id=? AND deleted_at IS NULL").bind(caption,id,task.babyId).run();
-         }
-        }
-       }
-       reply+='\\n已自动关联 '+deferred.items.length+' 条后续照片描述。';
-      }else reply+='\\n照片未保存成功，后续描述未写入，请重试照片。';
-      await ctx.storage.delete('pendingCaption');
-     }
+     // Deferred text is applied when the media result is delivered, not while the
+     // upload worker is running: a follow-up may arrive during that interval.
      if(task.raw.forwarded_content){
       const excerpt=text.slice(0,450);
       reply+='\n已识别合并转发内容'+(excerpt?'：\n'+excerpt:'。');
@@ -271,7 +257,20 @@ export class WechatSession {
     },
     deliver:async(payload,result,clientId)=>{
      const task=await decode(payload);
-     await sendWechatReply(env,task.connectionId,task.raw,(JSON.parse(await decryptSecret(env,result)) as MediaResult).reply,clientId,task);
+     const outcome=JSON.parse(await decryptSecret(env,result)) as MediaResult;
+     const key='pendingCaption:'+task.sourceId;
+     const deferred=await ctx.storage.get<{babyId:string;items:{messageId:string;text:string}[];expiresAt:number}>(key);
+     if(deferred?.babyId===task.babyId&&deferred.expiresAt>Date.now()&&deferred.items.length){
+      if(outcome.ok&&Array.isArray(outcome.thread.lastMedia?.ids)&&outcome.thread.lastMedia.ids.length){
+       const caption=deferred.items.map(item=>item.text.trim()).filter(Boolean).join('\\n');
+       for(const id of outcome.thread.lastMedia.ids as string[]){
+        await env.DB.prepare("UPDATE media SET description=? WHERE id=? AND baby_id=? AND deleted_at IS NULL").bind(caption,id,task.babyId).run();
+       }
+       outcome.reply+='\\n已关联后续发送的 '+deferred.items.length+' 条照片描述。';
+      }else outcome.reply+='\\n照片未保存成功，后续文字没有写入。请重新发送照片和描述。';
+      await ctx.storage.delete(key);
+     }
+     await sendWechatReply(env,task.connectionId,task.raw,outcome.reply,clientId,task);
      const published=await workerBot(env,task.connectionId).fetch('https://bot.internal/media/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({result})});
      if(!published.ok)throw Error('WECHAT_MEDIA_CONTEXT_FAILED');
     },errorCode:error=>error instanceof Error&&/^(WECHAT_AUTH_EXPIRED|WECHAT_PAUSED|WECHAT_HTTP_[1-5][0-9]{2})$/.test(error.message)?error.message:wechatMediaErrorCode(error)
@@ -295,14 +294,15 @@ export class WechatSession {
     if(path==='/media/caption'&&request.method==='POST'){
      const data=await request.json() as {sourceId:string;messageId:string;text:string;babyId:string};
      if(typeof data.sourceId!=='string'||typeof data.messageId!=='string'||typeof data.text!=='string'||!data.text.trim()||data.text.length>1000||typeof data.babyId!=='string')return Response.json({accepted:false},{status:400});
-     const existing=await this.ctx.storage.get<{sourceId:string;babyId:string;items:{messageId:string;text:string}[]}>('pendingCaption');
-     if(existing&&existing.sourceId!==data.sourceId)return Response.json({accepted:false});
+     const key='pendingCaption:'+data.sourceId;
+     const existing=await this.ctx.storage.get<{babyId:string;items:{messageId:string;text:string}[];expiresAt:number}>(key);
+     if(existing&&existing.babyId!==data.babyId)return Response.json({accepted:false});
      const items=existing?.items||[];
      if(!items.some(item=>item.messageId===data.messageId)){
       if(items.length>=4)return Response.json({accepted:false});
       items.push({messageId:data.messageId,text:data.text});
      }
-     await this.ctx.storage.put('pendingCaption',{sourceId:data.sourceId,babyId:data.babyId,items});
+     await this.ctx.storage.put(key,{babyId:data.babyId,items,expiresAt:Date.now()+1200000});
      return Response.json({accepted:true});
     }
     if(path==='/media/result'&&request.method==='POST'){
