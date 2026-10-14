@@ -15,5 +15,7 @@ export function mediaItems(raw:unknown):unknown[];
 export function photoItems(raw:unknown):unknown[];
 export function videoItems(raw:unknown):unknown[];
 export function photoRecordId(sourceId:string):string;
+export function reserveWechatMedia(env:any,raw:any,baby:any,messageId:string):Promise<string[]>;
+export function failWechatMediaReservations(env:any,raw:any,babyId:string,messageId:string):Promise<void>;
 export function persistWeChatMedia(env:any,raw:any,baby:any,messageId:string,options?:{fetchImpl?:typeof fetch;maxBytes?:number}):Promise<string|null>;
 export function persistWeChatPhotos(env:any,raw:any,baby:any,messageId:string,options?:{fetchImpl?:typeof fetch;maxBytes?:number}):Promise<string|null>;
