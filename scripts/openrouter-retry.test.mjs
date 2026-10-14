@@ -122,6 +122,9 @@ test('default OpenRouter model is DeepSeek Flash preferring Relace with fallback
  assert.equal(result._babymemo_request.reasoningFallbackUsed,false);
  assert.ok(OPENROUTER_MODEL_PRESETS.some(x=>x.id===LEGACY_MUSE_MODEL),'Muse must remain manually selectable');
  assert.equal(openRouterReasoningForModel(LEGACY_MUSE_MODEL),null);
+ assert.match(openRouterModelDescription('vendor/custom-model'),/优先 Relace，可回退其他服务商/);
+ assert.match(openRouterModelDescription(LEGACY_MUSE_MODEL),/优先 Relace，可回退其他服务商/);
+ assert.match(openRouterModelDescription(DEFAULT_OPENROUTER_MODEL),/优先 Relace，可回退其他服务商/);
 });
 
 test('benchmark explicit off requests reasoning disabled on arbitrary OpenRouter models',async()=>{
