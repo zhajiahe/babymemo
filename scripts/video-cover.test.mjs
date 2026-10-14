@@ -35,6 +35,7 @@ test('missing video poster can be repaired from current video frame or an image'
  assert.match(viewer,/onThumbnailSaved\(id\)/);
  assert.match(album,/mediaEdited\(id,\{thumbnail_ready:1\}\)/);
  assert.match(album,/onThumbnailSaved=/);
+ assert.match(source('src/features/growth/RecordView.tsx'),/onThumbnailSaved=/);
  assert.match(css,/\.media-cover-picker:focus-within/);
 });
 test('thumbnail failures report error instead of success and originals remain untouched',()=>{
