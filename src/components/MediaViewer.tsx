@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type TouchEvent, type KeyboardEvent } from 'react';
 import { ChevronLeft, ChevronRight, Download, Save, X, Trash2 } from 'lucide-react';
 import {saveMediaOffline} from '../offline';
+import {createAlbumThumbnail,createVideoFrameThumbnail} from '../media-upload';
 import {api} from '../lib/client';
 
 export type MediaItem = {
@@ -18,7 +19,7 @@ type MediaEdit = { day: string;description: string;requestId?:string;expectedUpd
 type MediaReply = {updated_at?:string;id?:string;queued?:boolean};
 function mediaDraft(item:MediaItem){try{return JSON.parse(localStorage.getItem('babymemo-draft-media-'+item.id)||'null')||{}}catch{return {}}}
 
-export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, onDelete }: {
+export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, onDelete, onThumbnailSaved }: {
   item: MediaItem;
   index: number;
   count: number;
@@ -26,14 +27,18 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
   onClose: () => void;
   onSave: (value: MediaEdit) => Promise<MediaReply>;
   onDelete: () => void;
+  onThumbnailSaved: (id:string) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const videoRef=useRef<HTMLVideoElement>(null);
   const touchStart = useRef<{x:number;y:number}|null>(null);
   const [day, setDay] = useState(()=>mediaDraft(item).day||item.day);
   const [description,setDescription]=useState<string>(()=>mediaDraft(item).description??item.description??'');
   const [version,setVersion]=useState(()=>mediaDraft(item).version??item.updated_at??'');
   const [draftId,setDraftId]=useState(item.id);
   const [saving, setSaving] = useState(false);
+  const [coverSaving,setCoverSaving]=useState(false);
+  const [coverMessage,setCoverMessage]=useState('');
   const [error, setError] = useState('');
   const [imageStatus,setImageStatus]=useState<{id:string;status:'loading'|'ready'|'error'}>(()=>({id:item.id,status:'loading'}));
   const currentImageStatus=imageStatus.id===item.id?imageStatus.status:'loading';
@@ -47,7 +52,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
   }, []);
   useEffect(() => {
     const draft=mediaDraft(item);setDay(draft.day||item.day);setDescription(draft.description??item.description??'');setVersion(draft.version??item.updated_at??'');setRequestId(draft.requestId||crypto.randomUUID());setDraftId(item.id);
-    setError('');
+    setError('');setCoverMessage('');
   }, [item.id]);
   useEffect(()=>{if(draftId!==item.id)return;try{localStorage.setItem('babymemo-draft-media-'+item.id,JSON.stringify({day,description,requestId,version}))}catch{/* The visible form remains usable. */}},[day,description,requestId,version,item.id,draftId]);
 
@@ -64,6 +69,22 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
     } finally {
       setSaving(false);
     }
+  }
+  async function saveCover(make:()=>Promise<Blob|null>){
+    if(coverSaving)return;
+    setCoverSaving(true);setCoverMessage('');
+    const id=item.id;
+    try{
+      const thumb=await make();
+      if(!thumb)throw Error('无法生成封面；可改用一张 JPG 或 PNG 图片');
+      await api('/api/media/'+encodeURIComponent(id)+'/thumbnail',{
+        method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}
+      });
+      onThumbnailSaved(id);
+      setCoverMessage('视频封面已更新');
+    }catch(cause){
+      setCoverMessage(cause instanceof Error?cause.message:'设置封面失败，请重试');
+    }finally{setCoverSaving(false)}
   }
   async function reviewVersion(){try{const current=await api<MediaItem>('/api/media/'+item.id);if(confirm('服务器拍摄日期：'+current.day+'。服务器描述：'+(current.description||'（空）')+'。当前草稿仍保留；核对后允许再次保存？')){setVersion(current.updated_at||'');setRequestId(crypto.randomUUID());setError('')}}catch(e){setError(e instanceof Error?e.message:'读取失败')}}
 
@@ -105,7 +126,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
         </header>
         <div className="media-viewer-stage" role="group" tabIndex={video?undefined:0} aria-label={video?'视频预览':'照片预览，左右滑动或方向键切换'} aria-keyshortcuts={video?undefined:'ArrowLeft ArrowRight'} onTouchStart={startSwipe} onTouchEnd={finishSwipe} onTouchCancel={()=>{touchStart.current=null}}>
           {video
-            ? <video key={item.id} src={src} controls playsInline preload="metadata" aria-label={'成长视频'} />
+            ? <video ref={videoRef} key={item.id} src={src} controls playsInline preload="metadata" aria-label={'成长视频'} />
             : <>
               {currentImageStatus==='loading'&&<span className="media-loading" role="status">照片加载中…</span>}
               <img key={item.id} src={src} alt="成长照片" draggable={false} className={currentImageStatus==='error'?'media-image-error':undefined} onLoad={()=>setImageStatus({id:item.id,status:'ready'})} onError={()=>setImageStatus({id:item.id,status:'error'})}/>
@@ -123,6 +144,19 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
            <a className="secondary media-download" href={src + '?download=1'} download={item.title||'babymemo-media'}><Download size={16}/>下载</a>
            <button type="button" className="icon-btn media-remove" onClick={onDelete} aria-label="移入回收站"><Trash2 size={19}/></button>
           </div>
+          {video&&<div className="media-cover-actions">
+            <button type="button" className="secondary" disabled={coverSaving} onClick={()=>void saveCover(async()=>videoRef.current?createVideoFrameThumbnail(videoRef.current):null)}>
+              {coverSaving?'保存封面中…':'将当前视频画面设为封面'}
+            </button>
+            <label className="secondary media-cover-picker" aria-disabled={coverSaving}>
+              选择封面照片
+              <input type="file" accept="image/jpeg,image/png,image/webp" disabled={coverSaving} aria-label="选择视频封面照片" onChange={event=>{
+                const file=event.currentTarget.files?.[0];event.currentTarget.value='';
+                if(file)void saveCover(()=>createAlbumThumbnail(file));
+              }}/>
+            </label>
+            <span className="muted" role="status" aria-live="polite">{coverMessage}</span>
+          </div>}
         </div>
         <form className="media-viewer-edit" onSubmit={event => void save(event)}>
           <label className="field"><span>拍摄日期</span><input type="date" value={day} onChange={event => setDay(event.target.value)} required /></label>

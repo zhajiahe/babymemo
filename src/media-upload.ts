@@ -54,12 +54,30 @@ export async function createStoredThumbnail(id: string, mime: string): Promise<B
   return createAlbumThumbnail(new File([data], 'existing-image', {type:mime}));
 }
 
-/** Best-effort poster frame; never changes the uploaded original video. */
+/** Draw a ready video frame without fetching or rewriting the original. */
+export async function createVideoFrameThumbnail(video:HTMLVideoElement):Promise<Blob|null>{
+  if(video.readyState<2||!video.videoWidth||!video.videoHeight)return null;
+  const canvas=document.createElement('canvas');
+  const scale=Math.min(1,512/Math.max(video.videoWidth,video.videoHeight));
+  canvas.width=Math.max(1,Math.round(video.videoWidth*scale));
+  canvas.height=Math.max(1,Math.round(video.videoHeight*scale));
+  try{
+    const ctx=canvas.getContext('2d',{alpha:false});
+    if(!ctx)return null;
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    const encode=(quality:number)=>new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,'image/jpeg',quality));
+    let jpeg=await encode(0.7);
+    if(jpeg&&jpeg.size>524288)jpeg=await encode(0.45);
+    return jpeg&&jpeg.size<=524288?jpeg:null;
+  }catch{return null}
+}
+
+/** Best-effort poster from a locally selected video. Never modifies the original. */
 export async function createVideoThumbnail(file:File):Promise<Blob|null>{
-  if(!file.type.startsWith('video/')&& !/\.(mov|mp4|webm)$/i.test(file.name))return null;
+  if(!file.type.startsWith('video/')&&!/\.(mov|mp4|webm)$/i.test(file.name))return null;
   const objectUrl=URL.createObjectURL(file);
   const video=document.createElement('video');
-  video.preload='metadata';video.muted=true;video.playsInline=true;
+  video.preload='auto';video.muted=true;video.playsInline=true;
   try{
     await new Promise<void>((resolve,reject)=>{
       const timer=setTimeout(()=>reject(Error('VIDEO_THUMB_TIMEOUT')),12000);
@@ -67,20 +85,68 @@ export async function createVideoThumbnail(file:File):Promise<Blob|null>{
       video.onerror=()=>{clearTimeout(timer);reject(Error('VIDEO_THUMB_UNSUPPORTED'))};
       video.src=objectUrl;
     });
-    if(!Number.isFinite(video.duration)||!video.videoWidth||!video.videoHeight)return null;
-    await new Promise<void>((resolve,reject)=>{
-      const timer=setTimeout(()=>reject(Error('VIDEO_SEEK_TIMEOUT')),12000);
-      video.onseeked=()=>{clearTimeout(timer);resolve()};
-      video.onerror=()=>{clearTimeout(timer);reject(Error('VIDEO_SEEK_FAILED'))};
-      video.currentTime=Math.min(1,Math.max(0,video.duration*0.1));
-    });
-    const canvas=document.createElement('canvas');
-    const scale=Math.min(1,512/Math.max(video.videoWidth,video.videoHeight));
-    canvas.width=Math.max(1,Math.round(video.videoWidth*scale));
-    canvas.height=Math.max(1,Math.round(video.videoHeight*scale));
-    canvas.getContext('2d')?.drawImage(video,0,0,canvas.width,canvas.height);
-    const jpeg=await new Promise<Blob|null>(r=>canvas.toBlob(r,'image/jpeg',0.65));
-    return jpeg&&jpeg.size<=524288?jpeg:null;
+    if(!video.videoWidth||!video.videoHeight)return null;
+    // Wait until an actual decoded frame is available; metadata alone isn't enough.
+    if(video.readyState<2){
+      await new Promise<void>((resolve,reject)=>{
+        const timer=setTimeout(()=>reject(Error('VIDEO_FRAME_TIMEOUT')),12000);
+        video.onloadeddata=()=>{clearTimeout(timer);resolve()};
+        video.onerror=()=>{clearTimeout(timer);reject(Error('VIDEO_FRAME_UNSUPPORTED'))};
+      });
+    }
+    if(Number.isFinite(video.duration)&&video.duration>0.3){
+      try{
+        await new Promise<void>((resolve,reject)=>{
+          const timer=setTimeout(()=>reject(Error('VIDEO_SEEK_TIMEOUT')),8000);
+          video.onseeked=()=>{clearTimeout(timer);resolve()};
+          video.onerror=()=>{clearTimeout(timer);reject(Error('VIDEO_SEEK_FAILED'))};
+          video.currentTime=Math.min(1,video.duration*0.1);
+        });
+      }catch{/* The already-decoded first frame is a useful fallback. */}
+    }
+    return createVideoFrameThumbnail(video);
   }catch{return null}
   finally{video.removeAttribute('src');video.load();URL.revokeObjectURL(objectUrl);}
+}
+
+/**
+ * Capture from a private streaming URL. The video element uses HTTP range requests;
+ * do not fetch a 200 MB MOV into a Blob on a memory-constrained iPhone.
+ */
+export async function createRemoteVideoThumbnail(id:string):Promise<Blob|null>{
+ const video=document.createElement('video');
+ video.preload='auto';video.muted=true;video.playsInline=true;
+ video.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10px;top:-10px';
+ document.body.appendChild(video);
+ function waitForFrame(){
+  return new Promise<void>((resolve,reject)=>{
+   if(video.readyState>=2){resolve();return}
+   const timeout=setTimeout(()=>{cleanup();reject(Error('VIDEO_FRAME_TIMEOUT'))},12000);
+   const ok=()=>{cleanup();resolve()};
+   const bad=()=>{cleanup();reject(Error('VIDEO_UNSUPPORTED'))};
+   const cleanup=()=>{clearTimeout(timeout);video.removeEventListener('loadeddata',ok);video.removeEventListener('error',bad)};
+   video.addEventListener('loadeddata',ok,{once:true});
+   video.addEventListener('error',bad,{once:true});
+  });
+ }
+ try{
+  const ready=waitForFrame();
+  video.src='/api/media/'+encodeURIComponent(id)+'/content';
+  video.load();
+  await ready;
+  if(!video.videoWidth||!video.videoHeight)return null;
+  // Prefer a representative early frame, retaining the already decoded one on seek failure.
+  if(Number.isFinite(video.duration)&&video.duration>0.3){
+   try{
+    await new Promise<void>((resolve,reject)=>{
+     const timer=setTimeout(()=>reject(Error('VIDEO_SEEK_TIMEOUT')),7000);
+     video.onseeked=()=>{clearTimeout(timer);resolve()};
+     video.onerror=()=>{clearTimeout(timer);reject(Error('VIDEO_SEEK_FAILED'))};
+     video.currentTime=Math.min(1,video.duration*0.1);
+    });
+   }catch{/* Fallback to first decoded frame. */}
+  }
+  return await createVideoFrameThumbnail(video);
+ }catch{return null}
+ finally{video.pause();video.removeAttribute('src');video.load();video.remove();}
 }

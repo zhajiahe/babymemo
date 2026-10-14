@@ -938,6 +938,26 @@ async function browserE2e(){
       }finally{await statusContext.close()}
     });
     if(!useWebKit){const {browserWebManagement}=await import('./browser-web-management.mjs');await browserWebManagement({page,context,base,evidence,step}).catch(async error=>{console.error('Synthetic shell cache: '+JSON.stringify(await page.evaluate(async()=>{const keys=await caches.keys();return Promise.all(keys.filter(k=>k.startsWith('babymemo-shell')).map(async key=>{const cache=await caches.open(key),shell=await cache.match('/index.html');return{key,shell:!!shell,redirected:shell?.redirected,urls:(await cache.keys()).map(r=>new URL(r.url).pathname)}}))})));console.error('Synthetic web-management failure view: '+(await page.locator('body').innerText()).slice(0,5000));await page.screenshot({path:join(evidence,'web-management-failure.png'),fullPage:true});throw error})}
+    await step((useWebKit?'WebKit':'Chromium')+': one-click cover repair checkpoint and pause',async()=>{
+      await page.setViewportSize({width:390,height:844});
+      await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      const section=page.locator('.thumbnail-repair-card');
+      await section.getByRole('button',{name:'一键后台修复全部封面'}).click();
+      await section.getByText('正在后台修复').waitFor();
+      const checkpoint=await page.evaluate(()=>JSON.parse(localStorage.getItem('babymemo-thumbnail-repair-v1')||'null'));
+      assert.equal(checkpoint.phase,'running');
+      assert.ok(checkpoint.babyIds.length>=1);
+      await section.getByRole('button',{name:'暂停修复'}).click();
+      await section.getByText('任务已暂停').waitFor();
+      await page.reload();
+      await section.getByRole('button',{name:'继续修复缺失封面'}).waitFor();
+      const response=await page.evaluate(async()=>{
+        const state=await(await fetch('/api/state')).json();
+        return (await fetch('/api/media/thumbnail-backfill?type=all&babyId='+encodeURIComponent(state.babies[0].id))).status;
+      });
+      assert.equal(response,200,'all media backfill must be authenticated');
+      await page.screenshot({path:join(evidence,'mobile-thumbnail-repair.png'),fullPage:true});
+    });
     assert.deepEqual(errors,[],'Uncaught browser exceptions');
     console.log('All '+(useWebKit?'WebKit Safari-engine':'Chromium')+' browser tests passed.');
     await context.close();

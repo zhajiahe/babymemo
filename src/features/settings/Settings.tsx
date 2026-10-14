@@ -1,11 +1,12 @@
 import {queueMedia,syncOffline} from '../../offline';
 import {downloadFamilyArchive} from '../../export-download';
-import {useEffect,useState,type FormEvent} from 'react';
+import {useEffect,useState,useSyncExternalStore,type FormEvent} from 'react';
 import {Card,Field,Primary} from '../../components/ui';
 import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi,BrainCircuit} from 'lucide-react';
 import {api,post,today,type BabyInfo,type State,type WechatRunStatus} from '../../lib/client';
 import {DEFAULT_OPENROUTER_MODEL,OPENROUTER_MODEL_PRESETS,openRouterModelDescription} from '../../openrouter-model.mjs';
 import {wechatStatusView,wechatStatusTime} from '../../wechat-status.mjs';
+import {getThumbnailRepairSnapshot,subscribeThumbnailRepair,startThumbnailRepair,pauseThumbnailRepair} from '../../thumbnail-repair';
 
 function babyDraft(baby:BabyInfo){try{return JSON.parse(localStorage.getItem('babymemo-draft-baby-'+baby.id)||'null')||baby}catch{return baby}}
 
@@ -47,6 +48,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  const [password,setPassword]=useState({currentPassword:'',newPassword:'',confirmPassword:''}),[passwordBusy,setPasswordBusy]=useState(false);
  const [trash,setTrash]=useState<{growth:{id:string;baby_id:string;day:string;deleted_at:string}[];milestones:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[];media:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[]}|null>(null);
  const [trashBusy,setTrashBusy]=useState(false);
+ const coverRepair=useSyncExternalStore(subscribeThumbnailRepair,getThumbnailRepairSnapshot);
  useEffect(()=>{if(!dirty&&baby.updated_at!==formVersion){setName(baby.name);setBirthday(baby.birthday);setBirthTime(baby.birth_time||'');setAllergies(baby.allergies);setGender(baby.gender);setTimeZone(baby.time_zone);setNotes(baby.notes||'');setFormVersion(baby.updated_at||'')}},[baby.updated_at]);
  useEffect(()=>{if(dirty)try{localStorage.setItem('babymemo-draft-baby-'+baby.id,JSON.stringify({name,birthday,birth_time:birthTime,gender,time_zone:timeZone,allergies,notes,updated_at:formVersion}))}catch{notify('本机存储不可用，关闭页面前请保存资料。')}},[name,birthday,birthTime,gender,timeZone,allergies,notes,dirty]);
  useEffect(()=>{if(qr)void import('qrcode').then(({default:QRCode})=>QRCode.toDataURL(qr,{width:220,margin:2,errorCorrectionLevel:'M'})).then(setQrImage).catch(()=>notify('二维码渲染失败'))},[qr]);
@@ -158,6 +160,24 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   {createError&&<div className="error" role="alert">{createError}</div>}
   <Primary disabled={creatingBaby}>{creatingBaby?'正在创建…':'创建并切换到新宝宝'} <Plus size={16}/></Primary>
  </form>}<button className="text-btn" disabled={state.babies.length<2} onClick={()=>void archiveBaby()}>移出当前宝宝（记录保留）</button><button className="secondary" onClick={()=>void loadArchived()}>查看移出的宝宝</button>{archived.map(item=><div className="row-between" key={item.id}><span>{item.name}</span><button className="secondary" onClick={()=>void post('/api/babies/'+item.id+'/restore',{}).then(()=>{changed();void loadArchived()}).catch(e=>notify(e.message))}>恢复宝宝</button></div>)}</div></Card>
+ <Card className="span-2 thumbnail-repair-card">
+  <div className="section-title"><h3>相册封面维护</h3><RefreshCw size={20}/></div>
+  <p className="muted small">一键扫描家庭内所有宝宝缺失的照片和视频封面。浏览其他页面时继续处理，逐项保存进度；关闭应用或 iPhone 冻结页面后会暂停，重新打开并登录后自动继续。视频截帧依赖当前设备解码能力，并非服务器离线转码。</p>
+  <div className="thumbnail-repair-actions">
+    <button type="button" className="secondary" disabled={!navigator.onLine||coverRepair.phase==='running'}
+      onClick={()=>startThumbnailRepair(state.babies.map(item=>item.id))}>
+      <RefreshCw size={16}/>{coverRepair.phase==='paused'?'继续修复缺失封面':'一键后台修复全部封面'}
+    </button>
+    {coverRepair.phase==='running'&&<button type="button" className="secondary" onClick={pauseThumbnailRepair}>暂停修复</button>}
+  </div>
+  {coverRepair.phase!=='idle'&&<div className="thumbnail-repair-progress" role="status" aria-live="polite">
+    <strong>{coverRepair.phase==='running'?'正在后台修复':coverRepair.phase==='paused'?'任务已暂停':'本轮扫描已结束'}</strong>
+    <span>已检查 {coverRepair.processed}{coverRepair.total?' / '+coverRepair.total:''} 项 · 修复 {coverRepair.repaired} 项 · 未修复 {coverRepair.failed} 项</span>
+    {coverRepair.total>0&&<progress max={coverRepair.total} value={Math.min(coverRepair.processed,coverRepair.total)} aria-label="封面修复进度"/>}
+    {coverRepair.error&&<span className="muted">{coverRepair.error}</span>}
+    {coverRepair.phase==='completed'&&coverRepair.failed>0&&<span className="muted">无法在此设备解码的文件仍保留原件，可在相册预览里手动补封面；再次执行只扫描仍缺少封面的项目。</span>}
+  </div>}
+ </Card>
  <Card><div className="section-title"><h3>家庭数据与回收站</h3><ShieldCheck size={20}/></div><p className="muted small">删除的记录和媒体保留 30 天，可在到期前恢复；定时清理由服务器执行。完整导出包含宝宝资料、头像、记录、关联关系和媒体原件；JSON可单独导出。离线内容保存在此设备，主动退出会清除本机数据。</p><button type="button" className="primary full" disabled={exportBusy||!navigator.onLine} onClick={()=>{setExportBusy(true);void downloadFamilyArchive().then(()=>notify('家庭档案已生成，请在下载中查看')).catch(e=>notify(e instanceof Error?e.message:'导出失败')).finally(()=>setExportBusy(false))}}>{exportBusy?'正在导出家庭档案…':'下载完整家庭档案 ZIP'}</button><a className="secondary full" href="/api/export/records" download="babymemo-records.json"><CloudUpload size={16}/> 导出记录 JSON</a><button className="secondary full" onClick={()=>void loadTrash()} disabled={trashBusy}>{trashBusy?'读取中…':'查看回收站'}</button>
  {trash&&<div className="trash-list">{(['growth','milestones','media'] as const).flatMap(kind=>trash[kind].map(entry=><div className="trash-item" key={kind+entry.id}><div><strong>{kind==='growth'?'成长测量':kind==='milestones'?'成长瞬间':'媒体'} · {kind==='media'?entry.day:'title' in entry?entry.title:entry.day}</strong><p className="muted small">{state.babies.find(b=>b.id===entry.baby_id)?.name||'宝宝'} · {entry.day} · 删除于 {entry.deleted_at.slice(0,10)}</p></div><button className="secondary" onClick={()=>void restore(kind,entry.id)}>恢复</button></div>))}{!trash.growth.length&&!trash.milestones.length&&!trash.media.length&&<p className="muted small">回收站为空</p>}</div>}
  </Card>

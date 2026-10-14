@@ -45,7 +45,7 @@ test('photo swipes require horizontal intent, honor bounds and skip videos',()=>
  assert.match(viewer,/if\(!start\|\|video\|\|saving/);
  assert.match(viewer,/dx<0&&index<count-1/);
  assert.match(viewer,/dx>0&&index>0/);
- assert.match(viewer,/<video key=\{item\.id\} src=\{src\} controls playsInline/);
+ assert.match(viewer,/<video (?:ref=\{videoRef\} )?key=\{item\.id\} src=\{src\} controls playsInline/);
  assert.match(viewer,/onKeyDown=\{handleViewerKey\}/);
  assert.match(viewer,/aria-keyshortcuts=\{video\?undefined:'ArrowLeft ArrowRight'\}/);
  assert.match(viewer,/aria-live="polite" aria-atomic="true"/);

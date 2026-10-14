@@ -1,6 +1,7 @@
 import {RecordFilterBar,emptyFilters,filterQuery,type RecordFilters} from './components/RecordFilters';
 import {OfflineStatus} from './components/OfflineStatus';
 import {clearDevice,offlineJobs} from './offline';
+import {resumeThumbnailRepair,clearThumbnailRepair} from './thumbnail-repair';
 import {api,post,ApiFailure,today,type State,type Tab,type RecordItem} from './lib/client';
 import {RecordView,GrowthChart} from './features/growth/RecordView';
 import {ageLabel} from './lib/age.mjs';
@@ -94,6 +95,19 @@ export default function App(){
   catch(e){if(sequence!==refreshSequence.current)return;if(e instanceof ApiFailure&&e.status===401){setMode('gate');setState(null);}else{setToast('连接暂时中断，已保留当前页面。请检查网络并重试。');setMode(old=>old==='loading'?'unavailable':old);}}
  }
  useEffect(()=>{refresh();const wake=()=>{if(document.visibilityState==='visible')void refresh()};window.addEventListener('focus',wake);document.addEventListener('visibilitychange',wake);return()=>{window.removeEventListener('focus',wake);document.removeEventListener('visibilitychange',wake)}},[]);
+ // Resume only jobs explicitly started by the user on this device.
+ useEffect(()=>{if(mode==='app'&&state)resumeThumbnailRepair(state.babies.map(item=>item.id))},[mode,state]);
+ useEffect(()=>{
+  const ready=(event:Event)=>{
+   const id=(event as CustomEvent<{id:string}>).detail?.id;
+   if(!id)return;
+   setMedia(items=>items.map(item=>item.id===id?{...item,thumbnail_ready:1}:item));
+   setMilestones(items=>items.map(item=>item.media?.some(m=>m.id===id)
+     ?{...item,media:item.media.map(m=>m.id===id?{...m,thumbnail_ready:1}:m)}:item));
+  };
+  window.addEventListener('babymemo:thumbnail-repaired',ready);
+  return()=>window.removeEventListener('babymemo:thumbnail-repaired',ready);
+ },[]);
  // Load only the resource required by the active view; avoid three D1 reads on
  // every navigation. Ignore late responses when baby or tab changes.
  useEffect(()=>{
@@ -134,7 +148,7 @@ export default function App(){
       if((await offlineJobs()).length&&!confirm('退出会清除此设备尚未同步的内容和草稿。确认退出？'))return;
       refreshSequence.current++;localStorage.setItem('babymemo-logout-pending','yes');
       if(navigator.onLine)try{await post('/api/logout',{});localStorage.removeItem('babymemo-logout-pending')}catch{/* Keep the server logout pending until connectivity returns. */}
-      await clearDevice();setMode('gate');setState(null);setRecords([]);setMilestones([]);setMedia([]);setGrowthHistory([]);
+      clearThumbnailRepair();await clearDevice();setMode('gate');setState(null);setRecords([]);setMilestones([]);setMedia([]);setGrowthHistory([]);
     }catch(e){setToast(e instanceof Error?e.message:'退出失败，请检查网络后重试')}
   }
  if(mode==='loading')return <div className="loading-screen"><Logo/><div>正在载入家庭空间…</div></div>;
