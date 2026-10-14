@@ -237,6 +237,22 @@ export class WechatSession {
        reply+='\n'+(context.valid?await handleWechatCommand(env,text,task.sourceId+':caption',thread,messageTime(task.raw),task.babyId):'保存期间会话已有变化，附文操作未执行。请重新发送要记录或修改的文字。');
       }
      }
+     // Process deferred captions against the actual saved photo IDs, never an AI guess.
+     const deferred=await ctx.storage.get<{sourceId:string;babyId:string;items:{messageId:string;text:string}[]}>('pendingCaption');
+     if(deferred?.sourceId===task.sourceId&&deferred.babyId===task.babyId){
+      if(ok&&thread.lastMedia?.ids?.length){
+       for(const item of deferred.items){
+        const caption=item.text.trim();
+        if(caption){
+         for(const id of thread.lastMedia.ids as string[]){
+          await env.DB.prepare("UPDATE media SET description=? WHERE id=? AND baby_id=? AND deleted_at IS NULL").bind(caption,id,task.babyId).run();
+         }
+        }
+       }
+       reply+='\\n已自动关联 '+deferred.items.length+' 条后续照片描述。';
+      }else reply+='\\n照片未保存成功，后续描述未写入，请重试照片。';
+      await ctx.storage.delete('pendingCaption');
+     }
      if(task.raw.forwarded_content){
       const excerpt=text.slice(0,450);
       reply+='\n已识别合并转发内容'+(excerpt?'：\n'+excerpt:'。');
@@ -275,6 +291,19 @@ export class WechatSession {
       return Response.json(await this.mediaQueue.enqueue(data.sourceId,data.payload));
      }
      return Response.json({ok:true});
+    }
+    if(path==='/media/caption'&&request.method==='POST'){
+     const data=await request.json() as {sourceId:string;messageId:string;text:string;babyId:string};
+     if(typeof data.sourceId!=='string'||typeof data.messageId!=='string'||typeof data.text!=='string'||!data.text.trim()||data.text.length>1000||typeof data.babyId!=='string')return Response.json({accepted:false},{status:400});
+     const existing=await this.ctx.storage.get<{sourceId:string;babyId:string;items:{messageId:string;text:string}[]}>('pendingCaption');
+     if(existing&&existing.sourceId!==data.sourceId)return Response.json({accepted:false});
+     const items=existing?.items||[];
+     if(!items.some(item=>item.messageId===data.messageId)){
+      if(items.length>=4)return Response.json({accepted:false});
+      items.push({messageId:data.messageId,text:data.text});
+     }
+     await this.ctx.storage.put('pendingCaption',{sourceId:data.sourceId,babyId:data.babyId,items});
+     return Response.json({accepted:true});
     }
     if(path==='/media/result'&&request.method==='POST'){
      const {result}=await request.json() as {result:string};
@@ -414,6 +443,15 @@ export class WechatSession {
                 }
                }
               }
+            }else if(!forwarded&&!clear&&thread.pendingMedia?.sourceId&&thread.pendingMedia.expiresAt>Date.now()&&text.length<=1000){
+              // Attach an immediate text-only follow-up to the pending photo task.
+              // Never run it as an independent milestone while the photo is in flight.
+              const attached=await workerMediaBot(this.env,connectionId).fetch('https://bot.internal/media/caption',{
+               method:'POST',headers:{'Content-Type':'application/json'},
+               body:JSON.stringify({sourceId:thread.pendingMedia.sourceId,messageId:unique,text,babyId:thread.pendingMedia.babyId})
+              });
+              const outcome=attached.ok?await attached.json() as {accepted:boolean}:null;
+              reply=outcome?.accepted?'已收到照片描述，照片保存完成后会自动关联。':'照片处理状态已变化，描述尚未关联，请在收到保存结果后重新发送。';
             }else reply=await handleWechatCommand(this.env,text,unique,thread,messageTime(raw),undefined,forwarded);
           }catch(e){
             // Never acknowledge a media message before its task is durable.
