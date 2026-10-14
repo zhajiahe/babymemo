@@ -42,14 +42,16 @@ export class DurableMediaQueue {
  }
  async start(){if((await this.storage.get<string[]>('media-order')||[]).length)await this.storage.setAlarm(Date.now()+1)}
  async pause(){await this.storage.deleteAlarm()}
- async reset(){
-  await this.storage.transaction(async tx=>{
+ async reset():Promise<string[]>{
+  return this.storage.transaction(async tx=>{
    const ids=await tx.get<string[]>('media-order')||[];
+   const jobs=await Promise.all(ids.map(id=>tx.get<MediaJob>(key(id))));
    for(const id of ids)await tx.delete(key(id));
    await tx.put('media-generation',crypto.randomUUID());
    await tx.put('media-order',[]);
    await tx.delete('media-done');await tx.delete('media-last-error');await tx.delete('media-last-completed');
    await tx.deleteAlarm();
+   return jobs.filter((job):job is MediaJob=>!!job).map(job=>job.payload);
   });
  }
  async owns(id:string,job:MediaJob){
