@@ -8,7 +8,7 @@ export function openRouterProviderForModel(model:string){
 }
 export function openRouterReasoningForModel(model:string,mode:'auto'|'off'|'low'='auto'){
  if(!['auto','off','low'].includes(mode))throw Error('INVALID_REASONING_MODE');
- const managed:readonly string[]=([DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55] as string[]).includes(model);
+ const managed=([DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55] as string[]).includes(model);
  if(mode==='off'||mode==='auto'&&managed)return {enabled:false};
  if(mode==='low')return {enabled:true,effort:model===GPT_6_LUNA?'minimal':'low'};
  return null;
@@ -70,7 +70,7 @@ export async function openRouterCompletion({key,model,messages,tools,max_tokens=
    let errorResponse;
    try{errorResponse=await response.json()}catch{}
    if(reasoning?.enabled===false&&!usedReasoningFallback&&
-      [DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55].includes(model)&&isDisableReasoningRejected(errorResponse)){
+      ([DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55] as string[]).includes(model)&&isDisableReasoningRejected(errorResponse)){
     reasoning=fallbackReasoning;
     usedReasoningFallback=true;
     attempt--; // one guarded compatibility retry, even if maxAttempts=1
