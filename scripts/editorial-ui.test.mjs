@@ -49,7 +49,7 @@ test('family name and Settings-only baby switch remain available on mobile',()=>
  const harness=text('src/wechat-harness.mjs');
  assert.match(app,/className="space-name"/);
  assert.match(app,/className="side-label side-space-name"/);
- assert.match(css,/\.topbar \{ display:flex;/);
+ assert.match(css,/\.topbar \{ position:sticky; top:0; z-index:60; display:flex;/);
  assert.doesNotMatch(css,/\.topbar \{ display:none;/);
  assert.doesNotMatch(app,/aria-label="选择宝宝"/);
  assert.match(settings,/className="settings-baby-switch"/);
