@@ -2,7 +2,7 @@ import {queueMedia,syncOffline} from '../../offline';
 import {downloadFamilyArchive} from '../../export-download';
 import {useEffect,useState,type FormEvent} from 'react';
 import {Card,Field,Primary} from '../../components/ui';
-import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi} from 'lucide-react';
+import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,BrainCircuit} from 'lucide-react';
 import {api,post,today,type BabyInfo,type State,type WechatRunStatus} from '../../lib/client';
 import {DEFAULT_OPENROUTER_MODEL} from '../../openrouter-model.mjs';
 import {wechatStatusView,wechatStatusTime} from '../../wechat-status.mjs';
@@ -12,7 +12,13 @@ function babyDraft(baby:BabyInfo){try{return JSON.parse(localStorage.getItem('ba
 export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected}:{state:State;baby:BabyInfo;changed:()=>void;notify:(s:string)=>void;onBabyCreated:(id:string)=>void;onBabySelected:(id:string)=>void}){
  const [provider,setProvider]=useState<'workers-ai'|'openrouter'>(state.ai?.provider||'workers-ai');
  const [model,setModel]=useState(state.openrouter.model),[apiKey,setApiKey]=useState(''),[saving,setSaving]=useState(false);
- useEffect(()=>{setProvider(state.ai?.provider||'workers-ai')},[state.ai?.provider]);
+ const [testingModel,setTestingModel]=useState(false),[aiProbe,setAiProbe]=useState<{provider:string;ok:boolean;message:string}|null>(null);
+ const savedProvider=state.ai?.provider||'workers-ai',modelDirty=provider!==savedProvider||(provider==='openrouter'&&(model!==state.openrouter.model||!!apiKey));
+ const activeModel=savedProvider==='workers-ai'?'Qwen3.8-27B':state.openrouter.model;
+ const checkedWechat=state.wechat.connections.filter(member=>!!runStatuses[member.id]);
+ const healthyWechat=checkedWechat.filter(member=>wechatStatusView(runStatuses[member.id]).tone==='active').length;
+ const warningWechat=checkedWechat.filter(member=>wechatStatusView(runStatuses[member.id]).tone==='warning').length;
+ useEffect(()=>{setProvider(state.ai?.provider||'workers-ai');setAiProbe(null)},[state.ai?.provider]);
  const [photoBaby,setPhotoBaby]=useState(state.wechat.defaultBabyId||''),[photoBabyBusy,setPhotoBabyBusy]=useState(false);
  useEffect(()=>{setPhotoBaby(state.wechat.defaultBabyId||'')},[state.wechat.defaultBabyId]);
  const draft=babyDraft(baby);
@@ -48,7 +54,10 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   const poll=async()=>{try{const r=await post<{status:string}>('/api/settings/wechat/qr/status',{pairingId,verifyCode});if(cancelled)return;setStatus(r.status);if(r.status==='confirmed'){setQr('');setQrImage('');setPairingId('');setVerifyCode('');changed();notify('微信成员绑定成功，可在列表中启用');return;}}catch(e){if(!cancelled)setStatus('连接重试中');}if(!cancelled)timeout=setTimeout(poll,2000)};
   timeout=setTimeout(poll,500);return()=>{cancelled=true;clearTimeout(timeout)};
  },[qr,pairingId,verifyCode,status==='confirmed',status==='expired']);
- async function saveOpenrouter(e:FormEvent){e.preventDefault();setSaving(true);try{if(provider==='openrouter')await post('/api/settings/openrouter',{model,...(!state.openrouter.managedByDeployment&&apiKey?{apiKey}:{})});await post('/api/settings/ai',{provider});setApiKey('');changed();notify('微信指令模型配置已保存')}catch(e){notify(String(e))}finally{setSaving(false)}}
+ async function saveOpenrouter(e:FormEvent){e.preventDefault();if(saving)return;setSaving(true);setAiProbe(null);try{
+  if(provider==='openrouter')await post('/api/settings/openrouter',{model,...(!state.openrouter.managedByDeployment&&apiKey?{apiKey}:{})});
+  await post('/api/settings/ai',{provider});setApiKey('');changed();notify('微信模型设置已保存，全部成员将使用新提供方');
+ }catch(e){notify(e instanceof Error?e.message:'保存失败')}finally{setSaving(false)}}
  async function saveBaby(e:FormEvent){e.preventDefault();if(babyBusy)return;setBabyBusy(true);try{
   const result=await api<{id:string;queued?:boolean}>('/api/babies/'+baby.id,{method:'PATCH',body:JSON.stringify({name,birthday,birthTime,gender,timeZone,allergies,notes,expectedUpdatedAt:formVersion})});
   localStorage.removeItem('babymemo-draft-baby-'+baby.id);setDirty(false);if(result.queued)setFormVersion('pending:'+result.id);changed();notify(result.queued?'宝宝资料已保存在本机，联网后同步':'宝宝资料已更新');
@@ -121,7 +130,22 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   try{await api('/api/settings/wechat/connections/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({label:next})});changed();notify('成员称呼已更新')}
   catch(e){notify(String(e))}finally{setMemberBusy('')}
  }
- async function test(){try{await post('/api/settings/ai/test',{});notify('模型连接测试成功（Workers AI 测试会消耗少量 Neurons）')}catch(e){notify(String(e))}}
+ async function test(){
+  if(modelDirty){notify('请先保存模型设置，再测试当前生效的提供方');return}
+  if(testingModel)return;
+  setTestingModel(true);setAiProbe(null);
+  try{
+   const result=await post<{ok:boolean;provider:string}>('/api/settings/ai/test',{});
+   if(!result.ok||result.provider!==savedProvider)throw Error('模型未返回有效的测试结果');
+   const label=savedProvider==='workers-ai'?'Qwen3.8-27B':'OpenRouter';
+   setAiProbe({provider:savedProvider,ok:true,message:label+' 测试成功（仅证明模型接口可用，不代表微信连接正常）'});
+   notify('模型连接测试成功');
+  }catch(e){
+   const message=e instanceof Error?e.message:'模型测试失败';
+   setAiProbe({provider:savedProvider,ok:false,message:'模型测试失败：'+message});
+   notify(message);
+  }finally{setTestingModel(false)}
+ }
  async function inspect(id:string){setInspectedMember(id);try{const status=await api<WechatRunStatus>('/api/settings/wechat/connections/'+encodeURIComponent(id)+'/status');setRunStatuses(current=>({...current,[id]:status}))}catch{notify('暂时无法读取微信状态，请稍后重试')}}
  return <div className="settings-grid"><Card><div className="section-title"><h3>宝宝资料</h3><Baby size={20}/></div><div className="settings-baby-switch"><Field label="当前查看的宝宝"><select aria-label="选择宝宝" value={baby.id} onChange={e=>onBabySelected(e.target.value)}>{state.babies.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><p className="muted small">仅在设置中切换宝宝，其他页面自动展示所选宝宝的记录。</p></div><div className="baby-avatar-control">{baby.avatar_key?<img className="baby-portrait" src={'/api/babies/'+baby.id+'/avatar?v='+encodeURIComponent(baby.updated_at||'')} alt={baby.name+'的头像'}/>:<Baby size={40}/>}<label className="secondary">{avatarBusy?'处理头像…':'更换头像'}<input type="file" accept="image/*" disabled={avatarBusy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void avatar(file)}}/></label>{baby.avatar_key&&<button type="button" className="text-btn" disabled={avatarBusy} onClick={()=>void api('/api/babies/'+baby.id+'/avatar',{method:'DELETE',body:JSON.stringify({expectedUpdatedAt:baby.updated_at||''})}).then(()=>{changed();notify('头像已移除')}).catch(e=>notify(e.message))}>移除头像</button>}</div><form className="stack" onSubmit={saveBaby}><Field label="宝宝昵称"><input value={name} required onChange={e=>{setDirty(true);setName(e.target.value)}}/></Field><div className="two"><Field label="出生日期"><input type="date" value={birthday} required onChange={e=>{setDirty(true);setBirthday(e.target.value)}}/></Field><Field label="出生时间（可后补）"><input type="time" value={birthTime} onChange={e=>{setDirty(true);setBirthTime(e.target.value)}}/></Field></div><Field label="过敏与注意事项"><textarea rows={3} value={allergies} onChange={e=>{setDirty(true);setAllergies(e.target.value)}}/></Field><div className="two"><Field label="性别"><select value={gender} onChange={e=>{setDirty(true);setGender(e.target.value)}}><option value="girl">女孩</option><option value="boy">男孩</option><option value="other">暂不填写</option></select></Field><Field label="宝宝时区"><select value={timeZone} onChange={e=>{setDirty(true);setTimeZone(e.target.value)}}>{Array.from(new Set([timeZone,'Asia/Shanghai','Asia/Tokyo','America/Los_Angeles','UTC'])).map(zone=><option value={zone} key={zone}>{zone}</option>)}</select></Field></div><Field label="档案备注"><textarea rows={3} maxLength={4000} value={notes} onChange={e=>{setDirty(true);setNotes(e.target.value)}}/></Field><Primary disabled={babyBusy}>{babyBusy?'正在保存…':'保存资料'} <Check size={16}/></Primary></form>
  <div className="baby-create-section"><div className="section-title"><div><h3>家庭成员 · 宝宝</h3><p className="muted small">空间：{state.familyName||'家庭空间'} · 当前家庭有 {state.babies.length} 位宝宝，可切换查看各自的照片与成长记录。</p></div></div>
@@ -138,9 +162,33 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  {trash&&<div className="trash-list">{(['growth','milestones','media'] as const).flatMap(kind=>trash[kind].map(entry=><div className="trash-item" key={kind+entry.id}><div><strong>{kind==='growth'?'成长测量':kind==='milestones'?'成长瞬间':'媒体'} · {kind==='media'?entry.day:'title' in entry?entry.title:entry.day}</strong><p className="muted small">{state.babies.find(b=>b.id===entry.baby_id)?.name||'宝宝'} · {entry.day} · 删除于 {entry.deleted_at.slice(0,10)}</p></div><button className="secondary" onClick={()=>void restore(kind,entry.id)}>恢复</button></div>))}{!trash.growth.length&&!trash.milestones.length&&!trash.media.length&&<p className="muted small">回收站为空</p>}</div>}
  </Card>
  <Card><div className="section-title"><h3>账户安全</h3><ShieldCheck size={20}/></div><p className="muted small">修改家庭密码会注销所有设备的会话。支持至少 6 位的数字或混合密码，推荐使用更长的密码。</p><form className="stack" onSubmit={changePassword}><Field label="当前密码"><input type="password" autoComplete="current-password" required value={password.currentPassword} onChange={e=>setPassword({...password,currentPassword:e.target.value})}/></Field><Field label="新密码"><input type="password" autoComplete="new-password" required minLength={6} value={password.newPassword} onChange={e=>setPassword({...password,newPassword:e.target.value})}/></Field><Field label="确认新密码"><input type="password" autoComplete="new-password" required minLength={6} value={password.confirmPassword} onChange={e=>setPassword({...password,confirmPassword:e.target.value})}/></Field><Primary disabled={passwordBusy}>{passwordBusy?'正在更新…':'修改密码并退出所有设备'}</Primary></form></Card>
- <Card className="settings-advanced"><details className="settings-help"><summary>AI 模型配置 · {state.ai?.provider!=='openrouter'?'Workers AI':'OpenRouter'}</summary><p className="muted small">默认使用 Cloudflare Workers AI Qwen3.8-27B（关闭思考、免费额度按 Neurons 计），无需 API Key；也可切回 OpenRouter。模型仅执行现有微信受限工具调用，不提供网页 AI 聊天。</p><form className="stack" onSubmit={saveOpenrouter}><Field label="模型提供方"><select value={provider} onChange={e=>setProvider(e.target.value as 'workers-ai'|'openrouter')}><option value="workers-ai">Cloudflare Workers AI · Qwen3.8-27B（无思考）</option><option value="openrouter">OpenRouter · 自定义模型</option></select></Field>{provider==='openrouter'&&<><p className="muted small">{state.openrouter.managedByDeployment?'API Key 由 Cloudflare Secret 管理。':'API Key 可加密保存在 D1，或由部署管理员配置 Secret。'}</p><Field label="OpenRouter 模型 ID"><input required value={model} onChange={e=>setModel(e.target.value)} placeholder={DEFAULT_OPENROUTER_MODEL}/></Field><Field label={'API Key · '+(state.openrouter.managedByDeployment?'部署 Secret 管理':state.openrouter.configured?'已配置，可留空不变':'尚未配置')}><input type="password" autoComplete="off" disabled={state.openrouter.managedByDeployment} value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder={state.openrouter.managedByDeployment?'由部署配置（不显示密钥）':'sk-or-v1-…'}/></Field></>}<Primary disabled={saving}>保存模型设置 <Check size={16}/></Primary></form><button className="secondary full" onClick={()=>void test()}>测试当前模型连接</button></details></Card>
+ <Card className="span-2 settings-ai-card">
+  <div className="section-title"><h3>微信 AI 模型</h3><BrainCircuit size={20}/></div>
+  <div className="settings-ai-overview">
+   <div><span className="settings-ai-caption">当前生效</span><strong>{activeModel}</strong><p className="muted small">{savedProvider==='workers-ai'?'Cloudflare Workers AI · 关闭思考':'OpenRouter · 自定义模型'} · 所有绑定的微信成员共用</p></div>
+   <span className={'settings-ai-probe '+(aiProbe?.provider===savedProvider?(aiProbe.ok?'ok':'failed'):'idle')} role="status">{aiProbe?.provider===savedProvider?(aiProbe.ok?'模型接口已检测':'模型接口测试失败'):'模型接口未检测'}</span>
+  </div>
+  <p className="muted small settings-ai-hint">{savedProvider==='workers-ai'?'Workers AI 免费额度为全账号每天 10,000 Neurons（北京时间 08:00 重置），本页不提供实时余额；请到 Cloudflare 控制台查看实际消耗。':'OpenRouter 按所选模型的服务规则计费；余额、限流与历史调用请到 OpenRouter 查看。'}</p>
+  <div className="settings-ai-actions">
+   <button type="button" className="secondary" disabled={modelDirty||testingModel||saving} onClick={()=>void test()}>{testingModel?'正在测试接口…':'测试当前模型'}</button>
+   {modelDirty&&<span className="muted small" role="status">有未保存的模型改动，请先保存后测试。</span>}
+  </div>
+  {aiProbe?.provider===savedProvider&&<p className={'settings-ai-result '+(aiProbe.ok?'ok':'failed')} role="status" aria-live="polite">{aiProbe.message}</p>}
+  <details className="settings-help settings-ai-config"><summary>切换模型或配置 OpenRouter</summary>
+   <form className="stack" onSubmit={saveOpenrouter}>
+    <Field label="模型提供方"><select value={provider} onChange={e=>{setProvider(e.target.value as 'workers-ai'|'openrouter');setAiProbe(null)}}><option value="workers-ai">Cloudflare Workers AI · Qwen3.8-27B（关闭思考）</option><option value="openrouter">OpenRouter · 自定义模型</option></select></Field>
+    {provider==='openrouter'&&<>
+     <p className="muted small">{state.openrouter.managedByDeployment?'API Key 由 Cloudflare Secret 管理。':'API Key 可加密保存在 D1，或由部署管理员配置 Secret。'}</p>
+     <Field label="OpenRouter 模型 ID"><input required value={model} onChange={e=>setModel(e.target.value)} placeholder={DEFAULT_OPENROUTER_MODEL}/></Field>
+     <Field label={'API Key · '+(state.openrouter.managedByDeployment?'部署 Secret 管理':state.openrouter.configured?'已配置，可留空不变':'尚未配置')}><input type="password" autoComplete="off" disabled={state.openrouter.managedByDeployment} value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder={state.openrouter.managedByDeployment?'由部署配置（不显示密钥）':'sk-or-v1-…'}/></Field>
+    </>}
+    <Primary disabled={saving}>{saving?'正在保存…':'保存模型设置'} <Check size={16}/></Primary>
+   </form>
+  </details>
+  <p className="muted small settings-ai-note">模型接口测试只检查 AI 服务，不检查微信是否收到消息；测试本身可能产生少量 Neurons 或 OpenRouter 费用。</p>
+ </Card>
  <Card className="span-2"><div className="section-title"><h3>微信操作</h3><MessageCircle size={20}/></div><p className="muted small">添加家庭成员的微信，直接发送照片、视频或成长记录。每位成员可以独立连接。</p><details className="settings-help"><summary>查看微信连接原理</summary><p className="muted small">通过 Cloudflare Durable Objects 轮询微信消息，默认由 Workers AI Qwen3.8（关闭思考）识别意图，再调用受限工具操作家庭数据；也支持切换 OpenRouter，无需 VPS。</p></details>
- <div className="wechat-row"><div className="wechat-status"><span className={'status-dot '+(state.wechat.enabled?'online':'')}/><strong>已绑定 {state.wechat.connections.length} 位微信成员 · 已启用 {state.wechat.connections.filter(x=>x.enabled).length} 位</strong></div></div>
+ <div className="wechat-row"><div className="wechat-status"><strong>微信消息接收 · 已绑定 {state.wechat.connections.length} 位 · 已启用 {state.wechat.connections.filter(x=>x.enabled).length} 位</strong><p className="muted small">最近确认运行 {healthyWechat} 位{warningWechat?' · 需关注 '+warningWechat+' 位':''}{checkedWechat.length<state.wechat.connections.length?' · 状态获取中':''}。启用不等于正在正常收消息。</p></div></div>
  <div className="wechat-photo-setting"><div><strong>微信照片/视频 → 自动存入相册</strong><details className="settings-help"><summary>照片与视频归档规则</summary><p className="muted small">给绑定的微信 Bot 发送照片或视频会直接存入私有 R2，无需 AI 分析。多宝宝家庭可以在消息文字中指定宝宝；每条最多 4 项，单文件不超过 50 MiB。</p></details></div><div className="wechat-photo-controls"><label className="field">默认收图宝宝<select aria-label="微信照片默认宝宝" value={photoBaby} onChange={e=>setPhotoBaby(e.target.value)}><option value="">未选择（多宝宝时需附带名字）</option>{state.babies.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label><button className="secondary" type="button" disabled={photoBabyBusy} onClick={()=>void savePhotoBaby()}>{photoBabyBusy?'保存中…':'保存默认宝宝'}</button></div></div>
  <div className="wechat-member-list">
  {state.wechat.connections.map(member=>{const status=runStatuses[member.id];const view=wechatStatusView(status);return <div key={member.id} className="wechat-member-row">
