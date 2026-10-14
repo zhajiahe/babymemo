@@ -15,9 +15,6 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  const [testingModel,setTestingModel]=useState(false),[aiProbe,setAiProbe]=useState<{provider:string;ok:boolean;message:string}|null>(null);
  const savedProvider=state.ai?.provider||'workers-ai',modelDirty=provider!==savedProvider||(provider==='openrouter'&&(model!==state.openrouter.model||!!apiKey));
  const activeModel=savedProvider==='workers-ai'?'Qwen3.8-27B':state.openrouter.model;
- const checkedWechat=state.wechat.connections.filter(member=>!!runStatuses[member.id]);
- const healthyWechat=checkedWechat.filter(member=>wechatStatusView(runStatuses[member.id]).tone==='active').length;
- const warningWechat=checkedWechat.filter(member=>wechatStatusView(runStatuses[member.id]).tone==='warning').length;
  useEffect(()=>{setProvider(state.ai?.provider||'workers-ai');setAiProbe(null)},[state.ai?.provider]);
  const [photoBaby,setPhotoBaby]=useState(state.wechat.defaultBabyId||''),[photoBabyBusy,setPhotoBabyBusy]=useState(false);
  useEffect(()=>{setPhotoBaby(state.wechat.defaultBabyId||'')},[state.wechat.defaultBabyId]);
@@ -30,6 +27,9 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  const [newBaby,setNewBaby]=useState({name:'',birthday:'',birthTime:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
  const [qr,setQr]=useState(''),[pairingId,setPairingId]=useState(''),[qrImage,setQrImage]=useState(''),[status,setStatus]=useState(''),[verifyCode,setVerifyCode]=useState('');
  const [runStatuses,setRunStatuses]=useState<Record<string,WechatRunStatus>>({}),[inspectedMember,setInspectedMember]=useState('');
+ const checkedWechat=state.wechat.connections.filter(member=>!!runStatuses[member.id]);
+ const healthyWechat=checkedWechat.filter(member=>wechatStatusView(runStatuses[member.id]).tone==='active').length;
+ const warningWechat=checkedWechat.filter(member=>wechatStatusView(runStatuses[member.id]).tone==='warning').length;
  const membersKey=state.wechat.connections.map(x=>x.id+':'+x.enabled+':'+x.updatedAt).join('|');
  useEffect(()=>{
   let cancelled=false;let timer:ReturnType<typeof setTimeout>;const controller=new AbortController();
