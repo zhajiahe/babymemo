@@ -29,9 +29,11 @@ test('sticky family title, labeled tabs and iPhone safe areas',()=>{
  assert.match(app,/if\(tab!==active\)\{setActive\(tab\);return;\}/);
  assert.match(css,/\.topbar\.has-back \.crumb/);
  assert.match(css,/\.topbar \.mobile-back-button/);
- assert.match(css,/\.app:has\(input:not\(\[type\]\):focus/);
- assert.match(css,/input\[type="password"\]:focus/);
- assert.doesNotMatch(css,/\.app:has\(input:focus,textarea:focus/);
+ assert.match(app,/window\.visualViewport/);
+ assert.match(app,/window\.innerHeight-viewport!\.height>140/);
+ assert.match(app,/document\.addEventListener\('focusin',syncKeyboard\)/);
+ assert.match(css,/\.app\.keyboard-open \.mobile-nav/);
+ assert.doesNotMatch(css,/\.app:has\(input/);
  assert.doesNotMatch(app,/aria-label="选择宝宝"/);
 });
 
