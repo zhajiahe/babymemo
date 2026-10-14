@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {retryAfterMs,openRouterCompletion,friendlyOpenRouterError,openRouterReasoningForModel,openRouterProviderForModel,DEEPSEEK_V41_FLASH} from '../src/openrouter-retry.mjs';
-import {GPT_6_LUNA,CLAUDE_HAIKU_55,OPENROUTER_MODEL_PRESETS,openRouterModelDescription} from '../src/openrouter-model.mjs';
+import {DEFAULT_OPENROUTER_MODEL,LEGACY_MUSE_MODEL,GPT_6_LUNA,CLAUDE_HAIKU_55,OPENROUTER_MODEL_PRESETS,openRouterModelDescription} from '../src/openrouter-model.mjs';
 const opts=(fetchImpl,sleep)=>({key:'test',model:'test',messages:[{role:'user',content:'test'}],fetchImpl,sleep,random:()=>0});
 test('honors Retry-After seconds for 429 then succeeds without repeating tool execution',async()=>{
  const sleeps=[];let attempts=0;
@@ -103,4 +103,23 @@ test('Unrelated 400 never retries; repeated reasoning 400 stops after guarded fa
  const badReasoning=async()=>{calls++;return Response.json({error:{message:'Reasoning mode not supported'}},{status:400})};
  await assert.rejects(openRouterCompletion({...opts(badReasoning,async()=>{}),model:GPT_6_LUNA,maxAttempts:1}),/OPENROUTER_HTTP_400/);
  assert.equal(calls,2);
+});
+
+test('default OpenRouter model is DeepSeek Flash via Relace with thinking disabled',async()=>{
+ assert.equal(DEFAULT_OPENROUTER_MODEL,DEEPSEEK_V41_FLASH);
+ assert.equal(OPENROUTER_MODEL_PRESETS[0].id,DEFAULT_OPENROUTER_MODEL);
+ assert.deepEqual(openRouterProviderForModel(DEFAULT_OPENROUTER_MODEL),{only:['relace'],allow_fallbacks:false});
+ assert.deepEqual(openRouterReasoningForModel(DEFAULT_OPENROUTER_MODEL),{enabled:false});
+ const calls=[];
+ const result=await openRouterCompletion({
+  ...opts(async(_url,init)=>{calls.push(JSON.parse(init.body));return Response.json({choices:[{message:{content:'OK'}}]})},async()=>{}),
+  model:DEFAULT_OPENROUTER_MODEL,
+ });
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].model,DEEPSEEK_V41_FLASH);
+ assert.deepEqual(calls[0].reasoning,{enabled:false});
+ assert.deepEqual(calls[0].provider,{only:['relace'],allow_fallbacks:false});
+ assert.equal(result._babymemo_request.reasoningFallbackUsed,false);
+ assert.ok(OPENROUTER_MODEL_PRESETS.some(x=>x.id===LEGACY_MUSE_MODEL),'Muse must remain manually selectable');
+ assert.equal(openRouterReasoningForModel(LEGACY_MUSE_MODEL),null);
 });
