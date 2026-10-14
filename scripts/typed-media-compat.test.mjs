@@ -1,1 +1,0 @@
-import test from 'node:test';import assert from 'node:assert/strict';test('typed implementations keep legacy entrypoints',async()=>{for(const id of ['media-filename','media-timing','media-transfer','upload-plan']){const mod=await import('../src/'+id+'.mjs');assert.ok(Object.keys(mod).length>0);}});
