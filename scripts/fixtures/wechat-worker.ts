@@ -36,6 +36,11 @@ export default {async fetch(request:Request,env:any){
   if(u.startsWith('https://openrouter.ai/')){models++;const req=JSON.parse(init.body);modelMessages.push(req.messages);modelHasTools.push(!!req.tools);return Response.json(input.responses?.[models-1]||{choices:[{message:{tool_calls:[]}}]})}
   if(u.startsWith('https://novac2c.cdn.weixin.qq.com/')){downloads++;if(input.holdMedia){mediaStarted();await mediaGate}if(new URL(u).pathname!=='/c2c/download'||input.cdnStatus)return new Response('',{status:input.cdnStatus||502});const bytes=input.encryptedBase64?Buffer.from(input.encryptedBase64,'base64'):Uint8Array.from(input.encrypted||[]);return new Response(new ReadableStream({start(controller){for(let offset=0;offset<bytes.length;offset+=32768)controller.enqueue(bytes.subarray(offset,offset+32768));controller.close()}}))}
   if(u.includes('/ilink/bot/getupdates')){
+   if(input.pollFailureStatus)return new Response('',{status:input.pollFailureStatus});
+   if(input.pollTimeout)return new Promise((_resolve,reject)=>{
+    if(init.signal?.aborted)reject(new DOMException('Aborted','AbortError'));
+    else init.signal?.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true});
+   });
    const auth=init?.headers?.Authorization;
    const second=auth==='Bearer synthetic-token-2';
    if(input.pollBatches){const index=pollIndex++;return Response.json({ret:0,msgs:input.pollBatches[index]||[],get_updates_buf:'cursor-'+(index+1)});}

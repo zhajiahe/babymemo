@@ -82,6 +82,7 @@ npm run test:e2e
 | 自动化范围、真机验收缺口 | [QA 回归矩阵](docs/qa-regression-matrix.md) |
 | 微信 Harness 的真实场景缺陷与演进 | [Harness 场景审查](docs/wechat-harness-review.md) |
 | 微信 Harness 自动化测试设计 | [Harness 测试计划](docs/wechat-harness-test-plan.md) |
+| 微信 iLink/DO 长期降本架构与 Cron/Queues 对比 | [微信接收架构 ADR-002](docs/wechat-transport-architecture.md) |
 | 私有 D1/R2 备份与恢复 | [备份与恢复](docs/BACKUP.md) |
 | 一次性旧照片缩略图维护 | [媒体维护](docs/MEDIA_MAINTENANCE.md) |
 | 网页与微信媒体上传性能、日志和回归测试 | [媒体上传性能](docs/media-upload-performance.md) |
