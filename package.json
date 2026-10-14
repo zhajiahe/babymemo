@@ -21,6 +21,7 @@
     "test:openrouter:live": "node scripts/openrouter-live-e2e.mjs",
     "test:harness:deep": "node scripts/harness-deep-e2e.mjs",
     "test:harness:live": "node scripts/harness-live-e2e.mjs",
+    "test:model:benchmark": "node scripts/model-benchmark.mjs",
     "pretest:unit": "node scripts/build-brand-assets.mjs",
     "prebuild": "node scripts/build-brand-assets.mjs"
   },
