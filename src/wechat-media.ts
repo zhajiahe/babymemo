@@ -1,10 +1,10 @@
 import type {Env} from './types';
 import {r2PhotoCaptureDay,validCaptureDay} from './media-date.mjs';
 import {mediaTiming} from './media-timing.mjs';
-import {MAX_ITEMS,bad,mediaItems,photoRecordId,type WechatMediaItem} from './wechat-media-codec';
-import {storeEncryptedMedia,downloadWeChatImage,type MediaTransferOptions} from './wechat-media-transfer';
-export {MAX_WECHAT_MEDIA_BYTES,MAX_WECHAT_IMAGE_BYTES,WechatPhotoError,wechatMediaErrorCode,decodeWeChatAesKey,wechatCdnUrl,imageReference,mediaReference,inspectImage,inspectVideo,mediaItems,photoItems,videoItems,photoRecordId} from './wechat-media-codec';
-export {downloadWeChatImage,downloadWeChatVideo,storeEncryptedMedia} from './wechat-media-transfer';
+import {MAX_ITEMS,bad,mediaItems,photoRecordId,type WechatMediaItem} from './wechat-media-codec.ts';
+import {storeEncryptedMedia,downloadWeChatImage,type MediaTransferOptions} from './wechat-media-transfer.ts';
+export {MAX_WECHAT_MEDIA_BYTES,MAX_WECHAT_IMAGE_BYTES,WechatPhotoError,wechatMediaErrorCode,decodeWeChatAesKey,wechatCdnUrl,imageReference,mediaReference,inspectImage,inspectVideo,mediaItems,photoItems,videoItems,photoRecordId} from './wechat-media-codec.ts';
+export {downloadWeChatImage,downloadWeChatVideo,storeEncryptedMedia} from './wechat-media-transfer.ts';
 type RawMessage={create_time_ms?:unknown;item_list?:WechatMediaItem[]};
 type BabyContext={id:string;name:string;time_zone?:string};
 function localDay(raw:RawMessage,baby:BabyContext){
