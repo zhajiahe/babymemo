@@ -40,7 +40,7 @@ function Gate({onReady}:{onReady:()=>void}){
 }
 function Nav({active,setActive,logout,familyName}:{active:Tab;setActive:(t:Tab)=>void;logout:()=>void;familyName:string}){
  const sections:[Tab,string,ReactNode][]=[['overview','首页',<Baby size={19}/>],['album','相册',<Camera size={19}/>],['growth','成长',<TrendingUp size={19}/>],['moments','瞬间',<BookHeart size={19}/>],['settings','设置',<Settings2 size={19}/>]];
- return <><aside className="sidebar"><Logo/><div className="side-label side-space-name" title={familyName}>{familyName}</div><nav>{sections.map(([tab,label,icon])=><button className={'nav-link '+(tab===active?'active':'')} key={tab} type="button" aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)}>{icon}{label}{tab===active&&<span className="active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16}/> 私密家庭空间</div><button className="nav-link" onClick={logout}><LogOut size={18}/> 安全退出</button></div></aside><nav className="mobile-nav">{sections.filter(([tab])=>tab!=='moments').map(([tab,label,icon])=><button key={tab} type="button" aria-label={label} aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)} className={tab===active?'active':''}>{icon}<span>{label}</span></button>)}</nav></>;
+ return <><aside className="sidebar"><Logo/><div className="side-label side-space-name" title={familyName}>{familyName}</div><nav>{sections.map(([tab,label,icon])=><button className={'nav-link '+(tab===active?'active':'')} key={tab} type="button" aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)}>{icon}{label}{tab===active&&<span className="active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16}/> 私密家庭空间</div><button className="nav-link" onClick={logout}><LogOut size={18}/> 安全退出</button></div></aside><nav className="mobile-nav" aria-label="底部主导航">{sections.filter(([tab])=>tab!=='moments').map(([tab,label,icon])=><button key={tab} type="button" aria-label={label} aria-current={tab===active?'page':undefined} onClick={()=>setActive(tab)} className={tab===active?'active':''}><span className="mobile-nav-icon" aria-hidden="true">{icon}</span><span className="mobile-nav-label">{label}</span></button>)}</nav></>;
 }
 export default function App(){
  const [mode,setMode]=useState<'loading'|'gate'|'app'|'unavailable'>('loading');
@@ -54,6 +54,8 @@ export default function App(){
  const refreshSequence=useRef(0);
  const [growthFilters,setGrowthFilters]=useState<RecordFilters>(emptyFilters),[momentFilters,setMomentFilters]=useState<RecordFilters>(emptyFilters),[albumFilters,setAlbumFilters]=useState<RecordFilters>(emptyFilters);
  useEffect(()=>{localStorage.setItem('babymemo-view',active);localStorage.setItem('babymemo-baby',babyId)},[active,babyId]);
+  // A new tab begins at its top, like iPhone tab navigation.
+  useEffect(()=>{window.scrollTo(0,0)},[active]);
  useEffect(()=>{if(!toast)return;const timer=setTimeout(()=>setToast(''),5000);return()=>clearTimeout(timer)},[toast]);
  const baby=state?.babies.find(b=>b.id===babyId)||state?.babies[0];
  async function refresh(){
