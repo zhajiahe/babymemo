@@ -51,6 +51,32 @@ export default function App(){
  const [hasMore,setHasMore]=useState({growth:false,moments:false,album:false});
  const [busy,setBusy]=useState(false);
  const [revision,setRevision]=useState(0);
+ const [keyboardVisible,setKeyboardVisible]=useState(false);
+ useEffect(()=>{
+  const viewport=window.visualViewport;
+  if(!viewport)return;
+  // Do not hide tabs merely because an input is focused: only a real software
+  // keyboard shrinks the visual viewport. This keeps hardware keyboards usable.
+  function syncKeyboard(){
+   const focused=document.activeElement;
+   const textEditing=focused instanceof HTMLTextAreaElement
+     ||(focused instanceof HTMLInputElement&&['text','password','number','email','search','tel','url'].includes(focused.type));
+   setKeyboardVisible(textEditing&&window.innerWidth<=800&&window.innerHeight-viewport!.height>140);
+  }
+  viewport.addEventListener('resize',syncKeyboard);
+  viewport.addEventListener('scroll',syncKeyboard);
+  window.addEventListener('resize',syncKeyboard);
+  document.addEventListener('focusin',syncKeyboard);
+  document.addEventListener('focusout',syncKeyboard);
+  syncKeyboard();
+  return ()=>{
+   viewport.removeEventListener('resize',syncKeyboard);
+   viewport.removeEventListener('scroll',syncKeyboard);
+   window.removeEventListener('resize',syncKeyboard);
+   document.removeEventListener('focusin',syncKeyboard);
+   document.removeEventListener('focusout',syncKeyboard);
+  };
+ },[]);
  const refreshSequence=useRef(0);
  const [growthFilters,setGrowthFilters]=useState<RecordFilters>(emptyFilters),[momentFilters,setMomentFilters]=useState<RecordFilters>(emptyFilters),[albumFilters,setAlbumFilters]=useState<RecordFilters>(emptyFilters);
  useEffect(()=>{localStorage.setItem('babymemo-view',active);localStorage.setItem('babymemo-baby',babyId)},[active,babyId]);
@@ -116,7 +142,7 @@ export default function App(){
  if(mode==='unavailable')return <div className="loading-screen"><Logo/><p>暂时无法连接家庭空间，已保留你的会话。</p><button className="secondary" onClick={()=>void refresh()}><RefreshCw size={16}/>重新连接</button></div>;
  if(!state||!baby)return <div className="loading-screen">家庭空间中暂无宝宝档案</div>;
  const titles:Record<Tab,string>={overview:'成长日记',growth:'成长记录',moments:'成长瞬间',album:'相册',settings:'设置'};
- return <div className="app"><Nav active={active} setActive={selectTab} logout={logout} familyName={state.familyName||"家庭空间"}/><main className="workspace"><div className={'topbar'+(active==='moments'?' has-back':'')}>{active==='moments'&&<button type="button" className="mobile-back-button" onClick={()=>selectTab('overview')} aria-label="返回首页"><ChevronLeft size={19}/>首页</button>}<div className="crumb"><span className="space-name" aria-label="家庭空间名称" title={state.familyName||'家庭空间'}>{state.familyName||'家庭空间'}</span> <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
+ return <div className={'app'+(keyboardVisible?' keyboard-open':'')}><Nav active={active} setActive={selectTab} logout={logout} familyName={state.familyName||"家庭空间"}/><main className="workspace"><div className={'topbar'+(active==='moments'?' has-back':'')}>{active==='moments'&&<button type="button" className="mobile-back-button" onClick={()=>selectTab('overview')} aria-label="返回首页"><ChevronLeft size={19}/>首页</button>}<div className="crumb"><span className="space-name" aria-label="家庭空间名称" title={state.familyName||'家庭空间'}>{state.familyName||'家庭空间'}</span> <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
  <div className="page"><OfflineStatus changed={changed} notify={setToast}/><header className={"page-heading"+(active==="album"?" page-heading-album":"")}><div className={"page-heading-content"+(baby.avatar_key?" has-avatar":"")}>{baby.avatar_key&&<img className="baby-portrait" src={'/api/babies/'+baby.id+'/avatar?v='+encodeURIComponent(baby.updated_at||'')} alt={baby.name+'的头像'}/>}<h1>{active==='overview'?baby.name:titles[active]}</h1>
  <p className="muted">{active==='overview'
  ? ageLabel(baby.birthday,baby.birth_time,baby.time_zone)+' · 成长日记'
