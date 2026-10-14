@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type TouchEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type TouchEvent, type KeyboardEvent } from 'react';
 import { ChevronLeft, ChevronRight, Download, Save, X, Trash2 } from 'lucide-react';
 import {saveMediaOffline} from '../offline';
 import {api} from '../lib/client';
@@ -35,6 +35,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
   const [draftId,setDraftId]=useState(item.id);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [imageStatus,setImageStatus]=useState<'loading'|'ready'|'error'>('loading');
   const [requestId,setRequestId]=useState(()=>mediaDraft(item).requestId||crypto.randomUUID());
 
   // Native modal dialog supplies focus trapping, Escape and focus restoration.
@@ -45,7 +46,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
   }, []);
   useEffect(() => {
     const draft=mediaDraft(item);setDay(draft.day||item.day);setDescription(draft.description??item.description??'');setVersion(draft.version??item.updated_at??'');setRequestId(draft.requestId||crypto.randomUUID());setDraftId(item.id);
-    setError('');
+    setError('');setImageStatus('loading');
   }, [item.id]);
   useEffect(()=>{if(draftId!==item.id)return;try{localStorage.setItem('babymemo-draft-media-'+item.id,JSON.stringify({day,description,requestId,version}))}catch{/* The visible form remains usable. */}},[day,description,requestId,version,item.id,draftId]);
 
@@ -81,21 +82,35 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
     if(dx<0&&index<count-1)onNavigate(1);
     if(dx>0&&index>0)onNavigate(-1);
   }
+  function handleViewerKey(event:KeyboardEvent<HTMLDialogElement>){
+    if(video||saving||(event.key!=='ArrowLeft'&&event.key!=='ArrowRight'))return;
+    const target=event.target;
+    if(target instanceof HTMLElement&&target.closest('input,textarea,select,[contenteditable="true"]'))return;
+    const step=event.key==='ArrowRight'?1:-1;
+    if(index+step<0||index+step>=count)return;
+    event.preventDefault();
+    onNavigate(step);
+  }
   return (
-    <dialog ref={dialogRef} className="media-dialog" aria-label="相册预览" onClose={onClose}
+    <dialog ref={dialogRef} className="media-dialog" aria-label="相册预览" onClose={onClose} onKeyDown={handleViewerKey}
       onClick={event => { if (event.target === dialogRef.current) dialogRef.current?.close(); }}>
       <div className="media-viewer">
         <header className="media-viewer-header">
           <div>
             <strong>{item.day}</strong>
-            <span className="muted">第 {index + 1} / {count} 项</span>
+            <span className="muted" aria-live="polite" aria-atomic="true">第 {index + 1} / {count} 项</span>
           </div>
           <button type="button" className="icon-btn" onClick={() => dialogRef.current?.close()} aria-label="关闭预览"><X size={20} /></button>
         </header>
-        <div className="media-viewer-stage" onTouchStart={startSwipe} onTouchEnd={finishSwipe} onTouchCancel={()=>{touchStart.current=null}}>
+        <div className="media-viewer-stage" role="group" tabIndex={video?undefined:0} aria-label={video?'视频预览':'照片预览，左右滑动或方向键切换'} aria-keyshortcuts={video?undefined:'ArrowLeft ArrowRight'} onTouchStart={startSwipe} onTouchEnd={finishSwipe} onTouchCancel={()=>{touchStart.current=null}}>
           {video
             ? <video key={item.id} src={src} controls playsInline preload="metadata" aria-label={'成长视频'} />
-            : <img key={item.id} src={src} alt={'成长照片'} />}
+            : <>
+              {imageStatus==='loading'&&<span className="media-loading" role="status">照片加载中…</span>}
+              <img key={item.id} src={src} alt="成长照片" draggable={false} onLoad={()=>setImageStatus('ready')} onError={()=>setImageStatus('error')}/>
+              {imageStatus==='error'&&<span className="media-loading" role="alert">照片暂时无法显示，请检查网络后重试</span>}
+              {count>1&&<span className="media-swipe-hint" aria-hidden="true">左右滑动切换</span>}
+            </>}
         </div>
         <div className="media-viewer-toolbar">
           <div className="media-viewer-arrows">
