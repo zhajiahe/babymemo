@@ -118,7 +118,7 @@ h1,h2,h3 { letter-spacing:normal; }
 .photo-story-text { color:var(--bm-ink); margin:0; font-size:16px; font-weight:510; line-height:1.8; white-space:pre-wrap; overflow-wrap:anywhere; }
 .photo-story-empty { display:flex; flex-direction:column; align-items:flex-start; gap:7px; width:100%; padding:0; border:0; background:transparent; color:var(--bm-muted); text-align:left; font-size:14px; line-height:1.7; cursor:pointer; }
 .photo-story-empty span { color:var(--bm-brand); font-weight:650; }
-.photo-month-stories { margin:17px 0 29px; }
+.photo-month.photo-month-stories { margin:17px 0 29px; }
 .media-story-panel { padding:20px 22px 23px; background:var(--bm-surface); }
 .media-story-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .media-story-head>div { display:flex; flex-direction:column; gap:5px; min-width:0; }
@@ -131,8 +131,8 @@ h1,h2,h3 { letter-spacing:normal; }
 .media-viewer-edit[hidden] { display:none!important; }
 @media(max-width:800px) {
   .photo-stories { grid-template-columns:minmax(0,1fr); gap:15px; }
-  .photo-month-stories { margin:12px 0 25px; }
-  .photo-month-stories h3 { padding:0; }
+  .photo-month.photo-month-stories { margin:12px 0 25px; }
+  .photo-month.photo-month-stories h3 { padding:0; }
   .photo-story-copy { padding:14px 16px 20px; }
   .media-story-panel { padding:19px 16px; }
   .media-story-body { font-size:16px; line-height:1.85; }
@@ -140,8 +140,8 @@ h1,h2,h3 { letter-spacing:normal; }
   .album-view-switch button { min-width:0; }
 }
 @media(max-width:380px) {
-  .photo-month-stories { margin:12px 0 25px; }
-  .photo-month-stories h3 { padding:0; }
+  .photo-month.photo-month-stories { margin:12px 0 25px; }
+  .photo-month.photo-month-stories h3 { padding:0; }
 }
 
 /* Unframed, compact images; controls are in media details. */
