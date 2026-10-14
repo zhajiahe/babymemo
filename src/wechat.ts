@@ -270,6 +270,8 @@ export class WechatSession {
       }else outcome.reply+='\\n照片未保存成功，后续文字没有写入。请重新发送照片和描述。';
       await ctx.storage.delete(key);
      }
+     // Persist the finalized caption before acknowledging the photo result.
+     // Re-delivery is idempotent because it writes the same caption to the same IDs.
      await sendWechatReply(env,task.connectionId,task.raw,outcome.reply,clientId,task);
      const published=await workerBot(env,task.connectionId).fetch('https://bot.internal/media/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({result})});
      if(!published.ok)throw Error('WECHAT_MEDIA_CONTEXT_FAILED');
@@ -297,6 +299,7 @@ export class WechatSession {
      const key='pendingCaption:'+data.sourceId;
      const existing=await this.ctx.storage.get<{babyId:string;items:{messageId:string;text:string}[];expiresAt:number}>(key);
      if(existing&&existing.babyId!==data.babyId)return Response.json({accepted:false});
+     if(existing&&existing.expiresAt<=Date.now())return Response.json({accepted:false});
      const items=existing?.items||[];
      if(!items.some(item=>item.messageId===data.messageId)){
       if(items.length>=4)return Response.json({accepted:false});
@@ -443,7 +446,7 @@ export class WechatSession {
                 }
                }
               }
-            }else if(!forwarded&&!clear&&thread.pendingMedia?.sourceId&&thread.pendingMedia.expiresAt>Date.now()&&text.length<=1000){
+            }else if(!forwarded&&!clear&&thread.pendingMedia?.sourceId&&thread.pendingMedia.expiresAt>Date.now()&&text.length<=1000&&!/^(?:帮助|菜单|help|宝宝列表|清除|取消|删除|修改宝宝|查看)/i.test(text.trim())){
               // Attach an immediate text-only follow-up to the pending photo task.
               // Never run it as an independent milestone while the photo is in flight.
               const attached=await workerMediaBot(this.env,connectionId).fetch('https://bot.internal/media/caption',{
