@@ -1,10 +1,10 @@
 import type {Env} from './types';
-import type {WechatBaby} from './wechat-tool-schema';
-import type {Kind,DbRow,ToolOptions} from './wechat-harness-helpers';
-import {wechatHelp,wechatTools} from './wechat-tool-schema';
-export {wechatHelp,wechatTools} from './wechat-tool-schema';
-export type {WechatBaby} from './wechat-tool-schema';
-import {validDate,cleanText,short,tableForKind,labelForKind,maxLimit,listLine,findTarget,listItems,update,measurement} from './wechat-harness-helpers';
+import type {WechatBaby} from './wechat-tool-schema.ts';
+import type {Kind,DbRow,ToolOptions} from './wechat-harness-helpers.ts';
+import {wechatHelp,wechatTools} from './wechat-tool-schema.ts';
+export {wechatHelp,wechatTools} from './wechat-tool-schema.ts';
+export type {WechatBaby} from './wechat-tool-schema.ts';
+import {validDate,cleanText,short,tableForKind,labelForKind,maxLimit,listLine,findTarget,listItems,update,measurement} from './wechat-harness-helpers.ts';
 import {guardAction,validDay,dayInZone} from './wechat-policy.mjs';
 import {ageOnDay} from './wechat-answer.mjs';
 import {retentionCutoff} from './media-retention.mjs';
