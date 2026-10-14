@@ -98,7 +98,7 @@ export default function App(){
  // Refresh external WeChat edits without continually downloading the full album.
  // A per-baby D1 revision advances for every media mutation, including older captions.
  useEffect(()=>{
-  if(mode!=='app'||active!=='album'||!baby?.id)return;
+  if(mode!=='app'||(active!=='album'&&active!=='overview')||!baby?.id)return;
   let stopped=false,checking=false,version:string|null=null;
   const id=encodeURIComponent(baby.id);
   const check=async()=>{
