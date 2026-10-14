@@ -35,7 +35,7 @@ test('server endpoints preserve private access and original media',()=>{
  assert.match(worker,/UPDATE media SET deleted_at/);
  assert.match(worker,/async function purgeDeleted/);
  assert.match(worker,/await purgeDeletedMedia\(env\)/);
- const retention=readFileSync(new URL('../src/media-retention.mjs',import.meta.url),'utf8');
+ const retention=readFileSync(new URL('../src/media-retention.ts',import.meta.url),'utf8');
  assert.match(retention,/UPDATE media SET purge_token=COALESCE/);
  assert.match(retention,/env\.MEDIA\.delete\(\[claimed\.object_key/);
  assert.match(retention,/DELETE FROM media WHERE id=\? AND purge_token=\?/);
