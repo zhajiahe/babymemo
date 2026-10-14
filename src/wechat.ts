@@ -409,7 +409,10 @@ export class WechatSession {
                 if(!result.accepted)reply='当前待保存的照片或视频较多，本条尚未接收。请稍后重新发送；文字记录仍可继续。';
                 else{
                  thread.selectedBabyId=baby.id;thread.lastMedia=null;
-                 thread.pendingMedia={sourceId:unique,babyId:baby.id,expiresAt:receivedAt+1200000};
+                  // Preserve stable source identifiers while the transfer runs.
+                  // This metadata does not imply that the binary has been saved.
+                  const pendingSourceIds=mediaItems(sourceRaw).map((item:any,i:number)=>unique+(item.type===5?':video:':':image:')+i);
+                 thread.pendingMedia={sourceId:unique,babyId:baby.id,sourceIds:pendingSourceIds,expiresAt:receivedAt+1200000};
                  reply='已收到 '+mediaItems(sourceRaw).length+' 项照片或视频，正在保存。保存结果会另行通知，其他文字记录可以继续发送。';
                 }
                }
