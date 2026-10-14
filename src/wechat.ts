@@ -273,8 +273,8 @@ export class WechatSession {
        const canceled=await this.mediaQueue.reset();
        // A canceled job must not leave a permanent 'processing' photo in D1.
        for(const encrypted of canceled){
-        const task=await decode(encrypted);
-        await failWechatMediaReservations(env,task.raw,task.babyId,task.sourceId);
+        const task=JSON.parse(await decryptSecret(this.env,encrypted)) as MediaTask;
+        await failWechatMediaReservations(this.env,task.raw,task.babyId,task.sourceId);
        }
       }
      else{
