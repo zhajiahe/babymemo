@@ -72,12 +72,15 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
      const previewStarted=performance.now();
      try{
       const thumb=mime.startsWith('image/')?await createAlbumThumbnail(file):await createVideoThumbnail(file);
-      if(thumb){
-       await api('/api/media/'+id+'/thumbnail',{method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}});
-       changed();
+      if(!thumb){
+       report('thumbnail',file.size,previewStarted,'error');
+       if(mime.startsWith('video/'))notify('视频已保存，但自动封面生成失败。可打开视频选择封面照片。');
+       return;
       }
+      await api('/api/media/'+id+'/thumbnail',{method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}});
+      changed();
       report('thumbnail',file.size,previewStarted,'ok');
-     }catch{report('thumbnail',file.size,previewStarted,'error');notify('原文件已保存，但预览图暂不可用（仍可查看原文件）')}
+     }catch{report('thumbnail',file.size,previewStarted,'error');notify('原文件已保存，但预览图暂不可用；视频可在预览中补设封面。')}
     });
    };
    const results=await mapBounded(files,policy.files,async file=>{
@@ -228,6 +231,11 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">中断后重新选择原文件，可以继续上传已经保存的分片。</p>
   {pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><div className="pending-actions">{item.completedParts.length===Math.ceil(item.size/8388608)&&<button className="primary" type="button" disabled={uploading} onClick={()=>void finishPending(item.id)}>完成保存</button>}<button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div></div>)}
  </Card>}
- {selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia} onDelete={()=>{if(selected)void remove(selected.id)}}/>}
+ {selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia} onDelete={()=>{if(selected)void remove(selected.id)}} onThumbnailSaved={id=>{
+    mediaEdited(id,{thumbnail_ready:1});
+    setSelected(current=>current?.id===id?{...current,thumbnail_ready:1}:current);
+    changed();
+    notify('视频封面已更新');
+   }}/>}
  </>;
 }
