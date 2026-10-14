@@ -95,7 +95,7 @@ test('conditional no-results search prohibits invention and writes',()=>{
 });
 test('new profile update cannot silently overwrite unrelated fields',()=>{
  const item=MODEL_BENCH_CASES.find(x=>x.id==='profile-allergy');
- assert.equal(validateBenchmarkTool(item,call('update_baby',{allergies:'对测试食物甲过敏',notes:'擅自覆盖'}),wechatTools).issue,'UNREQUESTED_WRITE_FIELD');
+ assert.equal(validateBenchmarkTool(item,call('update_baby',{allergies:'对测试食物甲过敏',notes:'擅自覆盖'}),wechatTools,[{name:'get_baby',args:{},issue:null}]).issue,'UNREQUESTED_WRITE_FIELD');
 });
 
 const scenario=id=>{
