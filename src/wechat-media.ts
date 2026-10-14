@@ -26,7 +26,7 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   if(existing)return {id:existing.id,kind,already:true};
   const objectKey='private/'+baby.id+'/'+id;
   const old=await env.MEDIA.head(objectKey);
-  let size=old?.size||0,mime=old?.httpMetadata?.contentType;
+  let size=old?.size||0,mime:string|null|undefined=old?.httpMetadata?.contentType;
   if(!old){
    const saved=await storeEncryptedMedia(env.MEDIA,objectKey,items[i],options);
    size=saved.size;mime=saved.mime;
@@ -55,7 +55,7 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   const indexStartedAt=performance.now();
   await env.DB.prepare('INSERT OR IGNORE INTO media(id,baby_id,day,title,description,object_key,mime,size,created_at,thumbnail_ready,source_message_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
    .bind(id,baby.id,day,title,caption,objectKey,mime,size,new Date().toISOString(),thumbReady,sourceId).run();
-  const indexed=await env.DB.prepare('SELECT id FROM media WHERE source_message_id=?').bind(sourceId).first();
+  const indexed=await env.DB.prepare('SELECT id FROM media WHERE source_message_id=?').bind(sourceId).first<{id:string}>();
   if(!indexed)throw Error('WECHAT_MEDIA_INDEX_FAILED');
   mediaTiming({channel:'wechat',stage:'index',size,startedAt:indexStartedAt});
   mediaTiming({channel:'wechat',stage:'total',size,startedAt:itemStartedAt});
