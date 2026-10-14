@@ -60,7 +60,7 @@ export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,a
    await env.DB.prepare('INSERT OR IGNORE INTO growth_records(id,baby_id,day,weight,height,head_circumference,notes,created_at,source_message_id) VALUES(?,?,?,?,?,?,?,?,?)')
    .bind(id,baby.id,args.day,changes.weight??null,changes.height??null,changes.head_circumference??null,changes.notes||'来自微信',when,messageId||null).run();
    const found=messageId?await env.DB.prepare('SELECT * FROM growth_records WHERE source_message_id=? AND baby_id=?').bind(messageId,baby.id).first():null;
-   return '已保存 '+baby.name+' 的成长测量：'+(found?listLine('growth',found):args.day+'（'+short(id)+'）');
+   return '已保存 '+baby.name+' 的成长测量：'+(found?listLine('growth',found as DbRow):args.day+'（'+short(id)+'）');
   }
   if(action==='create_milestone'){
    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
@@ -72,7 +72,7 @@ export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,a
    await env.DB.prepare('INSERT OR IGNORE INTO milestones(id,baby_id,day,title,description,created_at,source_message_id) VALUES(?,?,?,?,?,?,?)')
    .bind(id,baby.id,args.day,title,description,when,messageId||null).run();
    const found=messageId?await env.DB.prepare('SELECT * FROM milestones WHERE source_message_id=? AND baby_id=?').bind(messageId,baby.id).first():null;
-   return '已保存成长事件：'+(found?listLine('milestones',found):title+'（'+args.day+'）');
+   return '已保存成长事件：'+(found?listLine('milestones',found as DbRow):title+'（'+args.day+'）');
   }
   for(const kind of ['growth','milestones','media'] as const){
    if(action==='update_'+(kind==='milestones'?'milestone':kind)){
@@ -134,7 +134,7 @@ export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,a
     .bind(baby.id,args.startDay,args.endDay).all<DbRow>();
    if(!rows.results.length)return '这段时间还没有测量记录';
    const metric=(name:string,unit:string)=>{const xs=rows.results.filter(x=>typeof x[name]==='number');
-     return xs.length?name+'：'+xs[0][name]+unit+' → '+xs.at(-1)[name]+unit+'，变化 '+Number((xs.at(-1)[name]-xs[0][name]).toFixed(2))+unit:'';};
+     return xs.length?name+'：'+xs[0][name]+unit+' → '+xs.at(-1)![name]+unit+'，变化 '+Number((xs.at(-1)[name]-xs[0][name]).toFixed(2))+unit:'';};
    return baby.name+' '+args.startDay+' 至 '+args.endDay+'，共 '+rows.results.length+' 条测量\n'+
     [metric('weight','kg'),metric('height','cm'),metric('head_circumference','cm')].filter(Boolean).join('\n');
   }
@@ -172,19 +172,19 @@ export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,a
    return '已更新最近 '+changed+'/'+opIds.length+' 项照片或视频信息。'+(changed<opIds.length?'部分记录同时发生变更，请重新查询核对。':'');
   }
   if(action==='restore_trash'){
-   if(!tableForKind[args.kind])throw Error('请说明恢复的是测量、事件或相册');
+   if(!tableForKind[args.kind as Kind])throw Error('请说明恢复的是测量、事件或相册');
    const unsafe=guardAction(action,args,originalText,baby,at);if(unsafe)return unsafe;
    const row=await findTarget(env,baby.id,args.kind,args,true);
    if(row.deleted_at<retentionCutoff()||args.kind==='media'&&row.purge_token)return '恢复期限已过或文件正在清理，未恢复';
-   const stmt=env.DB.prepare('UPDATE '+tableForKind[args.kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL AND deleted_at>=?'+(args.kind==='media'?' AND purge_token IS NULL':''))
+   const stmt=env.DB.prepare('UPDATE '+tableForKind[args.kind as Kind]+' SET deleted_at=NULL WHERE id=? AND baby_id=? AND deleted_at IS NOT NULL AND deleted_at>=?'+(args.kind==='media'?' AND purge_token IS NULL':''))
     .bind(row.id,baby.id,retentionCutoff());
    if(typeof env.DB.batch!=='function'){
-    const changed=await stmt.run();return changed.meta.changes?'已恢复 '+labelForKind[args.kind]+'（编号 '+short(row.id)+'）。':'该记录无法恢复';
+    const changed=await stmt.run();return changed.meta.changes?'已恢复 '+labelForKind[args.kind as Kind]+'（编号 '+short(row.id)+'）。':'该记录无法恢复';
    }
    const opId=await auditChange(env,{sourceId:messageId,babyId:baby.id,kind:args.kind,recordId:row.id,action:'restore',
     before:operationSnapshot(args.kind,row),after:snapshotChanges(args.kind,row,{deleted_at:null}),statement:stmt});
    if(opId&&options.thread)options.thread.lastOperation={babyId:baby.id,opId,expiresAt:at+1200000};
-   return opId?'已恢复 '+labelForKind[args.kind]+'（编号 '+short(row.id)+'）。':'该记录无法恢复';
+   return opId?'已恢复 '+labelForKind[args.kind as Kind]+'（编号 '+short(row.id)+'）。':'该记录无法恢复';
   }
   return wechatHelp;
  }catch(err){
