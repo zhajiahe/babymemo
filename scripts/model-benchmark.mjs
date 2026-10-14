@@ -7,7 +7,7 @@ import {wechatTools} from '../src/wechat-harness.mjs';
 import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
 import {qwenCompletion,qwenRequest,DEFAULT_QWEN_MODEL} from '../src/qwen-workers-ai.mjs';
 import {openRouterCompletion} from '../src/openrouter-retry.mjs';
-import {DEFAULT_OPENROUTER_MODEL} from '../src/openrouter-model.mjs';
+import {DEFAULT_OPENROUTER_MODEL,GPT_6_LUNA,CLAUDE_HAIKU_55} from '../src/openrouter-model.mjs';
 import {openRouterReasoningForModel,DEEPSEEK_V41_FLASH} from '../src/openrouter-retry.mjs';
 import {diagnosticEvent,safeBenchPreview,benchmarkFailureKind,isFatalBenchmarkError,benchmarkMarkdownReport} from './model-benchmark-logging.mjs';
 import {MODEL_BENCH_CASES,BENCHMARK_SYSTEM,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
@@ -25,7 +25,7 @@ const openRouterModel=process.env.MODEL_BENCH_OPENROUTER_MODEL||DEFAULT_OPENROUT
 if(!/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/i.test(openRouterModel))throw Error('INVALID_OPENROUTER_MODEL');
 const reasoningMode=process.env.MODEL_BENCH_REASONING_MODE||'auto';
 if(!['auto','off','low'].includes(reasoningMode))throw Error('INVALID_REASONING_MODE');
-const effectiveReasoning=reasoningMode==='auto'&&openRouterModel===DEEPSEEK_V41_FLASH?'off':reasoningMode;
+const effectiveReasoning=reasoningMode==='auto'&&[DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55].includes(openRouterModel)?'off':reasoningMode;
 const selected=provider==='both'?['workers-ai','openrouter']:[provider];
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,apiToken=process.env.CLOUDFLARE_AI_API_TOKEN||process.env.CLOUDFLARE_API_TOKEN,openRouterKey=process.env.OPENROUTER_API_KEY;
 if(selected.includes('workers-ai')&&!process.env.CLOUDFLARE_AI_API_TOKEN)console.warn('[model-benchmark] Dedicated CLOUDFLARE_AI_API_TOKEN not provided; deploy token may lack Workers AI → Read. Authentication failures stop after first request.');
@@ -77,20 +77,27 @@ async function request(provider,messages,tools,maxTokens=1200,meta={}){
    typeof response?.total_cost==='number'&&Number.isFinite(response.total_cost)?response.total_cost:null;
  if(cost!==null)spent.usd+=cost;
  const choice=response?.choices?.[0],message=choice?.message;
+ const applied=response?._babymemo_request||{};
  const reasoningTokens=usage.completion_tokens_details?.reasoning_tokens??usage.output_tokens_details?.reasoning_tokens??null;
- log('model_request_complete',{...context,elapsedMs:Date.now()-started,finishReason:choice?.finish_reason||'unknown',inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,reasoningTokens,reportedUSD:cost,toolNames:message?.tool_calls?.map(x=>x?.function?.name),assistant:message?.tool_calls?.length?undefined:message?.content});
+ log('model_request_complete',{...context,elapsedMs:Date.now()-started,finishReason:choice?.finish_reason||'unknown',inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,reasoningTokens,reportedUSD:cost,reasoningFallbackUsed:!!applied.reasoningFallbackUsed,
+  actualReasoningRequested:applied.reasoningRequested??null,requestedProvider:applied.requestedProvider?.only?.[0]??null,
+  servedProvider:response?.provider??null,toolNames:message?.tool_calls?.map(x=>x?.function?.name),assistant:message?.tool_calls?.length?undefined:message?.content});
  return {response,usage:{
   inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,
-  neurons:null,reportedUSD:cost,reasoningTokens
+  neurons:null,reportedUSD:cost,reasoningTokens,reasoningFallbackUsed:!!applied.reasoningFallbackUsed,
+  requestedProvider:applied.requestedProvider?.only?.[0]??null,servedProvider:response?.provider??null
  }};
 }
 async function evaluate(modelProvider,item,iteration){
  const calls=[],issues=[],usage={inputTokens:0,outputTokens:0,neurons:modelProvider==='workers-ai'?0:null,reportedUSD:modelProvider==='openrouter'?0:null,reasoningTokens:0};
  const caseContext={provider:modelProvider,model:modelProvider==='workers-ai'?DEFAULT_QWEN_MODEL:openRouterModel,caseId:item.id,iteration};
  log('scenario_start',{...caseContext,reasoningRequested:modelProvider==='workers-ai'?'off':effectiveReasoning});
- const started=Date.now();let modelRequests=0,reply='',error=null,modelFinal='';
+ const started=Date.now();let modelRequests=0,reply='',error=null,modelFinal='',reasoningFallbackUsed=false,requestedProvider=null,servedProvider=null;
  const complete=async({messages,tools},maxTokens=1200)=>{
   const result=await request(modelProvider,messages,tools,maxTokens,{caseId:item.id,iteration,request:modelRequests+1});modelRequests++;
+  reasoningFallbackUsed ||=!!result.usage.reasoningFallbackUsed;
+  requestedProvider=result.usage.requestedProvider??requestedProvider;
+  servedProvider=result.usage.servedProvider??servedProvider;
   for(const key of ['inputTokens','outputTokens','neurons','reportedUSD','reasoningTokens']){
    if(usage[key]===null||result.usage[key]===null){usage[key]=null;continue}
    usage[key]+=result.usage[key];
@@ -116,16 +123,18 @@ async function evaluate(modelProvider,item,iteration){
   });
  }catch(e){error=e instanceof Error?e.message:'UNKNOWN_ERROR'}
  const score=scoreModelCase(item,{calls,issues,reply,error});
- if(modelProvider==='openrouter'&&effectiveReasoning==='off'&&Number(usage.reasoningTokens)>0)score.issues.push('REASONING_TOKENS_NONZERO');
+ if(modelProvider==='openrouter'&&effectiveReasoning==='off'&&!reasoningFallbackUsed&&usage.reasoningTokens!==null&&usage.reasoningTokens>0)score.issues.push('REASONING_TOKENS_NONZERO');
  if(item.id!=='negated-save'&&calls.length&&(!modelFinal||modelFinal.trim()===''))score.issues.push('NO_NATURAL_MODEL_FINAL');
  score.passed=score.issues.length===0;
  const errorCode=error?String(error).replace(/[^A-Z0-9_]/gi,'').slice(0,42):null;
  const taskResult={caseId:item.id,name:item.name,iteration,passed:score.passed,issues:score.issues,
   tools:calls.map(x=>x.name),toolCalls:calls.map(x=>({name:x.name,args:x.args})),modelRequests,
-  latencyMs:Date.now()-started,usage,finalReplyPresent:!!modelFinal?.trim(),
+  latencyMs:Date.now()-started,usage,reasoningFallbackUsed,requestedProvider,servedProvider,
+  finalReplyPresent:!!modelFinal?.trim(),
   finalReplyPreview:safeBenchPreview(modelFinal||reply,320),errorCode};
  log('scenario_complete',{...caseContext,passed:taskResult.passed,modelRequests,latencyMs:taskResult.latencyMs,
   toolNames:taskResult.tools,usage,issues:taskResult.issues,answer:taskResult.finalReplyPreview,
+  reasoningFallbackUsed,requestedProvider,servedProvider,
   ...(errorCode?{status:benchmarkFailureKind(errorCode)}:{})});
  return taskResult;
 }
@@ -150,6 +159,7 @@ for(const id of selected){
  const fatal=tasks.find(x=>x.errorCode&&isFatalBenchmarkError(x.errorCode));
  models.push({provider:id,model,reasoningRequested:id==='workers-ai'?'off':effectiveReasoning,
   status:fatal?'BLOCKED_'+benchmarkFailureKind(fatal.errorCode):'COMPLETED',
+  preferredProvider:id==='openrouter'&&openRouterModel===DEEPSEEK_V41_FLASH?'relace':null,
   summary:aggregateBenchmark(tasks),results:tasks});
 }
 const report={benchmark:'babymemo-model-parity-v1',timestamp:new Date().toISOString(),

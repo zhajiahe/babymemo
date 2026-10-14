@@ -4,7 +4,7 @@ import {useEffect,useState,type FormEvent} from 'react';
 import {Card,Field,Primary} from '../../components/ui';
 import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi,BrainCircuit} from 'lucide-react';
 import {api,post,today,type BabyInfo,type State,type WechatRunStatus} from '../../lib/client';
-import {DEFAULT_OPENROUTER_MODEL} from '../../openrouter-model.mjs';
+import {DEFAULT_OPENROUTER_MODEL,OPENROUTER_MODEL_PRESETS,openRouterModelDescription} from '../../openrouter-model.mjs';
 import {wechatStatusView,wechatStatusTime} from '../../wechat-status.mjs';
 
 function babyDraft(baby:BabyInfo){try{return JSON.parse(localStorage.getItem('babymemo-draft-baby-'+baby.id)||'null')||baby}catch{return baby}}
@@ -165,7 +165,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  <Card className="span-2 settings-ai-card">
   <div className="section-title"><h3>微信 AI 模型</h3><BrainCircuit size={20}/></div>
   <div className="settings-ai-overview">
-   <div><span className="settings-ai-caption">当前生效</span><strong>{activeModel}</strong><p className="muted small">{savedProvider==='workers-ai'?'Cloudflare Workers AI · 关闭思考':'OpenRouter · 自定义模型'} · 所有绑定的微信成员共用</p></div>
+   <div><span className="settings-ai-caption">当前生效</span><strong>{activeModel}</strong><p className="muted small">{savedProvider==='workers-ai'?'Cloudflare Workers AI · 关闭思考':'OpenRouter · '+openRouterModelDescription(activeModel)} · 所有绑定的微信成员共用</p></div>
    <span className={'settings-ai-probe '+(aiProbe?.provider===savedProvider?(aiProbe.ok?'ok':'failed'):'idle')} role="status">{aiProbe?.provider===savedProvider?(aiProbe.ok?'模型接口已检测':'模型接口测试失败'):'模型接口未检测'}</span>
   </div>
   <p className="muted small settings-ai-hint">{savedProvider==='workers-ai'?'Workers AI 免费额度为全账号每天 10,000 Neurons（北京时间 08:00 重置），本页不提供实时余额；请到 Cloudflare 控制台查看实际消耗。':'OpenRouter 按所选模型的服务规则计费；余额、限流与历史调用请到 OpenRouter 查看。'}</p>
@@ -179,7 +179,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
     <Field label="模型提供方"><select value={provider} onChange={e=>{setProvider(e.target.value as 'workers-ai'|'openrouter');setAiProbe(null)}}><option value="workers-ai">Cloudflare Workers AI · Qwen3.8-27B（关闭思考）</option><option value="openrouter">OpenRouter · 自定义模型</option></select></Field>
     {provider==='openrouter'&&<>
      <p className="muted small">{state.openrouter.managedByDeployment?'API Key 由 Cloudflare Secret 管理。':'API Key 可加密保存在 D1，或由部署管理员配置 Secret。'}</p>
-     <Field label="OpenRouter 模型 ID"><input required value={model} onChange={e=>setModel(e.target.value)} placeholder={DEFAULT_OPENROUTER_MODEL}/></Field>
+     <Field label="OpenRouter 模型 ID"><input list="babymemo-openrouter-model-presets" required value={model} onChange={e=>setModel(e.target.value)} placeholder={DEFAULT_OPENROUTER_MODEL}/><datalist id="babymemo-openrouter-model-presets">{OPENROUTER_MODEL_PRESETS.map(entry=><option key={entry.id} value={entry.id} label={entry.label}/>)}</datalist></Field><p className="muted small" role="status">模型策略：{openRouterModelDescription(model)}。仍可输入其他 OpenRouter 模型 ID。</p>
      <Field label={'API Key · '+(state.openrouter.managedByDeployment?'部署 Secret 管理':state.openrouter.configured?'已配置，可留空不变':'尚未配置')}><input type="password" autoComplete="off" disabled={state.openrouter.managedByDeployment} value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder={state.openrouter.managedByDeployment?'由部署配置（不显示密钥）':'sk-or-v1-…'}/></Field>
     </>}
     <Primary disabled={saving}>{saving?'正在保存…':'保存模型设置'} <Check size={16}/></Primary>

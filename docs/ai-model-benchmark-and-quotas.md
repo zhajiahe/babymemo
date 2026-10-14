@@ -73,7 +73,22 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 
 **当前状态**：已准备代码和手动测试入口，**尚未实际运行 DeepSeek 的 10 题**。不得虚构准确率或费用，也不应为这项测试修改 BabyMemo 线上默认模型。
 
-## 5.2 更丰富、可审计的 Actions 日志
+## 5.2 OpenRouter 新增模型与固定路由（2026-10-14）
+
+| OpenRouter 模型 ID | 服务商选择 | 思考设置 |
+| --- | --- | --- |
+| `deepseek/deepseek-v4.1-flash` | **固定 Relace**：`provider: {only: ['relace'], allow_fallbacks: false}`，其他服务商不会自动接管 | 优先 `reasoning.enabled=false` |
+| `openai/gpt-6-luna` | OpenRouter 自动路由 | 优先关闭；若上游明确拒绝关闭思考，自动重试一次 `reasoning.effort='minimal'` |
+| `anthropic/claude-haiku-5.5` | OpenRouter 自动路由 | 优先关闭；若上游明确拒绝关闭思考，自动重试一次 `reasoning.effort='low'` |
+| `meta/muse-spark-1.3-contributor` | 保持以前路由策略 | 保持以前默认请求参数 |
+
+参见 [DeepSeek 服务商列表](https://openrouter.ai/deepseek/deepseek-v4.1-flash/providers)、[GPT-6 Luna](https://openrouter.ai/openai/gpt-6-luna)、[Haiku 5.5](https://openrouter.ai/anthropic/claude-haiku-5.5) 和 [OpenRouter 推理配置](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)。
+
+兼容性重试**只**在模型支持的情况下、服务商返回与 `reasoning` 参数直接相关的 HTTP 400 时发生；认证错误、工具参数错误、余额不足、一般模型错误不重试，并限制最多一次。若实际输出 `reasoning_tokens>0` 且没有发生合法最低思考回退，Benchmark 将标为思考配置未生效；**缺少该字段不等于零思考**。实际最低思考回退状态与服务商路由信息将写入日志和 JSON Artifact。
+
+**目前新增两款模型尚未实测**。测试入口为 GitHub Actions 的 `Manual Harness Deep E2E`，只发送虚构家庭指令，不读写真实数据，也不更改默认 Qwen 模型。选择 `model_preset` 即可使用三款候选模型，`model_id` 留空；高级场景仍可填写自定义模型 ID。
+
+## 5.3 更丰富、可审计的 Actions 日志
 
 - 每条场景开始/结束：`provider/model/caseId/iteration`、通过与否、实际工具调用顺序、模型轮数、时延、输入/输出和推理 tokens、Neurons / USD、简短最终回答。
 - 每次真实模型请求的前后：模型、场景、消息与工具数量、思考开关、完成原因、返回的工具名与 tokens；每个模拟工具执行打印工具名、有限长度参数和拒绝原因。
@@ -88,8 +103,8 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 1. `provider=both`（或者只运行 `workers-ai` / `openrouter`）。
 2. `repetitions=1`：每种模型 10 题；可设为 3 做每题三次复测。
 3. `max_neurons`：Workers AI 消耗预算软上限（默认 **3,000**）；`max_usd`：OpenRouter 返回费用的累计软上限（默认 **$0.10**）。
-4. `model_id=meta/muse-spark-1.3-contributor`（旧 Muse），或将 `model_id` 设置为 **`deepseek/deepseek-v4.1-flash`**，即可运行 DeepSeek 同题 10 场景。
-5. `reasoning_mode=auto`（选择 DeepSeek 时自动关闭思考）、`off`（关闭）或 `low`（低思考）。
+4. 从 `model_preset` 下拉选择 **Muse、DeepSeek V4.1 Flash、GPT-6 Luna、Claude Haiku 5.5**；`model_id` 默认为空，只有要覆盖预设并测试其他自定义模型 ID 时填写。
+5. `reasoning_mode=auto`：上述三款新增/更新模型优先关闭思考，明确不支持才最低档；`off` 强制优先关闭，`low` 显式使用最低档（GPT-6 Luna 为 `minimal`，其他为 `low`）。
 6. 显式选择 `confirm_live=true` 才会进行真实推理。未确认会拒绝启动，**不会自动测试、自动充值或生产部署**。
 
 Actions 使用仓库 `production` Environment 的 GitHub Secrets `CLOUDFLARE_ACCOUNT_ID`、`OPENROUTER_API_KEY` 和可选的专用 `CLOUDFLARE_AI_API_TOKEN`（具有 **Account → Workers AI → Read** 权限）。若后者未配置则尝试原部署 Token `CLOUDFLARE_API_TOKEN`，但它可能只有部署权限；接口如返回 10000 会立即停止并提示权限问题。只测 DeepSeek 时设 `provider=openrouter`，不需要 Workers AI Token。工作流把每模型成绩写入 Run Summary，详细 JSON 结果保留 **7 天 Artifact**。如果没有正确 Secret，工作流直接失败，不会降级成只模拟的模型得分。

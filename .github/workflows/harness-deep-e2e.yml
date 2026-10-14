@@ -35,12 +35,21 @@ on:
         type: choice
         options: ["0.05", "0.10", "0.50"]
         default: "0.10"
+      model_preset:
+        description: "OpenRouter model preset for the ten synthetic scenarios"
+        type: choice
+        options:
+          - meta/muse-spark-1.3-contributor
+          - deepseek/deepseek-v4.1-flash
+          - openai/gpt-6-luna
+          - anthropic/claude-haiku-5.5
+        default: meta/muse-spark-1.3-contributor
       model_id:
-        description: "OpenRouter model: Muse default or deepseek/deepseek-v4.1-flash (reasoning disabled by default)"
+        description: "Optional custom OpenRouter model ID (overrides model_preset when nonempty)"
         type: string
-        default: "meta/muse-spark-1.3-contributor"
+        default: ""
       reasoning_mode:
-        description: "OpenRouter reasoning: auto disables DeepSeek V4.1 Flash; off explicitly disables; low enables low thinking"
+        description: "OpenRouter reasoning: auto disables thinking for DeepSeek/GPT-6 Luna/Haiku 5.5, with lowest supported fallback"
         type: choice
         options: [auto, off, low]
         default: auto
@@ -100,7 +109,7 @@ jobs:
           MODEL_BENCH_REPETITIONS: ${{ inputs.repetitions }}
           MODEL_BENCH_MAX_NEURONS: ${{ inputs.max_neurons }}
           MODEL_BENCH_MAX_USD: ${{ inputs.max_usd }}
-          MODEL_BENCH_OPENROUTER_MODEL: ${{ inputs.model_id }}
+          MODEL_BENCH_OPENROUTER_MODEL: ${{ inputs.model_id || inputs.model_preset }}
           MODEL_BENCH_REASONING_MODE: ${{ inputs.reasoning_mode }}
           MODEL_BENCH_REPORT_FILE: "model-benchmark-report.json"
         run: npm run test:model:benchmark
