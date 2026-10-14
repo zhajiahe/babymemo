@@ -68,7 +68,8 @@ export async function openRouterCompletion({key,model,messages,tools,max_tokens=
    let errorResponse;
    try{errorResponse=await response.json()}catch{}
    if(reasoning?.enabled===false&&!usedReasoningFallback&&
-      [DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55].includes(model)&&isDisableReasoningRejected(errorResponse)){
+      (reasoningMode==='off'||[DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55].includes(model))&&
+      isDisableReasoningRejected(errorResponse)){
     reasoning=fallbackReasoning;
     usedReasoningFallback=true;
     attempt--; // one guarded compatibility retry, even if maxAttempts=1
