@@ -57,7 +57,29 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 
 两家服务端部署参数**不完全相同**：Qwen 使用 `enable_thinking=false`、`temperature=1`；Muse 沿用 OpenRouter Harness `temperature=0`。这是一项**真实生产配置下的任务表现对比**，并非控制所有采样因素的纯模型能力科学实验。
 
-目前这套统一题库**没有运行过付费/真实模型两模型对照**，其结果应该由新的 GitHub Actions 人工触发产生，不能沿用 9/10 与 14/16 拼凑“10 题对比”。
+### 2026-10-14 首次同题实测结果
+
+[Manual Harness Deep E2E #38511146287](https://github.com/zhajiahe/babymemo/actions/runs/38511146287) 已人工触发，使用真实模型及虚构工具观察：
+
+- **Muse Spark 1.3 Contributor：10/10 完成**，23 次模型请求，输入 63,728 tokens、输出 6,618 tokens；OpenRouter 实际报告成本约 **$0.006449252**。
+- **Qwen3.8：未测出成绩**。GitHub Actions 部署 Token 访问 Workers AI REST API 连续返回 `10000`（认证／权限不足），推理成功 **0 次**、没有有效的 Qwen 测试样本。**不是模型 0/10 答错，也不能据此声称模型免费额度用完。**
+- 该次对比因此不能判定 Muse 比 Qwen 更强。生产 Worker 使用 `env.AI` Binding，和 GitHub 的 REST Token 权限不同。
+
+## 5.1 新增 DeepSeek V4.1 Flash（2026-10-14）
+
+[OpenRouter DeepSeek V4.1 Flash](https://openrouter.ai/deepseek/deepseek-v4.1-flash) 的准确模型 ID 为 `deepseek/deepseek-v4.1-flash`，标价参考输入 **$0.13/M tokens**、输出 **$0.52/M tokens**；路由提供方可能有差异，实际以 OpenRouter `usage.cost` 为准。模型支持工具调用与推理控制。
+
+**关闭思考**：OpenRouter Chat Completions 支持 `"reasoning":{"enabled":false}`，BabyMemo 的 OpenRouter 客户端在选择 **DeepSeek V4.1 Flash** 时默认发送这个参数；Muse 不受影响，保持原有采样配置。Benchmark 中可选择 `reasoning_mode=auto`（DeepSeek 自动关闭）、`off`（强制关闭）或 `low`（低思考）。`reasoning.enabled=false` 是**接口请求配置**，只有真实模型成功返回并确认用量中 `reasoning_tokens=0`（若提供）才能验证该次调用的推理开销；未报告推理 tokens 不自动视为 0。
+
+**当前状态**：已准备代码和手动测试入口，**尚未实际运行 DeepSeek 的 10 题**。不得虚构准确率或费用，也不应为这项测试修改 BabyMemo 线上默认模型。
+
+## 5.2 更丰富、可审计的 Actions 日志
+
+- 每条场景开始/结束：`provider/model/caseId/iteration`、通过与否、实际工具调用顺序、模型轮数、时延、输入/输出和推理 tokens、Neurons / USD、简短最终回答。
+- 每次真实模型请求的前后：模型、场景、消息与工具数量、思考开关、完成原因、返回的工具名与 tokens；每个模拟工具执行打印工具名、有限长度参数和拒绝原因。
+- Cloudflare REST 认证返回 `10000`、OpenRouter 401/402 等明确权限或支付错误时，**立即停止后续场景和其他模型**，减少无意义模型调用和误导性 0% 成绩。保留 JSON Artifact，Run Summary 中显示**逐题表格**。
+- 日志只处理虚构家庭测试数据；不打印 API Key、HTTP Authorization 头或原始上游响应体；长文本截断并过滤类似凭证的值。
+
 
 ## 6. 如何从 GitHub Actions 手动运行
 
@@ -66,10 +88,11 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 1. `provider=both`（或者只运行 `workers-ai` / `openrouter`）。
 2. `repetitions=1`：每种模型 10 题；可设为 3 做每题三次复测。
 3. `max_neurons`：Workers AI 消耗预算软上限（默认 **3,000**）；`max_usd`：OpenRouter 返回费用的累计软上限（默认 **$0.10**）。
-4. `model_id=meta/muse-spark-1.3-contributor`（默认旧 Muse）。
-5. 显式选择 `confirm_live=true` 才会进行真实推理。未确认会拒绝启动，**不会自动测试、自动充值或生产部署**。
+4. `model_id=meta/muse-spark-1.3-contributor`（旧 Muse），或将 `model_id` 设置为 **`deepseek/deepseek-v4.1-flash`**，即可运行 DeepSeek 同题 10 场景。
+5. `reasoning_mode=auto`（选择 DeepSeek 时自动关闭思考）、`off`（关闭）或 `low`（低思考）。
+6. 显式选择 `confirm_live=true` 才会进行真实推理。未确认会拒绝启动，**不会自动测试、自动充值或生产部署**。
 
-Actions 使用仓库 `production` Environment 的 GitHub Secrets `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 和 `OPENROUTER_API_KEY`。工作流把每模型成绩写入 Run Summary，详细 JSON 结果保留 **7 天 Artifact**。如果没有正确 Secret，工作流直接失败，不会降级成只模拟的模型得分。
+Actions 使用仓库 `production` Environment 的 GitHub Secrets `CLOUDFLARE_ACCOUNT_ID`、`OPENROUTER_API_KEY` 和可选的专用 `CLOUDFLARE_AI_API_TOKEN`（具有 **Account → Workers AI → Read** 权限）。若后者未配置则尝试原部署 Token `CLOUDFLARE_API_TOKEN`，但它可能只有部署权限；接口如返回 10000 会立即停止并提示权限问题。只测 DeepSeek 时设 `provider=openrouter`，不需要 Workers AI Token。工作流把每模型成绩写入 Run Summary，详细 JSON 结果保留 **7 天 Artifact**。如果没有正确 Secret，工作流直接失败，不会降级成只模拟的模型得分。
 
 **预算是软上限，不是硬账单封顶**：额度检查在每次请求前按已收到的用量进行，最后一笔请求可以超出限额；并且 OpenRouter 若不返回 `usage.cost`，脚本无法可靠控制其美元费用。真正的账单限制应在云端提供方设置。
 
@@ -79,8 +102,8 @@ Actions 使用仓库 `production` Environment 的 GitHub Secrets `CLOUDFLARE_API
 MODEL_BENCH_CONFIRM=YES MODEL_BENCH_PROVIDER=both \
 MODEL_BENCH_REPETITIONS=1 MODEL_BENCH_MAX_NEURONS=3000 \
 MODEL_BENCH_MAX_USD=0.10 \
-CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... \
-OPENROUTER_API_KEY=... npm run test:model:benchmark
+CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_AI_API_TOKEN=... \
+OPENROUTER_API_KEY=... MODEL_BENCH_REASONING_MODE=auto npm run test:model:benchmark
 ```
 
 不要将凭证、家庭记录或账号账单放进 PR、截图或公开 Artifacts。普通 `npm run verify` 只执行离线回归，完全不访问第三方模型。

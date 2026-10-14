@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {retryAfterMs,openRouterCompletion,friendlyOpenRouterError} from '../src/openrouter-retry.mjs';
+import {retryAfterMs,openRouterCompletion,friendlyOpenRouterError,openRouterReasoningForModel,DEEPSEEK_V41_FLASH} from '../src/openrouter-retry.mjs';
 const opts=(fetchImpl,sleep)=>({key:'test',model:'test',messages:[{role:'user',content:'test'}],fetchImpl,sleep,random:()=>0});
 test('honors Retry-After seconds for 429 then succeeds without repeating tool execution',async()=>{
  const sleeps=[];let attempts=0;
@@ -42,4 +42,16 @@ test('explicit named tool choice reaches the provider without changing auto defa
  assert.equal(requests[0].tool_choice,'auto');
  assert.deepEqual(requests[1].tool_choice,{type:'function',function:{name:'list_growth'}});
  assert.equal(requests[1].tools.length,1);
+});
+
+test('DeepSeek V4.1 Flash disables reasoning while Muse retains its original request',async()=>{
+ const reqs=[];
+ const stub=async(_url,opts)=>{reqs.push(JSON.parse(opts.body));return Response.json({choices:[{message:{content:'OK'}}]})};
+ await openRouterCompletion({...opts(stub,async()=>{}),model:DEEPSEEK_V41_FLASH});
+ await openRouterCompletion({...opts(stub,async()=>{}),model:'meta/muse-spark-1.3-contributor'});
+ assert.deepEqual(reqs[0].reasoning,{enabled:false});
+ assert.equal('reasoning' in reqs[1],false);
+ assert.equal(openRouterReasoningForModel(DEEPSEEK_V41_FLASH,'off').enabled,false);
+ assert.deepEqual(openRouterReasoningForModel(DEEPSEEK_V41_FLASH,'low'),{enabled:true,effort:'low'});
+ assert.throws(()=>openRouterReasoningForModel(DEEPSEEK_V41_FLASH,'invalid'),/INVALID_REASONING_MODE/);
 });
