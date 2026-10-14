@@ -1,6 +1,6 @@
 # AI 模型选型、统一 Benchmark 与 Cloudflare 免费额度
 
-> 更新：2026-10-14。当前手动 Benchmark 为 **20 题、1~6 个 OpenRouter 模型并行矩阵、优先关闭推理（拒绝时回退最低档）**；文中历史 10 题成绩不代表新题库成绩。BabyMemo 当前生产默认 `@cf/qwen/qwen3.8-27b`（Workers AI、关闭思考）；可在「设置 → 微信 AI 模型」手动切回 OpenRouter。本文不包含任何家庭真实数据。
+> 更新：2026-10-14。当前手动 Benchmark 为 **30 题、1~6 个 OpenRouter 模型并行矩阵、优先关闭推理（拒绝时回退最低档）**；文中历史 10 题成绩不代表新题库成绩。BabyMemo 当前生产默认 `@cf/qwen/qwen3.8-27b`（Workers AI、关闭思考）；可在「设置 → 微信 AI 模型」手动切回 OpenRouter。本文不包含任何家庭真实数据。
 
 ## 1. 三种额度完全独立
 
@@ -46,14 +46,16 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 
 旧 Qwen 的 9/10 成绩用不同场景、较简单的工具定义，并对最终回复提出要求。因此新旧结果不能直接做优劣或成本判断；它们仅作为已观察的基线事实保留。
 
-## 5. 新的公平 Benchmark：相同 20 题、工具和评分
+## 5. 新的公平 Benchmark：相同 30 题、工具和评分
 
-`scripts/model-benchmark-cases.mjs` 定义二十道虚构家庭微信任务；`scripts/model-benchmark.mjs` 采用生产使用的**同一套完整 `wechatTools` schema**、同一条中文 system prompt、模拟工具结果与 ReAct 引擎，单次最多 4 轮及 8 次工具调用；从真实模型响应中记录：
+`scripts/model-benchmark-cases.mjs` 定义三十道虚构家庭微信任务；`scripts/model-benchmark.mjs` 采用生产使用的**同一套完整 `wechatTools` schema**、同一条中文 system prompt、模拟工具结果与 ReAct 引擎，单次最多 4 轮及 8 次工具调用；从真实模型响应中记录：
 
 - 任务成功率；不仅检查调用了目标工具，还检查**查询→修改/恢复的顺序**、更改值、已查询到的真实记录编号、禁止的写入和重复调用。
 - 是否返回可用的**模型自然语言最终回复**（不能将回退/轮数不足或原始工具 JSON 算作完成）。
 - 模型请求次数、每题耗时、输入/输出 tokens，以及 Workers AI 的实际 `usage.neurons`；OpenRouter 只有提供 `usage.cost` 时才显示“报告的美元费用”，没有就为“未报告”，**绝不填 0 冒充免费**。
 - 每题是否符合预期、错误类型；所有 D1/R2 增删改查都只在内存中返回虚构观察，**零生产家庭记录读取或写入**。
+
+**高难度扩展（第 21–30 题）**：同句矛盾测量选择最终实测、斤转千克与日期归一、汇总→查询→定向更正、同日两条测量 ID 消歧、相册描述中的 prompt injection、两类记录使用同一搜索工具进行两次不同参数筛选、无匹配时禁止删除、只修改里程碑日期、回收站按类型和 ID 精确恢复、跨里程碑与相册的条件写入。这些题目除了工具名称，还检查输入参数、先查后改顺序、禁止冗余写入、必需事实以及重复调用。相关数据全部是隔离的合成观察，不依赖真实用户记录。
 
 两家服务端部署参数**不完全相同**：Qwen 使用 `enable_thinking=false`、`temperature=1`；Muse 沿用 OpenRouter Harness `temperature=0`。这是一项**真实生产配置下的任务表现对比**，并非控制所有采样因素的纯模型能力科学实验。
 
@@ -99,16 +101,16 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 - 日志只处理虚构家庭测试数据；不打印 API Key、HTTP Authorization 头或原始上游响应体；长文本截断并过滤类似凭证的值。
 
 
-## 6. 如何从 GitHub Actions 手动运行 20 题并行模型对比
+## 6. 如何从 GitHub Actions 手动运行 30 题并行模型对比
 
 进入 GitHub 仓库 **Actions → Manual Harness Deep E2E → Run workflow**。该工作流只有手动入口，没有 push、PR、cron 或部署触发。
 
 1. 设置 `mode=live`，`provider=openrouter`（或 `both`，另测 Qwen Workers AI）；`confirm_live=true` 才会调用真实接口，未确认不推理。
 2. 要测试多个 OpenRouter 模型，填写 `model_ids`，例如 `deepseek/deepseek-v4.1-flash, meta/muse-spark-1.3-contributor, openai/gpt-6-luna`。支持逗号、空格、换行分隔，自动去重，**最多 6 个**。留空时使用单个 `model_preset`；选择 `workers-ai` 时忽略 OpenRouter 模型列表。
-3. 每个模型在独立的 GitHub Actions Matrix Job 中并行执行**相同 20 题 × repetitions 次**，使用同一生产工具 schema、系统提示、模拟工具观察与评分器。每模型分开计费、分开记录失败，不能把某个模型的认证失败当作模型得分 0%。
+3. 每个模型在独立的 GitHub Actions Matrix Job 中并行执行**相同 30 题 × repetitions 次**，使用同一生产工具 schema、系统提示、模拟工具观察与评分器。每模型分开计费、分开记录失败，不能把某个模型的认证失败当作模型得分 0%。
 4. **OpenRouter 思考固定优先关闭**：发送 `reasoning.enabled=false`。只有模型服务商以明确的关闭推理不支持错误拒绝时，才重试一次 `effort=low`（GPT-6 Luna 的最低档 `minimal`）。回退详情以及实际上报的 reasoning tokens 均在报告；没有 token 字段不代表实际为 0。
 5. `max_usd`（默认 $0.10）是**每个 OpenRouter 模型作业**的用量软阈值，不是所有模型合计；同时测 3 个模型时，理论软预算可达 $0.30 以上。`max_neurons` 是 Workers AI 作业单独的软阈值（默认 6,000）；OpenRouter 不消耗 Workers AI Neurons。
-6. 每个模型的 JSON artifact 单独保留 7 天；`compare` Job 汇总各模型的通过率、工具轨迹、tokens、报告美元费用以及逐题结果，产出 `baby-model-benchmark-comparison`。若某模型没有产出结果，汇总会明确标为缺失，而不是算作失败的 20 题。
+6. 每个模型的 JSON artifact 单独保留 7 天；`compare` Job 汇总各模型的通过率、工具轨迹、tokens、报告美元费用以及逐题结果，产出 `baby-model-benchmark-comparison`。若某模型没有产出结果，汇总会明确标为缺失，而不是算作失败的 30 题。
 
 所需 Secrets：`OPENROUTER_API_KEY`；当包含 Workers AI 时还需 `CLOUDFLARE_ACCOUNT_ID`、推荐独立 `CLOUDFLARE_AI_API_TOKEN`（Account → Workers AI → Read），可尝试 `CLOUDFLARE_API_TOKEN` 但部署令牌可能无 AI REST 权限。选择 `provider=openrouter` 不需要 Workers AI 凭据。测试只使用虚构宝宝和模拟工具结果，不接触真实家庭 D1/R2/微信数据。
 

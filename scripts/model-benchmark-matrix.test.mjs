@@ -22,7 +22,7 @@ test('invalid models and unbounded matrix expansion are rejected before real req
 });
 test('compare reports preserves identities and treats absent model as missing, not failed cases',()=>{
  const matrix=buildBenchmarkMatrix({provider:'openrouter',modelIds:'a/b,c/d'});
- const report={setup:{tasksPerModel:20,repetitions:1},results:[{provider:'openrouter',model:'a/b',summary:{cases:20,passed:18}}]};
+ const report={setup:{tasksPerModel:30,repetitions:1},results:[{provider:'openrouter',model:'a/b',summary:{cases:30,passed:27}}]};
  const merged=mergeBenchmarkReports(matrix,{'0':report});
  assert.equal(merged.results.length,1);
  assert.equal(merged.missingModels.length,1);

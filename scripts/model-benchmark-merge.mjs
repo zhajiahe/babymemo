@@ -35,7 +35,7 @@ export async function writeMergedBenchmark({directory='bench-artifacts',matrix,o
  }
  const merged=mergeBenchmarkReports(matrix,reports);
  await writeFile(output,JSON.stringify(merged,null,2)+'\n');
- const markdown=benchmarkMarkdownReport(merged.results,{repetitions:merged.setup.repetitions||1,tasksPerModel:merged.setup.tasksPerModel||20})+
+ const markdown=benchmarkMarkdownReport(merged.results,{repetitions:merged.setup.repetitions||1,tasksPerModel:merged.setup.tasksPerModel||30})+
   (merged.missingModels.length?'\n**未获取到以下模型报告，不能视为答错：** '+
    merged.missingModels.map(x=>x.model).join(', ')+'\n':'');
  if(summaryFile)await writeFile(summaryFile,markdown,{flag:'a'});
