@@ -4,7 +4,7 @@ export const MAX_WECHAT_MEDIA_BYTES=50*1024*1024;
 export const MAX_WECHAT_IMAGE_BYTES=MAX_WECHAT_MEDIA_BYTES; // backwards compatibility
 export const MAX_ITEMS=4,PART=8*1024*1024,CDN='novac2c.cdn.weixin.qq.com';
 export class WechatPhotoError extends Error{constructor(message:string){super(message);this.name='WechatPhotoError'}}
-export const bad=(msg:string):never=>{throw new WechatPhotoError(msg)};
+export const bad:(msg:string)=>never=(msg)=>{throw new WechatPhotoError(msg)};
 // Persist only fixed codes; provider errors may include private CDN URLs or keys.
 export function wechatMediaErrorCode(error:unknown){
  const message=error instanceof Error?error.message:'';
@@ -17,18 +17,18 @@ export function wechatMediaErrorCode(error:unknown){
  return 'WECHAT_MEDIA_PROCESSING_ERROR';
 }
 export function decodeWeChatAesKey(encoded:unknown):Buffer{
- if(typeof encoded!=='string'||encoded.length>200||!encoded.trim())bad('微信媒体密钥缺失，请重新发送');
+ if(typeof encoded!=='string'||encoded.length>200||!encoded.trim())throw new WechatPhotoError('微信媒体密钥缺失，请重新发送');
  const v=encoded.trim();
  if(/^[a-f0-9]{32}$/i.test(v))return Buffer.from(v,'hex');
- if(!/^[a-zA-Z0-9+/]+={0,2}$/.test(v))bad('微信媒体密钥格式无效');
+ if(!/^[a-zA-Z0-9+/]+={0,2}$/.test(v))throw new WechatPhotoError('微信媒体密钥格式无效');
  const raw=Buffer.from(v,'base64');
  if(raw.length===16)return raw;
  if(raw.length===32&&/^[a-f0-9]{32}$/i.test(raw.toString('ascii')))return Buffer.from(raw.toString('ascii'),'hex');
- bad('微信媒体密钥格式无效');
+ throw new WechatPhotoError('微信媒体密钥格式无效');
 }
 export function imageReference(item:WechatMediaItem){
  const source=item?.image_item;
- if(!source||(item.type!==2&&item.type!==undefined))bad('微信照片引用无效');
+ if(!source||(item.type!==2&&item.type!==undefined))throw new WechatPhotoError('微信照片引用无效');
  const media=source.media||source;
  // Tencent iLink's image_item.aeskey overrides CDN media.aes_key.
  return {media,key:source.aeskey||source.aes_key||media.aes_key||media.aeskey};
@@ -42,19 +42,19 @@ export function mediaReference(item:WechatMediaItem){
 }
 export function wechatCdnUrl(media:Record<string,unknown>){
  if(!media||typeof media!=='object')bad('微信 CDN 媒体链接无效');
- let url:URL;
+ let url:URL|undefined;
  const candidate=media.full_url||media.download_url||media.url;
  if(candidate!==undefined){
-  if(typeof candidate!=='string')bad('微信 CDN 媒体链接无效');
-  try{url=new URL(candidate)}catch{bad('微信 CDN 媒体链接无效')}
+  if(typeof candidate!=='string')throw new WechatPhotoError('微信 CDN 媒体链接无效');
+  try{url=new URL(candidate)}catch{throw new WechatPhotoError('微信 CDN 媒体链接无效')}
  }else{
   const param=media.encrypt_query_param;
-  if(typeof param!=='string'||!param||param.length>8192)bad('微信 CDN 下载参数无效');
+  if(typeof param!=='string'||!param||param.length>8192)throw new WechatPhotoError('微信 CDN 下载参数无效');
   // Tencent's @tencent-weixin/openclaw-weixin 2.4.10 uses CDN_BASE_URL /c2c.
   url=new URL('https://'+CDN+'/c2c/download');
   url.searchParams.set('encrypted_query_param',param);
  }
- if(url.protocol!=='https:'||url.hostname!==CDN||url.port||url.username||url.password||
+ if(!url||url.protocol!=='https:'||url.hostname!==CDN||url.port||url.username||url.password||
     !['/download','/c2c/download'].includes(url.pathname)||url.hash||url.search.length>10000)
   bad('拒绝非白名单微信 CDN 媒体链接');
  return url.toString();
@@ -76,11 +76,11 @@ function sniff(buffer:Uint8Array,kind:'image'|'video'):string|null{
  if(buffer.length>=12&&Buffer.from(buffer.subarray(4,8)).toString()==='ftyp'&&/^(heic|heix|hevc|hevx|mif1|msf1)$/.test(Buffer.from(buffer.subarray(8,12)).toString()))return 'image/heic';
  return null;
 }
-export function inspectImage(bytes:Uint8Array):string{const mime=sniff(bytes,'image');if(!mime)bad('微信文件不是可识别的照片');return mime}
-export function inspectVideo(bytes:Uint8Array):string{const mime=sniff(bytes,'video');if(!mime)bad('微信文件不是可识别的 MP4、MOV 或 WebM 视频');return mime}
+export function inspectImage(bytes:Uint8Array):string{const mime=sniff(bytes,'image');if(!mime)throw new WechatPhotoError('微信文件不是可识别的照片');return mime}
+export function inspectVideo(bytes:Uint8Array):string{const mime=sniff(bytes,'video');if(!mime)throw new WechatPhotoError('微信文件不是可识别的 MP4、MOV 或 WebM 视频');return mime}
 export function mediaItems(raw:any):WechatMediaItem[]{
  if(!Array.isArray(raw?.item_list))return [];
- return raw.item_list.filter(i=>(i?.type===2&&i?.image_item)||(i?.type===5&&i?.video_item?.media));
+ return raw.item_list.filter((i:WechatMediaItem)=>(i?.type===2&&i?.image_item)||(i?.type===5&&i?.video_item?.media));
 }
 export function photoItems(raw:any){return mediaItems(raw).filter(i=>i.type===2)}
 export function videoItems(raw:any){return mediaItems(raw).filter(i=>i.type===5)}
