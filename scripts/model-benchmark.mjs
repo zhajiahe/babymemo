@@ -8,6 +8,8 @@ import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
 import {qwenCompletion,qwenRequest,DEFAULT_QWEN_MODEL} from '../src/qwen-workers-ai.mjs';
 import {openRouterCompletion} from '../src/openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from '../src/openrouter-model.mjs';
+import {openRouterReasoningForModel,DEEPSEEK_V41_FLASH} from '../src/openrouter-retry.mjs';
+import {diagnosticEvent,safeBenchPreview,benchmarkFailureKind,isFatalBenchmarkError,benchmarkMarkdownReport} from './model-benchmark-logging.mjs';
 import {MODEL_BENCH_CASES,BENCHMARK_SYSTEM,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
 
 if(process.env.MODEL_BENCH_CONFIRM!=='YES')throw Error('MANUAL_CONFIRMATION_REQUIRED');
@@ -21,13 +23,22 @@ if(!Number.isFinite(maxNeurons)||maxNeurons<=0||maxNeurons>10000||!Number.isFini
  throw Error('INVALID_BENCHMARK_BUDGET');
 const openRouterModel=process.env.MODEL_BENCH_OPENROUTER_MODEL||DEFAULT_OPENROUTER_MODEL;
 if(!/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/i.test(openRouterModel))throw Error('INVALID_OPENROUTER_MODEL');
+const reasoningMode=process.env.MODEL_BENCH_REASONING_MODE||'auto';
+if(!['auto','off','low'].includes(reasoningMode))throw Error('INVALID_REASONING_MODE');
+const effectiveReasoning=reasoningMode==='auto'&&openRouterModel===DEEPSEEK_V41_FLASH?'off':reasoningMode;
 const selected=provider==='both'?['workers-ai','openrouter']:[provider];
-const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,apiToken=process.env.CLOUDFLARE_API_TOKEN,openRouterKey=process.env.OPENROUTER_API_KEY;
+const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,apiToken=process.env.CLOUDFLARE_AI_API_TOKEN||process.env.CLOUDFLARE_API_TOKEN,openRouterKey=process.env.OPENROUTER_API_KEY;
+if(selected.includes('workers-ai')&&!process.env.CLOUDFLARE_AI_API_TOKEN)console.warn('[model-benchmark] Dedicated CLOUDFLARE_AI_API_TOKEN not provided; deploy token may lack Workers AI → Read. Authentication failures stop after first request.');
 if(selected.includes('workers-ai')&&(!accountId||!apiToken))throw Error('WORKERS_AI_CREDENTIALS_MISSING');
 if(selected.includes('openrouter')&&(!openRouterKey||!openRouterKey.startsWith('sk-or-')))throw Error('OPENROUTER_KEY_MISSING');
 
 const spent={neurons:0,usd:0,requests:0},maximumRequests=repetitions*10*6*selected.length;
-async function request(provider,messages,tools,maxTokens=1200){
+const log=(stage,details)=>console.log(diagnosticEvent(stage,details));
+async function request(provider,messages,tools,maxTokens=1200,meta={}){
+ const model=provider==='workers-ai'?DEFAULT_QWEN_MODEL:openRouterModel;
+ const context={provider,model,caseId:meta.caseId,iteration:meta.iteration,request:meta.request};
+ const started=Date.now();
+ log('model_request_start',{...context,toolCount:tools?.length||0,messageCount:messages.length,reasoningRequested:provider==='workers-ai'?'off':effectiveReasoning});
  if(spent.requests>=maximumRequests)throw Error('MODEL_REQUEST_LIMIT');
  if(provider==='workers-ai'){
   if(spent.neurons>=maxNeurons)throw Error('WORKERS_AI_SOFT_BUDGET_REACHED');
@@ -39,27 +50,38 @@ async function request(provider,messages,tools,maxTokens=1200){
     body:JSON.stringify(qwenRequest({messages,tools,max_tokens:maxTokens})),signal:controller.signal
    });
    const json=await response.json().catch(()=>null);
-   if(!response.ok||json?.success===false)throw Error('WORKERS_AI_HTTP_'+String(json?.errors?.[0]?.code||response.status).replace(/[^0-9]/g,'').slice(0,6));
+   if(!response.ok||json?.success===false){
+    const code=String(json?.errors?.[0]?.code||response.status).replace(/[^0-9]/g,'').slice(0,6);
+    log('model_request_failed',{...context,elapsedMs:Date.now()-started,httpStatus:response.status,upstreamCode:code,category:benchmarkFailureKind('WORKERS_AI_HTTP_'+code)});
+    throw Error('WORKERS_AI_HTTP_'+code);
+   }
    const raw=json?.result??json,usage=raw?.usage;
    if(!usage||!Number.isFinite(usage.neurons))throw Error('WORKERS_AI_USAGE_MISSING');
    spent.neurons+=usage.neurons;
+   const choice=raw?.choices?.[0],message=choice?.message;
+   log('model_request_complete',{...context,elapsedMs:Date.now()-started,finishReason:choice?.finish_reason||'unknown',inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,neurons:usage.neurons,reasoningTokens:usage.completion_tokens_details?.reasoning_tokens??null,toolNames:message?.tool_calls?.map(x=>x?.function?.name),assistant:message?.tool_calls?.length?undefined:message?.content});
    return {response:raw,usage:{
     inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,
-    neurons:usage.neurons,reportedUSD:null
+    neurons:usage.neurons,reportedUSD:null,reasoningTokens:usage.completion_tokens_details?.reasoning_tokens??null
    }};
   }finally{clearTimeout(timeout)}
  }
  if(spent.usd>=maxUSD)throw Error('OPENROUTER_SOFT_BUDGET_REACHED');
  spent.requests++;
- const response=await openRouterCompletion({key:openRouterKey,model:openRouterModel,messages,tools,max_tokens:maxTokens,maxAttempts:1});
+ let response;
+ try{response=await openRouterCompletion({key:openRouterKey,model:openRouterModel,messages,tools,max_tokens:maxTokens,maxAttempts:1,reasoningMode});}
+ catch(error){const code=error instanceof Error?error.message:'UNKNOWN_ERROR';log('model_request_failed',{...context,elapsedMs:Date.now()-started,status:benchmarkFailureKind(code)});throw error;}
  const usage=response?.usage??{};
  // OpenRouter cost is USD when present. Do not invent billed dollars when absent.
  const cost=typeof usage.cost==='number'&&Number.isFinite(usage.cost)?usage.cost:
    typeof response?.total_cost==='number'&&Number.isFinite(response.total_cost)?response.total_cost:null;
  if(cost!==null)spent.usd+=cost;
+ const choice=response?.choices?.[0],message=choice?.message;
+ const reasoningTokens=usage.completion_tokens_details?.reasoning_tokens??usage.output_tokens_details?.reasoning_tokens??null;
+ log('model_request_complete',{...context,elapsedMs:Date.now()-started,finishReason:choice?.finish_reason||'unknown',inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,reasoningTokens,reportedUSD:cost,toolNames:message?.tool_calls?.map(x=>x?.function?.name),assistant:message?.tool_calls?.length?undefined:message?.content});
  return {response,usage:{
   inputTokens:usage.prompt_tokens??null,outputTokens:usage.completion_tokens??null,
-  neurons:null,reportedUSD:cost
+  neurons:null,reportedUSD:cost,reasoningTokens
  }};
 }
 async function evaluate(modelProvider,item,iteration){
