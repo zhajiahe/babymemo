@@ -78,6 +78,7 @@ export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,a
    if(action==='update_'+(kind==='milestones'?'milestone':kind)){
     if(args.id===undefined&&args.day===undefined)return '请指定记录日期或编号，避免改错记录';
     const row=await findTarget(env,baby.id,kind,args);
+     if(kind==='media'&&row.upload_state==='failed')return '该照片保存失败，请重新发送原文件后再修改。';
     const changes:Record<string,any>={};
     if(kind==='growth')Object.assign(changes,measurement(args));
     else if(kind==='milestones'){
@@ -154,6 +155,7 @@ export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,a
     const id=batch.ids[i];
     const previous=await env.DB.prepare('SELECT * FROM media WHERE id=? AND baby_id=? AND deleted_at IS NULL LIMIT 1').bind(id,baby.id).first<DbRow>();
     if(!previous)throw Error('最近照片批次包含无效或已删除记录，请重新查询');
+     if(previous.upload_state==='failed')throw Error('最近的照片保存失败，请重新发送原文件后再添加描述。');
     const opId=crypto.randomUUID();opIds.push(opId);
     statements.push(env.DB.prepare('UPDATE media SET '+names.map(k=>k+'=?').join(',')+' WHERE id=? AND baby_id=? AND deleted_at IS NULL AND '+names.map(k=>k+' IS ?').join(' AND '))
       .bind(...names.map(k=>changes[k]),id,baby.id,...names.map(k=>previous[k]??null)));
