@@ -11,14 +11,14 @@ import { Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
 import { MediaViewer, type MediaItem } from './components/MediaViewer';
 import { createAlbumThumbnail, createStoredThumbnail, createVideoThumbnail, fingerprintFile } from './media-upload';
 import { pickMatchingUpload, remainingPartNumbers } from './upload-plan.mjs';
-import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
+import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Play, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
 
 function Gate({onReady}:{onReady:()=>void}){
  const [mode,setMode]=useState<'loading'|'setup'|'login'|'unavailable'>('loading');
  const [ready,setReady]=useState({sessionConfigured:false,encryptionConfigured:false});
  const [form,setForm]=useState({ownerName:'',password:'',familyName:'',babyName:'',birthday:'',birthTime:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
- useEffect(()=>{api<any>('/api/bootstrap/status').then(v=>{setReady(v);setMode(v.initialized?'login':'setup')}).catch(()=>{setMode('unavailable');setError('无法连接后端，请检查 Cloudflare 部署和 D1 迁移。')})},[]);
+ useEffect(()=>{api<{initialized:boolean;sessionConfigured:boolean;encryptionConfigured:boolean}>('/api/bootstrap/status').then(v=>{setReady(v);setMode(v.initialized?'login':'setup')}).catch(()=>{setMode('unavailable');setError('无法连接后端，请检查 Cloudflare 部署和 D1 迁移。')})},[]);
  async function submit(e:FormEvent){e.preventDefault();setBusy(true);setError('');
   try{await post(mode==='setup'?'/api/bootstrap':'/api/login',mode==='setup'?form:{name:form.ownerName,password:form.password});onReady();}
   catch(e){setError(e instanceof Error?e.message:'操作失败');}finally{setBusy(false);}
@@ -120,10 +120,10 @@ export default function App(){
   <section className="home-memories" aria-label="最近照片">
    <div className="section-title home-section-title"><h2>最近的照片</h2><button type="button" className="text-btn" onClick={()=>setActive('album')}>查看相册 <ChevronRight size={16}/></button></div>
    {media.length>0?<><button type="button" className="home-photo-cover" onClick={()=>setActive('album')} aria-label="打开家庭相册查看最近照片">
-    {(media[0].mime.startsWith('image/')||media[0].thumbnail_ready)?<><img src={'/api/media/'+encodeURIComponent(media[0].id)+'/thumbnail'} alt="" decoding="async"/>{media[0].mime.startsWith('video/')&&<span className="home-video-badge">播放视频</span>}</>:<span className="home-video-placeholder"><Camera size={27}/>最近的视频</span>}
+    {(media[0].mime.startsWith('image/')||media[0].thumbnail_ready)?<><img src={'/api/media/'+encodeURIComponent(media[0].id)+'/thumbnail'} alt="" decoding="async"/>{media[0].mime.startsWith('video/')&&<span className="home-video-badge"><Play size={15} fill="currentColor"/> 视频</span>}</>:<span className="home-video-placeholder"><Camera size={27}/>最近的视频</span>}
    </button>
    {media.length>1&&<div className="home-photo-strip">{media.slice(1,5).map(item=><button key={item.id} type="button" className="home-photo-thumb" onClick={()=>setActive('album')} aria-label={'查看 '+item.day+' 的媒体'}>
-    {(item.mime.startsWith('image/')||item.thumbnail_ready)?<><img src={'/api/media/'+encodeURIComponent(item.id)+'/thumbnail'} loading="lazy" alt=""/>{item.mime.startsWith('video/')&&<span className="home-thumb-video">▶</span>}</>:<Camera size={22}/>}
+    {(item.mime.startsWith('image/')||item.thumbnail_ready)?<><img src={'/api/media/'+encodeURIComponent(item.id)+'/thumbnail'} loading="lazy" alt=""/>{item.mime.startsWith('video/')&&<span className="home-thumb-video" aria-hidden="true"><Play size={13} fill="currentColor"/></span>}</>:<>{item.mime.startsWith("video/")?<Play size={20} aria-hidden="true"/>:<Camera size={22}/>}</>}
    </button>)}</div>}</>:<div className="home-empty-photos"><Camera size={26}/><p>还没有照片</p><button className="secondary" type="button" onClick={()=>setActive('album')}>添加第一张照片</button></div>}
   </section>
   <section className="home-measurements" aria-label="成长曲线"><div className="section-title home-section-title"><h2>成长记录</h2><button type="button" className="text-btn" onClick={()=>setActive('growth')}>查看记录 <ChevronRight size={16}/></button></div><GrowthChart items={growthHistory} limited={historyLimited}/></section>

@@ -4,6 +4,13 @@ BabyMemo 是部署在 Cloudflare 上的私密家庭成长记录应用，以相�
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zhajiahe/babymemo)
 
+
+## 在线演示（无真实数据）
+
+[**打开 BabyMemo 静态 Demo**](./public/demo.html) · [查看演示页面源文件](public/demo.html)
+
+演示使用完全虚构的「小星星」家庭和模拟相册、成长记录、成长瞬间、微信绑定状态。页面独立于真实应用，**不发送 API 请求、不读取生产 D1/R2、无需登录、没有真实个人照片或视频**。在已部署的站点访问 `/demo.html` 即可预览；GitHub 中也可下载 HTML 后在浏览器打开。演示页展示界面，不执行真实的上传或微信操作。
+
 ## 功能
 
 - **家庭空间**：首次初始化时创建家庭管理员和第一个宝宝；可继续添加宝宝，并仅在「设置 → 宝宝资料」切换当前查看的宝宝。初始化的家庭空间名称会显示于桌面侧栏及手机顶部。家庭密码至少 6 位。
@@ -80,7 +87,6 @@ npm run test:e2e
 | Agent 的生产权限边界 | [Agent 部署 Runbook](docs/agent-deploy.md) |
 | 代码组织、变更质量、错误处理 | [工程规范](ENGINEERING.md) 与 [AGENTS.md](AGENTS.md) |
 | 自动化范围、真机验收缺口 | [QA 回归矩阵](docs/qa-regression-matrix.md) |
-| 微信 Harness 的真实场景缺陷与演进 | [Harness 场景审查](docs/wechat-harness-review.md) |
 | 微信 Harness 自动化测试设计 | [Harness 测试计划](docs/wechat-harness-test-plan.md) |
 | 微信 iLink/DO 长期降本架构与 Cron/Queues 对比 | [微信接收架构 ADR-002](docs/wechat-transport-architecture.md) |
 | AI 默认模型、免费 Neurons / DO 额度与双模型 Benchmark | [AI 模型评估和额度](docs/ai-model-benchmark-and-quotas.md) |
