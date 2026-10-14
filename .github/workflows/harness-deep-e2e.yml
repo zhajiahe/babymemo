@@ -28,7 +28,7 @@ on:
         description: "Workers AI Neurons soft limit per Workers AI job"
         type: choice
         options: ["1000", "3000", "6000"]
-        default: "3000"
+        default: "6000"
       max_usd:
         description: "OpenRouter USD reported-cost soft limit PER model"
         type: choice
@@ -151,6 +151,7 @@ jobs:
           pattern: baby-model-benchmark-*
           path: bench-artifacts
           merge-multiple: true
+        continue-on-error: true # merge step reports unavailable model results explicitly
       - name: Combine all model results; flag missing reports
         env:
           MODEL_BENCH_MATRIX: ${{ needs.prepare-models.outputs.matrix }}
