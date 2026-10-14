@@ -9,5 +9,7 @@ const typedStore=readFileSync('src/offline-store.ts','utf8');
 const storeJS=ts.transpileModule(typedStore,{fileName:'offline-store.ts',compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 writeFileSync(target+'/offline-store.mjs',storeJS);
 const version=createHash('sha256').update(assets.map(path=>readFileSync(target+path)).join('\0')).digest('hex').slice(0,12);
-writeFileSync(target+'/sw.js',readFileSync('src/service-worker.mjs','utf8').replace('__SHELL_CACHE__','babymemo-shell-'+version).replace('__SHELL_ASSETS__',JSON.stringify(assets)));
+const workerTS=readFileSync('src/service-worker.ts','utf8');
+const workerJS=ts.transpileModule(workerTS,{fileName:'service-worker.ts',compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+writeFileSync(target+'/sw.js',workerJS.replace('__SHELL_CACHE__','babymemo-shell-'+version).replace('__SHELL_ASSETS__',JSON.stringify(assets)));
 console.log('Generated offline shell and bounded private device storage.');
