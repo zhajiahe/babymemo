@@ -117,7 +117,7 @@ export async function createRemoteVideoThumbnail(id:string):Promise<Blob|null>{
  const video=document.createElement('video');
  video.preload='auto';video.muted=true;video.playsInline=true;
  video.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10px;top:-10px';
- document.body.append(video);
+ document.body.appendChild(video);
  function waitForFrame(){
   return new Promise<void>((resolve,reject)=>{
    if(video.readyState>=2){resolve();return}
