@@ -1,6 +1,6 @@
 import {createDecipheriv} from 'node:crypto';
 import {mediaTiming} from './media-timing.mjs';
-import {bad,WechatPhotoError,decodeWeChatAesKey,wechatCdnUrl,mediaReference,inspectImage,inspectVideo,MAX_WECHAT_MEDIA_BYTES,PART,type WechatMediaItem} from './wechat-media-codec';
+import {bad,WechatPhotoError,decodeWeChatAesKey,wechatCdnUrl,mediaReference,inspectImage,inspectVideo,MAX_WECHAT_MEDIA_BYTES,PART,type WechatMediaItem} from './wechat-media-codec.ts';
 export type MediaTransferOptions={fetchImpl?:typeof fetch;maxBytes?:number};
 async function cdnFetch(item:WechatMediaItem,{fetchImpl=fetch,maxBytes=MAX_WECHAT_MEDIA_BYTES}:MediaTransferOptions={}){
  const startedAt=performance.now();
