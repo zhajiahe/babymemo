@@ -1,5 +1,7 @@
 # AI 模型选型、统一 Benchmark 与 Cloudflare 免费额度
 
+历史 Qwen3.8 单模型试验及当时的验收边界见 [Qwen 评估记录](workers-ai-qwen38-evaluation.md)；不同日期、题集和提供方的结果不得直接视为公平的同题比较。
+
 > 更新：2026-10-14。BabyMemo 当前生产默认 `@cf/qwen/qwen3.8-27b`（Workers AI、关闭思考）；可在「设置 → 微信 AI 模型」手动切回 OpenRouter。本文不包含任何家庭真实数据。
 
 ## 1. 三种额度完全独立
