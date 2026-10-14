@@ -1,4 +1,5 @@
 import {handleWechatCommand,handleWechatPhotoMessage,WechatSession} from '../../src/wechat';
+import {familySnapshot,familyExportManifest} from '../../src/family-export';
 import {encryptSecret,decryptSecret,setSetting} from '../../src/crypto';
 import {getActiveThread} from '../../src/wechat-memory.mjs';
 import {createCipheriv,createDecipheriv,createHash} from 'node:crypto';
@@ -62,6 +63,14 @@ export default {async fetch(request:Request,env:any){
   if(input.failIndexOnce){const db=env.DB;let failed=false;env.DB={batch:(statements:any[])=>db.batch(statements),prepare(sql:string){const statement=db.prepare(sql);return new Proxy(statement,{get(target,key){if(key==='bind')return (...values:any[])=>{const bound=target.bind(...values);return new Proxy(bound,{get(t,k){if(k==='run')return async()=>{if(!failed&&sql.startsWith('UPDATE media SET mime=?,size=?')){failed=true;throw Error('SYNTHETIC_D1_FAILURE')}return t.run()};const value=(t as any)[k];return typeof value==='function'?value.bind(t):value}})};const value=(target as any)[key];return typeof value==='function'?value.bind(target):value}})}}}
   if(input.mode==='text')reply=await handleWechatCommand(env,input.text,input.id,getActiveThread(null,'synthetic-bot','synthetic-user',at),at);
   else if(input.mode==='media')reply=await handleWechatPhotoMessage(env,input.raw,input.id);
+  else if(input.mode==='export'){
+   const snapshot=await familySnapshot(env);
+   const manifest=await familyExportManifest(env);
+   const unfinished=await env.DB.prepare("SELECT COUNT(*) AS total FROM media WHERE upload_state<>'ready'").first<{total:number}>();
+   status={unfinished:unfinished?.total||0,onlyReady:snapshot.media.every(x=>x.upload_state==='ready'),
+    exportRows:snapshot.media.length,exportFiles:manifest.files.filter(x=>x.kind==='original').length};
+   reply='EXPORT_OK';
+  }
   else if(input.mode==='revision'){
    const first=await env.DB.prepare("SELECT id FROM media WHERE baby_id=? AND upload_state='ready' ORDER BY created_at LIMIT 1").bind(baby.id).first<{id:string}>();
    if(!first)throw Error('NO_SYNTHETIC_MEDIA_TO_REVISE');
