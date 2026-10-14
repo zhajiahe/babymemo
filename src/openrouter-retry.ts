@@ -8,7 +8,7 @@ export function openRouterProviderForModel(model:string){
 }
 export function openRouterReasoningForModel(model:string,mode:'auto'|'off'|'low'='auto'){
  if(!['auto','off','low'].includes(mode))throw Error('INVALID_REASONING_MODE');
- const managed=[DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55].includes(model);
+ const managed:readonly string[]=([DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55] as string[]).includes(model);
  if(mode==='off'||mode==='auto'&&managed)return {enabled:false};
  if(mode==='low')return {enabled:true,effort:model===GPT_6_LUNA?'minimal':'low'};
  return null;
@@ -18,7 +18,8 @@ export function openRouterLowestReasoningForModel(model:string){
 }
 // Only fallback when a 400 explicitly rejects disabling reasoning.
 // Unrelated bad requests must not trigger a second (potentially paid) inference.
-function isDisableReasoningRejected(body:{error?:{message?:unknown;param?:unknown;metadata?:{raw?:unknown}}}|null|undefined){
+function isDisableReasoningRejected(input:unknown){
+ const body=input as {error?:{message?:unknown;param?:unknown;metadata?:{raw?:unknown}}}|null|undefined;
  const message=typeof body?.error?.message==='string'?body.error.message:'';
  const param=typeof body?.error?.param==='string'?body.error.param:'';
  const metadata=typeof body?.error?.metadata?.raw==='string'?body.error.metadata.raw.slice(0,900):'';
@@ -57,10 +58,10 @@ export async function openRouterCompletion({key,model,messages,tools,max_tokens=
    try{
     const result=await response.json();
     // This is request metadata, not a claim about actual underlying reasoning usage.
-    if(result&&typeof result==='object')result._babymemo_request={
+    if(result&&typeof result==='object')Object.assign(result,{_babymemo_request:{
      reasoningRequested:reasoning||null,requestedProvider:provider||null,
      reasoningFallbackUsed:usedReasoningFallback
-    };
+    }});
     return result;
    }catch{throw Error('OPENROUTER_INVALID_REPLY')}
   }
