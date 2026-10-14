@@ -8,7 +8,7 @@
 
 - **成本目标（研发验收目标，不是承诺）**：两个启用微信成员、全天无消息时，DO 不发生等待 iLink 的外部 `fetch()`；观测 24–72 小时，DO `sum.duration` **低于 1,000 GB-s/天**，与同等使用量基线相比下降至少 85%。如果 Worker 端 CPU、D1、Queues 或其他开销升高，计算**所有账单维度总成本**而非只看 DO。
 - **可靠性**：不丢、不跨成员、不重复提交日记/成长记录/媒体；任何异常中断后能从上次已确认游标恢复。保留已有 D1 去重、消息回复 `client_id` 和独立媒体队列。
-- **用户体验**：候选 Cron 方案先设微信文本消息**送达处理 p95 < 60 秒**为试点门槛，明确它比当前连续长轮询慢；若用户需要更接近实时的响应（例如 p95 < 15 秒），再评估更高频的可靠调度方式及其配额。分别记录接收延迟和最终 AI 答复延迟，不把模型推理时长归咎于轮询。
+- **用户体验**：候选 Cron 方案先设微信文本消息**入站消息从微信发送至 Worker 收到的 p95 < 5 秒**作为长期研发目标（尚未验证，也不是 Cron 的承诺）；分钟级 Cron 负责**启动一段连续监听窗口**，而非每分钟只请求一次微信。若真实 Cron 抖动、交接空档或服务端行为使 p95 无法达标，必须换方案/调整调度机制，不得直接降低体验要求上线。分别记录接收延迟和最终 AI 答复延迟，不把模型推理时长归咎于轮询。
 - **兼容性**：两名以上微信成员、原有 `family`/新版连接、扫码/暂停/重连、多媒体与语音、引用/合并转发、OpenRouter 429 重试保持正常；DO ID、现有 D1/R2 数据和加密密钥不迁移。
 - **运维**：允许开关/回滚；不得在旧 DO `alarm()` 和新调度器中同时轮询同一个 iLink 连接；不得把 CDN 解密参数、Access Token、原始家庭聊天输出到日志或 CI。
 
@@ -26,36 +26,67 @@
 | --- | --- | --- | --- | --- |
 | A. 保持 DO 连续长轮询 | 收到新消息最快 | 持续较高 | 无 | 10/13 已接近 DO 免费配额，**不适合作为长期方案** |
 | B. PR #57：DO 8s 监听 + 22s 休眠 | 估计增加数十秒级延迟，实际须测 | 有所下降但并未消除外部 I/O 计费 | 无 | 短期缓解；截断早于腾讯示例的 35s，**必须验证真实协议，未上线** |
-| **C. 每分钟 Cron → 普通 Worker 长轮询 → DO 接收提交** | 轮询窗口 ~35s + 余下约 25s 空档，部分消息可能等近一分钟 | **空闲时 DO 可休眠** | 使用现有 Worker 的 `scheduled()`，无需新队列 | **首选 PoC**；响应延迟、Cron 抖动、租约和回滚待验证 |
+| **C. 每分钟 Cron 启动 Worker → 在该执行窗口内连续 getupdates → DO 接收提交** | 监听时接近实时；交接短空档和 Cron 抖动仍可能带来延迟；**p95 < 5s 待实测** | **空闲时 DO 可休眠** | 使用现有 Worker 的 `scheduled()`，无需新队列 | **首选 PoC**；必须测量真实 Cron 抖动、租约接棒、服务端超时与重入，不保证 5 秒 SLA |
 | D. Queues 延迟任务 → Worker 长轮询 → DO | 可以设计更频繁的轮询，但队列延迟不是硬实时 SLA | 空闲时 DO 可休眠 | 2 成员×每分钟 1 次×3 操作≈**8,640 次/天**，仅余 1,360 次供重试及整个账号其他队列；30s 一次≈17,280 次/天，超过免费额度 | **备选**，必须先看账号整体 Queues 用量；不能仅为降低 DO 把瓶颈转移至 Queues |
 | E. iLink 官方 Webhook/推送（若未来发布） | 理论上最佳 | 接近仅消息处理的用量 | 依赖未公开确认的新接口 | 仅作为协议跟踪事项，不按存在假设开发 |
 | F. 长驻 VPS/外部 Bot 网关 | 低延迟、轮询灵活 | 低 | 新的服务器成本、运维和隐私风险 | 违反“Cloudflare 优先、无需 VPS”约束，**不选** |
 
-**补充估算**：Cron 每分钟启动 1 个调度 Worker，一天约 1,440 次调度，两个成员约 2,880 次 iLink 调用/天。正常处理的 DO 请求/游标读写仍收费，但不再因**等待长轮询**持续计时。Cloudflare Worker 免费请求总额度为 100,000/天（并有 CPU 10ms/调用上限）；不能仅凭次数判断 CPU 和重试是否足够。单次 Cron 可以并发监听两个连接，但必须限定并发、对每个成员单独处理失败。以上是**设计容量估算，不是测试数据，也不代表保证每分钟准点执行**。
+**补充估算**：Cron 每分钟启动 1 个调度 Worker，一天约 1,440 次计划调度；**每次调度可在限定窗口内对各启用成员连续请求多次** iLink，因此实际 getupdates 调用数不能再按两个成员每天仅 2,880 次估算，应以活跃成员数、服务端每轮响应时间和实际重试量计算。正常处理的 DO 请求/游标读写仍收费，但不再因**等待长轮询**持续计时。Cloudflare Worker 免费请求总额度为 100,000/天（并有 CPU 10ms/调用上限）；不能仅凭次数判断 CPU 和重试是否足够。单次 Cron 可以并发监听两个连接，但必须限定并发、对每个成员单独处理失败。以上是**设计容量估算，不是测试数据，也不代表保证每分钟准点执行**。
 
-## 推荐方案 C：最小侵入的控制流
+## 推荐方案 C：每分钟启动、窗口内连续长轮询（首选验证）
+
+### “每分钟触发”不等于“每分钟收一次消息”
+
+**Cron 只承担唤醒新一轮普通 Worker 的职责。** 一次 `scheduled()` 调用中，为每个启用的微信成员争取独立 DO 租约后，Worker 在固定的时间预算内反复调用 `POST /ilink/bot/getupdates`：一旦完整响应返回，先由对应 DO 按原有规则处理、持久提交游标，再马上开始下一次长轮询。不能在一条尚未提交的批次上并发启动下一个请求。
+
+示意时间轴（仅展示无消息时的一种可能调度，**不是 Cloudflare 的时序保证**）：
+
+```text
+12:00:00  Cron 启动 Worker；向 DO 取得该成员的单写者租约和游标
+12:00:00  getupdates #1 开始
+12:00:35  #1 正常返回空批次（示例）；持久化有效游标，再开启 #2
+12:00:35  getupdates #2 开始；仅允许等待剩余窗口内的时间
+12:00:55  本轮主动结束/取消等待，原游标不变，释放或移交租约
+12:01:00  新 Cron 触发下一 Worker；安全取得租约后立即继续监听
+```
+
+若在监听窗口内收到消息，Worker 立即把完整批次交 DO，**先完成去重、必要的持久处理/回复与游标确认，再开始下一轮请求**；消息不应等到下一分钟统一处理。理论上正常持续监听能接近实时，但 12:00:55 到 12:01:00 的交接空档、Cron 触发偏移、网络冷启动、租约占用、协议重试和模型处理都会导致实际延迟。**p95 < 5 秒仅作为目标；绝不声明已满足，也不保证最大等待只有 5 秒。**
+
+### 运行窗口、租约和接棒
+
+- **先实测再定窗口长度**：PoC 可以从每次 Cron **约 50–55 秒**连续监听开始，留 5–10 秒释放租约和退出；若空档导致达不到目标，应评估略长窗口、合法重叠触发+fencing 的**无双重消费交接**，或切换别的调度器。不得以固定“准点每分钟”计算用户延迟。
+- **真实长轮询**：尽量遵循 iLink 返回的 `longpolling_timeout_ms`（协议示例 35 秒），在总窗口即将结束时以剩余预算作为单次请求超时；**主动 Abort 后不推进游标**。需使用真实微信验证服务端是否支持这种取消/恢复语义，避免误判为消息丢失。
+- **单连接单写者**：租约在原有 DO 中持久化，包含代际 fencing token、`expiresAt`、当前游标以及禁用/重绑代际。新一轮 Cron 如果旧租约尚有效，应退出或在有界时间内协调移交；**不得直接并发拉同一个连接**。到期/旧 Worker 恢复返回的数据必须拒绝提交。
+- **新旧调度互斥**：灰度切换前停用该连接的旧 DO `alarm()` 轮询；回滚先停 Worker 调度并等待当前租约退出或失效，才恢复旧 alarm，不破坏原 DO 游标。
+- **生命周期**：Cloudflare 官方 [Scheduled handler](https://developers.cloudflare.com/workers/runtime-apis/handlers/scheduled/) 会等待 `scheduled()` 返回的 Promise；[Cron 单次执行有 15 分钟墙钟上限](https://developers.cloudflare.com/workers/platform/limits/)。设计应主动限制在约一分钟而不是依赖 15 分钟上限；并发成员、取消、`waitUntil`、CPU 限额和运行时更新都需测试。不能把某一轮 Worker 存活视作服务端持续可用性保证。
+- **延迟度量**：区分消息原始 `create_time_ms` 到 Worker 收到的**接收延迟**、DO 持久提交、微信回复送达以及 OpenRouter 推理延迟；按成员在全天不同时间采 p50/p95/p99，特别测 Cron 延迟/跳过、窗口末尾到达和网络 35 秒超时的边界。目标 p95 < 5 秒若不满足，不通过验收。
+
+## 最小侵入的控制流
 
 ```mermaid
 flowchart TD
-  A[每分钟 Cron 触发普通 Worker] --> B[查询 D1 启用连接]
-  B --> C[每个成员向自己的 DO 申请轮询租约]
-  C --> D{取得租约?}
-  D -- 否 --> E[跳过: 已在轮询或暂停]
-  D -- 是 --> F[Worker 解密该成员令牌并调用 iLink getupdates]
-  F --> G{收到有效完整响应?}
-  G -- 否 --> H[上报可重试错误/保留原游标]
-  G -- 是 --> I[原始批次携租约令牌送至同一 DO]
-  I --> J[DO 校验租约+代际+成员身份]
-  J --> K[按现有 D1 幂等/媒体队列/回复流程逐条处理]
-  K --> L[成功后持久提交 get_updates_buf]
-  L --> M[归还租约/等下一次 Cron]
+  A[每分钟 Cron 启动普通 Worker] --> B[查询 D1 启用连接]
+  B --> C[每个成员向其 DO 取得租约与游标]
+  C --> D{是否持有有效租约?}
+  D -- 否 --> E[跳过: 旧轮仍在监听或该成员暂停]
+  D -- 是 --> F[Worker 在有界窗口内请求 getupdates]
+  F --> G{完整响应?}
+  G -- 否 --> H[保留游标; 正常取消或错误退避]
+  G -- 是 --> I[携 fencing token 把批次提交 DO]
+  I --> J[DO 校验成员、代际、顺序和去重]
+  J --> K[持久处理/回复，成功后提交新游标]
+  K --> L{本轮预算允许继续?}
+  L -- 是 --> F
+  L -- 否 --> M[安全释放或移交租约]
+  H --> M
+  M --> N[由下一轮 Cron 接棒]
 ```
 
-建议仅增加一条每分钟的 Cron 表达式，**保留项目原先每日 `0 19 * * *` 清理任务**；同一 Worker 内依据 `controller.cron` 分支执行两类作业，无需再配置第二个 Worker、额外 DO Namespace 或队列。只有研发评估证明其并发/资源隔离不足时才考虑单独 Worker。
+建议仅增加一条每分钟的 Cron 表达式，**保留项目原先每日 `0 19 * * *` 清理任务**；同一 Worker 内依据 `controller.cron` 分支执行两类作业。每次分钟级 Cron 调用在一个受限执行窗口内可连续进行多次 iLink 长轮询，而不是一次请求后空等下一次 Cron。无需再配置第二个 Worker、额外 DO Namespace 或队列。只有研发评估证明其并发/资源隔离不足时才考虑单独 Worker。
 
 **职责边界**
 
-- *Worker 轮询器*：从 D1 读取本连接 `enabled`、加密凭据；通过 DO 内部方法获取单连接租约和**当前游标**；在 Worker 中解密凭据并向原 iLink 可信域名发起超时受控的 `getupdates`，把完整批次和租约回传 DO。Worker 不更新消息数据库、不推进游标、不对用户发送微信回复、不持有跨调用状态。
+- *Worker 轮询器*：从 D1 读取本连接 `enabled`、加密凭据；通过 DO 内部方法获取单连接租约和**当前游标**；在 Worker 中解密凭据，并在有界执行窗口内**逐次**向原 iLink 可信域名长轮询 `getupdates`；每次完整返回把批次和租约交 DO **确认成功后**再继续拉取。Worker 不更新消息数据库、不推进游标、不对用户发送微信回复、不持有跨调用状态。
 - *DO 会话*：仍是每个微信成员唯一的逻辑协调者。提供 `acquire/ingest/fail/release` 等内部接口；保存游标、租约代际与过期时间，接受批次时比较租约代际，顺序处理并复用现有 ReAct、D1 去重、`context_token`、媒体队列。**只有全部消息的持久处理/回复成功，才保存新游标**。
 - *保护交付*：每批处理可能超过普通 Worker 请求的期望等待时长，因此要明确 DO `ingest` 接口是否先持久化消息后立即返回、再独立处理。不能用“收到即提交游标”替代真正的持久入队，也不能在未验证时让一次 Worker `fetch()` 持续等待整个 LLM 推理。
 - *密钥*：只在原有 Worker/DO、加密 D1 和 Cloudflare Secrets 内使用；内网 DO 接口不可从公网调用；日志只保留匿名会话代号、结果类别、耗时和重试次数。不得把密钥写入 Queue 消息、Cron 参数或诊断状态。
@@ -74,14 +105,14 @@ flowchart TD
 
 ### P1：纯 Worker 轮询 PoC（独立 PR，默认关闭）
 
-- 实现按成员限并发的 `scheduled()` 处理、内部 DO 单写租约、Token/游标管理、批次回传。
+- 实现按成员限并发的 `scheduled()` **连续监听窗口（起始 PoC 约 50–55 秒）**、内部 DO 单写租约及 fencing、Token/游标管理、逐批确认后立即继续下一次 `getupdates`。模拟 Cloudflare 不准时/重复触发 Cron，不能只测理想整分钟切换。
 - 只对测试绑定成员灰度，生产其他微信连接继续原方案；启用灰度成员前，先停掉**该成员**旧 DO alarm，保证不会出现两个消费者抢同一游标。
-- 本地 Worker E2E 覆盖：并发 Cron；DO 重启；租约过期、旧响应拒绝；重复/乱序批次；处理一半宕机；ACK 前/后断开；空响应；401/429/500；两位成员互不影响；微信文本/语音/视频/合并转发；队列持久化成功后才 ACK。
+- 本地 Worker E2E 覆盖：**同一个 Cron 窗口收到消息后马上发起第二次长轮询、窗口末尾截断与下次接棒、Cron 迟到/重叠/丢失**；并发 Cron；DO 重启；租约过期、旧响应拒绝；重复/乱序批次；处理一半宕机；ACK 前/后断开；空响应；401/429/500；两位成员互不影响；微信文本/语音/视频/合并转发；批次消息持久化成功后才 ACK。
 - 如免费 Workers CPU 10ms 上限导致 Worker 解密/解析不稳定，评估缩减 Worker 工作量或付费配额，不偷偷忽略这一限制。
 
 ### P2：真微信验收和发布
 
-- 开通双微信测试连接，覆盖**连续空闲 10 分钟、恢复后第一次消息**、多消息突发、媒体 50MiB 及断网重试。比较同一天不同时间段的真实接收延迟。
+- 开通双微信测试连接，覆盖**连续空闲 10 分钟、恢复后第一次消息**、分钟末尾到达消息、Cron 延迟/连续两轮交接、多消息突发、媒体 50MiB 及断网重试。测量真实接收延迟 **p95 < 5 秒** 的研发目标，同时观察尾部 p99 和最大等待；如果不能达到，先寻找更连续、无单写冲突的调度方式，不得把 60 秒接收延迟作为默认交付。
 - 发布采用显式特性开关，先一个非生产成员，之后另一成员；24–72 小时比较整体成本。所有切换都必须**原游标/原 DO ID**无损延续，不重建 D1/R2、不要求重新扫码。
 - 失效或用量异常时先暂停新调度，等当前租约过期或明确释放，再恢复旧 DO alarm；不允许双消费者并发。
 
@@ -99,5 +130,5 @@ flowchart TD
 
 - [腾讯 openclaw-weixin 协议（中文）](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol_zh_CN.md)、[腾讯 iLink API 实现](https://github.com/Tencent/openclaw-weixin/blob/main/src/api/api.ts)、[腾讯消息 monitor](https://github.com/Tencent/openclaw-weixin/blob/main/src/monitor/monitor.ts)
 - [Cloudflare DO 生命周期](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/)、[2026-10-01 未完成 I/O 会阻止休眠](https://developers.cloudflare.com/changelog/post/2026-10-01-pending-io-keep-alive/)、[DO 定价](https://developers.cloudflare.com/durable-objects/platform/pricing/)
-- [Workers 计费](https://developers.cloudflare.com/workers/platform/pricing/)、[Workers 限额](https://developers.cloudflare.com/workers/platform/limits/)、[Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
+- [Workers 计费](https://developers.cloudflare.com/workers/platform/pricing/)、[Workers 限额（包括 Cron 单次 15 分钟墙钟上限）](https://developers.cloudflare.com/workers/platform/limits/)、[Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)、[Scheduled handler 的 Promise 生命周期](https://developers.cloudflare.com/workers/runtime-apis/handlers/scheduled/)
 - [Queues 免费计划与定价](https://developers.cloudflare.com/queues/platform/pricing/)、[Queues JS API](https://developers.cloudflare.com/queues/configuration/javascript-apis/)、[批处理、重试和延迟](https://developers.cloudflare.com/queues/configuration/batching-retries/)
