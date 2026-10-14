@@ -97,7 +97,7 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
    // Descriptions, titles and dates edited during the transfer are preserved.
    const updated=await env.DB.prepare(
     "UPDATE media SET mime=?,size=?,thumbnail_ready=?,day=CASE WHEN updated_at='' THEN ? ELSE day END,upload_state='ready' "+
-    "WHERE id=? AND baby_id=? AND source_message_id=? AND upload_state IN ('processing','failed') AND deleted_at IS NULL AND purge_token IS NULL"
+    "WHERE id=? AND baby_id=? AND source_message_id=? AND upload_state='processing' AND deleted_at IS NULL AND purge_token IS NULL"
    ).bind(mime,size,thumbReady,day,id,baby.id,sourceId).run();
    if(!updated.meta.changes)throw Error('WECHAT_MEDIA_INDEX_FAILED');
   }else{
