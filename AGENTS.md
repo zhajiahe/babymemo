@@ -1,163 +1,54 @@
-# BabyMemo · Agent 开发指南
+# BabyMemo · Coding Agent 约束
 
-本文件约束 Codex、Claude Code、Cursor、Pi 等自动化编码 Agent 在本仓库中的行为。**先读事实来源，再做最小改动，验证后如实报告。** 这是一份为 BabyMemo 编写的规则，不是 FlareMo 技术栈的镜像。
+适用于 Codex、Pi、Claude Code 等自动化编码工具。**先检查最新分支与 PR，再做最小变更；只报告真正执行和验证过的结果。** 本文件只规定跨模块安全边界，不重复业务实现和部署手册。
 
-## 1. 产品目标与不可改变的边界
+## 产品和架构
 
-BabyMemo 是小型、隐私优先的家庭成长记录服务。核心体验是手机上快速记录宝宝的成长数据、里程碑、照片和视频；网页与微信私聊都是完整的业务操作入口。网页负责增删改查、宝宝资料与头像、完整导出和离线记录；微信使用可插拔工具 Harness；没有独立的网页 AI 聊天或育儿分析助手。
+BabyMemo 是单家庭管理员的私密成长记录应用。网页及微信 iLink 均可管理成长测量、里程碑、照片/视频与宝宝资料；**不增加公开注册、第二套认证、独立网页 AI 聊天或医学诊断助手**。
 
-- 前端：React 19 + TypeScript + Vite + `lucide-react`，目前主要页面在 `src/App.tsx`，样式在 `src/styles.css`。
-- 后端：Hono on Cloudflare Workers，路由在 `src/worker.ts`，登录/初始化在 `src/auth.ts`。
-- 持久化：Cloudflare D1（业务事实来源）；R2 `MEDIA`（私有照片和视频）；Durable Object `BOT` / `WechatSession`（微信 iLink 轮询）。
-- 配置：`wrangler.jsonc`；数据库迁移：`migrations/`；构建及脚本：`package.json`。
-- OpenRouter **仅用作微信消息→工具调用路由**，不是网页聊天模型。Key 可由 `OPENROUTER_API_KEY` 部署 Secret 统一配置，或在网页设置页通过 `DATA_KEY` 加密保存；微信 iLink 可选，不需要 OpenClaw、VPS 或常驻 Node 服务。
-- 当前是**单家庭管理员**的初始化和登录流程，使用应用层 HttpOnly Cookie，不使用 FlareMo 的 Better Auth / PAT / Memos API。不要未经产品决策增设公开注册、多租户、第二套登录或匿名数据访问。
-- MyBaby 旧生产站（Vercel/Neon/R2）与 BabyMemo 新环境隔离。**没有授权不得触碰、迁移、覆盖旧生产数据**。迁移计划参见 `docs/MIGRATION.md`。
+- UI：React + TypeScript + Vite；`src/App.tsx`、`src/features/`、`src/components/`。设计标准见 [docs/design-system.md](docs/design-system.md)。
+- API：Hono/Cloudflare Workers，`src/worker.ts`，认证与加密分别见 `src/auth.ts`、`src/crypto.ts`。
+- 数据：D1 `DB`（业务事实）、私有 R2 `MEDIA`（原件和缩略图）、DO `BOT`（微信状态/媒体任务）；前向迁移放在 `migrations/`。
+- AI：默认 Workers AI，OpenRouter 为可选模型提供方；模型只选择白名单工具，**不能直连 SQL、获得 R2/认证密钥或绕过执行器**。微信 Harness 见 [实施说明](docs/wechat-harness-implementation.md) 与 [测试计划](docs/wechat-harness-test-plan.md)。
+- 旧 MyBaby 的 Vercel/Neon/R2 与本项目隔离；未经明确授权不得读取、清理、迁移或覆盖其数据，详见 [迁移计划](docs/MIGRATION.md)。
 
-## 2. 开工前先看哪里
+## 修改前检查
 
-| 任务 | 先阅读 |
+检查最新 `main`、开放 PR、当前分支和工作区。已有相关 PR 时优先增量修改；遇到冲突保留双方有效功能、迁移和测试，不强推或直接整侧覆盖。不要用大规模格式化掩盖业务 diff，也不要为文档任务触碰生产 Cloudflare。
+
+| 工作 | 事实来源 |
 | --- | --- |
-| UI / 交互 | `docs/design-system.md`、`src/styles.css`、`src/App.tsx` |
-| 初始化 / 登录 | `src/auth.ts`、`src/worker.ts`、`docs/DEPLOY.md` |
-| D1 / 成长记录 | `migrations/`、`src/worker.ts`、`src/types.ts` |
-| 相册上传 / 视频 | `src/features/album/Album.tsx`、`src/media-upload.ts`、`src/worker.ts` 的 `/api/upload/*`、`/api/media/*` 与 R2 binding |
-| 微信操作 Harness | `src/wechat-harness.mjs` 工具白名单与 D1 执行、`src/wechat.ts` 绑定/路由/轮询、`src/worker.ts` 配置 API；以 `docs/wechat-harness-implementation.md` 的 ADR 为最新规范，并查看 `docs/wechat-harness-test-plan.md` 的 R 系列案例 |
-| 部署 / Cloudflare | `docs/agent-deploy.md`、`docs/github-action-deploy.md`、`.github/workflows/deploy.yml`、`wrangler.jsonc` |
-| 新旧系统迁移 | `docs/MIGRATION.md`；只做规划和核验，除非另获明确执行授权 |
+| UI / 响应式 | [设计系统](docs/design-system.md)、`src/styles.css`、`src/editorial.css` |
+| API / 数据库 | `src/worker.ts`、`src/types.ts`、`migrations/` |
+| 相册/媒体 | `src/features/album/Album.tsx`、`src/media-upload.ts`、[上传性能](docs/media-upload-performance.md) |
+| 微信 Harness、媒体队列、轮询 | `src/wechat*.ts` 及兼容入口、[Harness 实施](docs/wechat-harness-implementation.md)、[iLink ADR](docs/wechat-transport-architecture.md) |
+| 部署 | [Agent 部署边界](docs/agent-deploy.md)、[GitHub Actions](docs/github-action-deploy.md) |
+| 测试 | [QA 矩阵](docs/qa-regression-matrix.md)、[Harness 测试](docs/wechat-harness-test-plan.md) |
 
-修改之前查看当前 `main`、正在进行的 PR 和工作树；**不要假设 GitHub 历史状态没有变化**。一个变更只聚焦一个目标，避免无关的重构和大批量格式化。
+## 不可突破的安全和一致性约束
 
-## 3. 常用命令
+1. **认证和隔离**：私有 API 必须授权；写请求维持同源/Origin 保护和参数校验。所有宝宝操作使用服务端决定的 `babyId`、记录所有权和唯一目标，不因模型自然语言猜测跨宝宝写入。
+2. **D1/R2**：只增加前向迁移，禁止为修复冲突删除、重建、清空生产 D1/R2。原件始终留在私有 R2、经受保护的 Worker 读取；不可开放存储桶或发布持久匿名媒体 URL。上传、R2 最终提交、D1 回执和恢复必须有重试/幂等边界。
+3. **微信工具**：ReAct 决策在执行前持久保存；工具调用只允许白名单，保留成员、宝宝和消息代次校验。更新/删除必须指向明确且唯一的记录；拒绝未经确认的批量/越权写入。模型理解对话，服务端验证日期、数值、ID、权限与操作成功事实，不可以提示词代替业务校验。
+4. **微信媒体**：仅可信 CDN 与 AES 加密引用；单项 50 MiB，单消息最多 4 项；大视频按有界内存和 R2 分片处理，任务先持久化再确认接收，暂停和重绑不得泄漏旧上下文。照片 EXIF 按受限 R2 范围读取；绝不通过公开链接存放原图。
+5. **离线**：按宝宝隔离草稿/队列；IndexedDB 持久化、联网时稳定 ID 重试；版本冲突不静默覆盖。Service Worker 仅缓存公共外壳及当前已授权设备的私有媒体；登出清除缓存，不缓存凭据。
+6. **Secrets 和隐私**：绝不请求、展示、复制或轮换真实 `SESSION_SECRET`、`DATA_KEY`、模型 Key、微信 Token、Cookie、真实家庭照片或聊天。测试与公开 Demo 只用虚构数据；日志不记录媒体 URL、加密参数和用户标识。
+7. **生产授权**：`main` 全部 CI 通过后的自动部署是既有流程；其他远端 provision、迁移、部署和 Secret 变更均须部署者明确授权，按 [Agent Runbook](docs/agent-deploy.md) 操作。**`npm run deploy` 会修改远端资源，绝不能用于检查。**
 
-环境：Node.js 22+，包管理器使用 **npm**，不要照搬 FlareMo 的 `pnpm` 脚本或目录结构。
+## 质量与交付
+
+Node.js 22+，使用 npm：
 
 ```bash
 npm install --no-audit --no-fund
-npm run check          # TypeScript
-npm run test:unit      # scripts/*.test.mjs
-npm run build          # TypeScript + Vite
-npm run verify         # check + test:unit + build
+npm run check
+npm run test:unit
+npm run build
+npm run test:e2e
 ```
 
-本地开发时按需要运行：
+`npm run verify` 汇总类型、单测和构建。修改 UI 时验证 320/375/390/768px、键盘与触控最小 44px、可见焦点、错误与加载反馈、`prefers-reduced-motion`；不要虚构真实 iPhone Safari 验收。涉及 API、媒体、微信或数据库时补有界、失败、幂等和多宝宝场景；不要删除失败测试、关闭类型门禁或弱化认证来取得绿色 CI。手动收费模型/真实微信用例不得进入普通自动 CI。
 
-```bash
-npx wrangler d1 migrations apply DB --local
-npx wrangler dev       # Worker /api，通常在 8787
-npm run dev            # Vite HMR，vite.config.ts 把 /api 代理到 Worker
-```
+文档维护须同步修复引用和失效步骤，以 `scripts/docs-quality.test.mjs` 为链接检查入口。权威架构、测试与部署文档由 [README 文档导航](README.md) 统一索引；尽量不在 AGENTS 复制运行手册。
 
-运行两个开发进程前，确认本地 D1/R2 模拟环境及 `.dev.vars` 已配置。不要把 `.dev.vars`、`node_modules/`、`dist/`、`.wrangler/`、真实照片、个人密钥或数据库备份加入 Git。
-
-现在有本地 Worker HTTP E2E 与 Chromium 浏览器 E2E 的 CI 门禁；CI 全绿后触发自动 Cloudflare 发布。**不要把本地模拟通过表述成真实 iPhone Safari、微信扫码或生产 Cloudflare 端到端验收通过。**
-
-## 4. 代码修改规则
-
-- 延续项目当前 **React + TS + Hono + 原生 CSS** 体系；未经批准不引入 Tailwind、shadcn、外部状态管理、第二个后端或数据库。
-- 改一条业务流程时检查对应的 API、数据结构、错误码和前端反馈。前端不添加「看得见但不可用」的按钮。
-- 通用无业务组件 `Logo / Notice / Field / Primary / Card / Pager` 位于 `src/components/ui.tsx`；先复用它们，再考虑添加新原语。业务组件已拆分至 `src/features/`；保持 `App` 的协调职责，不要为小修复重写页面。
-- API 涉及用户数据的操作继续强制认证；状态变更请求不得绕过 `sameOrigin` 校验。错误区分 `401`（未登录）、`403`（Origin）、网络暂时不可达；不要将网络中断误判为需要重新初始化。
-- D1 是用户、宝宝、成长记录、里程碑、媒体索引及加密配置的事实来源。结构修改必须提交新的 `migrations/` SQL，并考虑已部署数据库的兼容性；**禁止删表、清库、重建资源来“修复”迁移**。
-- R2 保存媒体对象；读取仍经登录后的 Worker 代理。<=5MiB 原件可通过已认证的单请求 `/api/upload/direct/:id` 写入私有 R2，较大原件保留 Multipart 分片/断点续传；网页并发、微信 R2 分片并发必须有上限和失败回滚。不要把视频全量读进 Worker 或公开 R2 bucket。上传耗时日志仅可保留固定 channel、stage、sizeBand、durationMs、status 字段，禁止含文件名、媒体 URL、宝宝或微信标识；详见 `docs/media-upload-performance.md`。移动 Safari 需覆盖 HEIC/MOV、慢网和取消后的状态。
-- 新增或修改按宝宝区分的 AI / 记录功能时，始终检查 `babyId` 上下文，避免不同宝宝的记录混在一起。AI 不得编造来源于家庭数据库的记录；明确区分建议和真实记录。
-- 微信 iLink 集成是不稳定的第三方协议。启停、重绑、去重、轮询游标、失败回滚需保持一致；不要声称扫码成功意味着消息收发已真实验证。
-- 变动只含文档时不必触碰 Cloudflare 资源，也不应做看似无关的 UI 或依赖升级。
-
-## 5. UI / UX 质量约定
-
-设计原则是 **「安静、温暖、易记录」**，详细尺度见 `docs/design-system.md`。FlareMo 值得借鉴的是**设计约束和验收机制**，而不是复制 Ember 渐变、全部组件或 CSS 变量。
-
-- 优先沿用现有 `.card`、`.primary`、`.secondary`、`.field`、`.nav-link`、`.mobile-nav` 等类；新 CSS token 先统一定义，不要散落新的魔法色值。
-- 新增中文可读文案字号 **至少 12px**；目前遗留的 10–11px 文案作为后续清理项，不继续扩大。
-- 新触控控件至少 **44 × 44 CSS px**，焦点必须可见。对比度目标：普通正文至少 4.5:1，较大文字或 UI 图形至少 3:1，必要时调整颜色而不是降低字号。
-- 重点检查宽度 **320px、375px、768px 和桌面**，关注底部安全区、相册、长文件名、初始化表单和软键盘遮挡。
-- 尊重 `prefers-reduced-motion`；加载、上传、保存、失败都应有可理解的状态，不滥用 toast、持续动画和装饰性渐变。
-- 新增 UI 文案统一使用「成长记录 / 成长瞬间 / 相册 / 微信操作」，不随意改名。宝宝健康信息不做未经验证的医学诊断。
-
-## 6. 密钥、隐私与安全
-
-- 初始化密钥已取消，公开空实例存在管理员被抢先注册风险。部署后应立即初始化，或使用 Cloudflare Access 限制访问。不得覆盖已有管理员账号。
-
-生产认证与数据加密必需 `SESSION_SECRET`、`DATA_KEY` 分别独立生成；部署可选 `OPENROUTER_API_KEY`，只允许按授权步骤安全同步；`DATA_KEY` 是已保存 OpenRouter 和微信凭据的加密密钥，错误轮换会导致密文无法解密。**不读取、索取、回显、记录或轮换已有生产密钥**；不得将其复制到 PR、Issue、聊天、日志或代码。
-
-不要将真实宝宝姓名、生日、照片、病史、家庭会话、微信凭据和 OpenRouter Key 放入测试样本或日志。测试采用合成资料；调试报告只保留脱敏错误码与必要复现步骤。
-
-生产变更需要**部署者明确授权**。当前已批准的是 **main 的完整 CI 全绿后自动发布已有 Cloudflare Worker**，不会自动创建 D1/R2 或轮换 Secret；除此之外，只读验证 ≠ 可以创建 D1/R2；`npm run provision:remote`、远端 D1 migration、`wrangler deploy`、Secret 更新或正式 GitHub Actions 发布都不在默认授权内。尤其不要直接执行 `npm run deploy` 作为“纯检查”，它会部署到 Cloudflare。完整操作遵循 `docs/agent-deploy.md`。
-
-## 7. Git 与验证流程
-
-- 默认从最新 `main` 新建短分支，提交小而聚焦的 PR；不要未经明确请求强推或直接合并。**注意：合并到 main 现在会触发完整 CI，成功后自动发布生产。** 合并前必须确认迁移兼容性、备份与发布风险，不要手动绕过 CI 触发生产部署。
-- **已有 PR 的后续任务**优先更新该 PR 分支，修改前检查是否已合并或是否出现并行变更；若已合并，另开新 PR。
-- 如有冲突，先保留最新 `main` 的既有功能、测试与迁移，再选择性整合另一侧改动。禁止用“全部接受一边”掩盖丢失功能。
-- UI 修改：至少跑 `npm run check`、`npm run build`，并提供桌面/手机关键场景目检结果；无法目检则写“未验证”。
-- API、上传或数据库修改：加上适用的测试（当前 `npm run test:unit`），必要时新增定向用例；真实 Cloudflare / R2 只能在获得授权后检查。
-- 单纯文档修改：校验链接、实际文件、命令与现有脚本是否一致。可使用现有 CI，但无需部署。
-- PR 描述至少包含：变更摘要、影响的数据/接口、验证命令与结果、未验证项、部署/迁移风险。
-- 不要为了获得绿色 CI 删除失败测试、关掉类型检查或弱化认证。
-
-## 8. 交付与文档入口
-
-- `README.md`：功能、部署入口与现状
-- `ENGINEERING.md`：项目结构、代码质量与文档信息架构
-- `docs/design-system.md`：视觉 token、排版、响应式、文案与验收原则
-- `docs/DEPLOY.md`：面向用户的一键部署与初始化
-- `docs/github-action-deploy.md`：GitHub Actions 受控部署步骤
-- `docs/agent-deploy.md`：Agent 部署 Runbook（**部署动作以此为准**）
-- `docs/MIGRATION.md`：旧 MyBaby 迁移评估与验收边界
-- `.github/workflows/ci.yml`：实际 CI 检查内容
-
-最终回复区分**已修改 / 已提交 / PR 已创建 / CI 已通过 / 已部署 / 已真实验收**，不要把这些状态混为一谈。
-
-## 9. 相册上传和派生缩略图
-
-- 每条 `media_uploads` 的 `fingerprint` 是用于重选文件后识别续传会话的首尾采样摘要，不代表完整文件 SHA-256；只能在文件名、大小、MIME 与指纹均匹配时复用分片。
-- 自动失败不得删除可恢复的 R2 multipart；只有用户明确点击「取消上传」才调用 `/api/upload/:id/cancel`。原文件确认保存后再独立上传缩略图，派生文件上传失败不回滚原图。
-- JPEG 缩略图存储于私有 R2，读取必须继续经受保护的 Worker；禁止为了缓存直接打开公开 bucket 或 CDN。移动端视频列表不得自动预加载视频元数据；原文件下载始终返回完整原图。
-- D1 迁移应增量且先于新 Worker 发布；旧图片需安全回退原图，旧未完成上传允许清理。
-
-## 10. 旧照片与上传过期回收
-
-- 旧照片缩略图属于用户历史迁移的一次性运营维护，不得作为普通相册功能、按钮或自动扫描任务展示；保留私有认证 API，维护者通过 scripts/maintenance-thumbnail-backfill.mjs 明确 --apply 确认后处理，严禁覆盖原图。
-- Cron 每天 UTC 19:00 执行，针对连续 14 天无成功分片活动的会话，以最多 30 条为一批检查。R2 存在完整对象时优先补记 D1；R2 不存在时可中止未完成 multipart 并删掉会话。检查失败保留记录，绝不能盲删可能已经完成的媒体。
-- WebKit Linux 测试是 Safari 引擎兼容性测试，**不构成真实 iPhone Safari 验收**。真实设备若未执行，必须如实标识。
-
-
-## 微信工具安全边界
-
-- 禁止重新新增网页 AI 助手或 `/api/chat` 作为主入口；OpenRouter 只生成工具名称及参数，真实读写必须通过白名单 Harness。
-- 微信 Harness 改为最多 **4 轮模型决策、8 个工具调用（单轮不超过 4）** 的 ReAct 闭环。必须先把模型决策加密写入 `wechat_agent_rounds`，再执行任何白名单工具；`role:tool` 结果反馈给下一轮模型。整个消息的工具步骤使用稳定全局 step ID；所有写操作拒绝后停止后续执行，明确报告已提交的部分结果。修改/删除必须由原文明确目标日期/服务端可信查询提供目标记录 ID；目标不唯一、记录已删除、含否定/条件指令、缺少修改或删除意图时拒绝执行。新增/修改均须通过原文日期与数值单位来源验证。
-- 模型无 SQL、R2 密钥、管理员会话等工具权限。消息来自绑定微信的单聊账户；不可跨宝宝写入。不返回私有媒体的匿名链接。
-- 微信删除均应采用 30 天回收站；更新与删除应使用精确记录 ID，移动端网络重试不允许重复新增。
-
-
-## 微信照片接入
-
-- 媒体接收与保存通过现有 BOT namespace 的独立消费 DO 分离，任务原文和结果必须用 DATA_KEY 加密。接收时固定宝宝，先持久化再推进游标；不允许后台完成覆盖后来的宝宝/查询/操作上下文。暂停保留任务，重绑/移除清理旧任务；发送失败只重试持久回复，不再次执行附文工具。
-- 自动日期优先读取原图 EXIF DateTimeOriginal，网页与微信共用 src/media-date.mjs；无有效拍摄日期时明确回退。不得用照片文件修改时间假装拍摄日期，不自动修改既有/手动日期。私有 R2 元数据读取必须保留范围和总量限制，不能为了 EXIF 全量加载大文件或修改原件。
-
-- `src/wechat-media.mjs` 独立实现官方 CDN 域名白名单、AES-128-ECB 解密、50 MiB 下载上限及视频 R2 Multipart、格式签名识别、R2/D1 入库和幂等恢复；`src/wechat.ts` 只负责绑定微信消息路由。
-- 不直接把 CDN URL 当相册地址，禁止开放公共 R2、删除原始媒体、日志输出解密密钥或 CDN 完整查询参数。
-- 图片和视频消息不发给 OpenRouter 识图；多宝宝必须在图片附文明确宝宝或配置持久化默认宝宝，缺少目标时拒绝入库。
-- CDN 协议不稳定；真实微信图片仍需现场发送验收，不得将模拟解密/Worker E2E 通过表述成 iOS 微信实测成功。
-
-
-## 指令模型容错与多轮边界
-
-- `src/openrouter-retry.mjs` 的重试只覆盖模型调用，不可重复执行写入工具；429/503 尊重短 `Retry-After`，长时间退避告知用户。
-- `src/wechat-memory.mjs` 仅在已绑定微信的一对一 Durable Object 会话里缓存 4 轮文本、20 分钟 TTL；不能跨账号/绑定凭据复用，不能让模型从历史回复编造未被用户授权的删除操作。
-- `src/wechat-media.mjs` 处理图片/视频最大 50 MiB；大文件必须采用分片上传，不可 Buffer.concat 完整视频、不可公开 R2 对象。
-
-## 出生时间与相册界面
-
-- `migrations/0012_birth_time.sql` 是已迁移数据库的增量列，`birth_time=''` 表示未知；年龄由生日、宝宝时区及可选出生时间动态计算，不能凭空补齐出生时间。
-- 媒体旧 `title` 字段仍需兼容迁移/续传/微信消息，但家庭相册界面不显示、不要求输入或编辑标题。首页要加载成长历史曲线；手机相册默认先显示照片，再按需展开上传工具。
-
-## 网页管理、完整导出与离线
-
-- `0016_web_management.sql` 为增量迁移：头像、宝宝归档、编辑版本、媒体清理认领和网页请求回执。不得重建已有数据库。
-- 网页修改必须按宝宝/精确记录 ID 校验，并检查编辑版本。业务更新与请求回执应使用同一 D1 事务，丢失 HTTP 响应后的重试不得覆盖后续编辑。
-- 媒体清理先用条件 D1 更新认领，再删 R2；网页恢复、微信恢复和撤销都不得越过认领。R2 删除失败保留认领以便重试。
-- 完整家庭 ZIP64 导出包含用户档案、头像、所有记录、媒体索引、关联关系、原件和现有缩略图；流式读取原件，不将大视频全量缓冲进 Worker。凭据及登录哈希仍只属于受控的操作者备份。
-- 草稿用按宝宝/类型隔离的持久本机存储。离线业务写入先持久化到 IndexedDB，联网后用稳定编号同步；冲突留在队列中供用户处理，不能自动覆盖服务端新版本。
-- Service Worker 仅缓存公共外壳和已登录设备访问过的私有媒体；退出清除本机私有数据。密码、OpenRouter Key、微信 Token 不缓存、不加入离线队列。
+提交与回复须区分 **代码已改、PR 已创建、CI 通过、main 已合并、云端已部署、真实设备已验收**，未验证必须明确说明。
