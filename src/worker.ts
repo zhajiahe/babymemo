@@ -2,10 +2,11 @@ import { Hono } from 'hono';
 import type { Env, Baby,ApplicationEnv } from './types';
 import {validCalendarDay,validTimeZone} from './validation';
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
+import {DEFAULT_QWEN_MODEL,DEFAULT_AI_PROVIDER} from './qwen-workers-ai.mjs';
 import { applySession, authenticated, clearSession, login, owner, sameOrigin, setup } from './auth';
 import { constantEqual, passwordHash, randomHex } from './crypto';
 import { decryptSecret, encryptSecret, setSetting, setting, deployedOpenRouterKey } from './crypto';
-import { generateQr, qrStatus, testOpenRouterConnection, workerBot } from './wechat';
+import { generateQr, qrStatus, testOpenRouterConnection, testWorkersAIConnection, workerBot } from './wechat';
 import {getWechatConnection,listWechatConnections} from './wechat-connections';
 import { mediaDownloadHeader } from './media-filename.mjs';
 import { finalizeUpload, FinalizeMismatchError } from './upload-finalize.mjs';
@@ -84,8 +85,8 @@ app.get('/api/state',async c=>{
     c.env.DB.prepare("SELECT baby_id,kind,COUNT(*) AS total FROM (SELECT baby_id,'growth' AS kind FROM growth_records WHERE deleted_at IS NULL UNION ALL SELECT baby_id,'milestones' AS kind FROM milestones WHERE deleted_at IS NULL UNION ALL SELECT baby_id,'media' AS kind FROM media WHERE deleted_at IS NULL) GROUP BY baby_id,kind")
       .all<{baby_id:string;kind:'growth'|'milestones'|'media';total:number}>()
   ]);
-  const [encryptedApiKey,model,familyName,connections] = await Promise.all([
-    setting(c.env,'openrouter_key'),setting(c.env,'openrouter_model'),setting(c.env,'family_name'),listWechatConnections(c.env)
+  const [encryptedApiKey,model,familyName,connections,providerPref] = await Promise.all([
+    setting(c.env,'openrouter_key'),setting(c.env,'openrouter_model'),setting(c.env,'family_name'),listWechatConnections(c.env),setting(c.env,'ai_provider')
   ]);
   const countsByBaby:Record<string,{growth:number;milestones:number;media:number}>={};
   for(const row of byBaby.results){
@@ -93,6 +94,7 @@ app.get('/api/state',async c=>{
     countsByBaby[row.baby_id][row.kind]=row.total;
   }
   return c.json({ownerName:user!.name,familyName:familyName||'家庭空间',babies:babies.results,counts:{growth:growth?.count??0,milestones:milestones?.count??0,media:media?.count??0},countsByBaby,
+    ai:{provider:providerPref==='openrouter'?'openrouter':DEFAULT_AI_PROVIDER,model:DEFAULT_QWEN_MODEL,thinking:'off'},
     openrouter:{configured:!!encryptedApiKey||!!deployedOpenRouterKey(c.env),managedByDeployment:!!deployedOpenRouterKey(c.env),model:model||DEFAULT_OPENROUTER_MODEL},
     wechat:{connected:connections.length>0,enabled:connections.some(x=>x.enabled),connections,defaultBabyId:await setting(c.env,'wechat_default_baby_id')||''}});
 });
@@ -508,6 +510,24 @@ app.post('/api/settings/password',async c=>{
     clearSession(c);return c.json({ok:true,reauthenticate:true});
   }catch{return fail(c,400,'PASSWORD_CHANGE_FAILED');}
 });
+app.post('/api/settings/ai',async c=>{
+  try{
+    const v=await json(c.req.raw);
+    if(v.provider!=='workers-ai'&&v.provider!=='openrouter')return fail(c,400,'INVALID_AI_PROVIDER');
+    if(v.provider==='openrouter'&&!deployedOpenRouterKey(c.env)&&!await setting(c.env,'openrouter_key'))
+      return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
+    if(v.provider==='workers-ai'&&!c.env.AI)return fail(c,503,'WORKERS_AI_BINDING_MISSING');
+    await setSetting(c.env,'ai_provider',v.provider);
+    return c.json({ok:true,provider:v.provider});
+  }catch{return fail(c,400,'AI_PROVIDER_SAVE_FAILED');}
+});
+app.post('/api/settings/ai/test',async c=>{
+  try{
+    const provider=await setting(c.env,'ai_provider')||DEFAULT_AI_PROVIDER;
+    const ok=provider==='openrouter'?await testOpenRouterConnection(c.env):await testWorkersAIConnection(c.env);
+    return c.json({ok,provider});
+  }catch(e){return fail(c,502,e instanceof Error?e.message:'AI_MODEL_FAILED');}
+});
 app.post('/api/settings/openrouter',async c=>{
   try{
     const v=await json(c.req.raw);
@@ -591,7 +611,7 @@ app.post('/api/settings/wechat/connections/:id/:action',async c=>{
   if(action!=='start'&&action!=='pause')return fail(c,404,'NOT_FOUND');
   const connection=await getWechatConnection(c.env,id);
   if(!connection)return fail(c,404,'WECHAT_CONNECTION_NOT_FOUND');
-  if(action==='start'&&!deployedOpenRouterKey(c.env)&&!await setting(c.env,'openrouter_key'))return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
+  if(action==='start'&&(await setting(c.env,'ai_provider')||DEFAULT_AI_PROVIDER)==='openrouter'&&!deployedOpenRouterKey(c.env)&&!await setting(c.env,'openrouter_key'))return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
   const enabled=action==='start'?1:0;
   await c.env.DB.prepare('UPDATE wechat_connections SET enabled=?,updated_at=? WHERE id=?').bind(enabled,now(),id).run();
   const response=await workerBot(c.env,id).fetch('https://bot.internal/'+action,{method:'POST',
