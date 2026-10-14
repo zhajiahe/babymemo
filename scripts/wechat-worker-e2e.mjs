@@ -380,6 +380,34 @@ try{
   assert.equal(r.modelMessages[4].at(-1).role,'tool');
   assert.equal(r.messages.filter(m=>m.message_id.startsWith('synthetic-bot:diary-turn-')&&m.state==='done').length,4);
  });
+ await step('empty iLink poll hibernates the DO rather than immediately polling again',async()=>{
+  const r=await run({mode:'alarm',messages:[]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.models,0);
+  assert.equal(r.status.pollOutcome,'empty');
+  assert.equal(r.status.lastError,null);
+  assert.equal(r.status.alarmAt-r.status.lastPollDurationMs>=Date.now()+18000,true);
+ });
+ await step('messages continue quickly; true upstream faults keep 30-second retry',async()=>{
+  const reply=await run({mode:'alarm',messages:[textFrom('poll-budget-hello','synthetic-user','synthetic-bot','你好')],responses:[natural('你好，很高兴见到你！')]});
+  assert.equal(reply.error,undefined);
+  assert.equal(reply.status.pollOutcome,'messages');
+  assert.match(reply.reply,/你好/);
+  const err=await run({mode:'alarm',pollFailureStatus:503,messages:[]});
+  assert.equal(err.status.pollOutcome,'error');
+  assert.equal(err.status.lastError,'WECHAT_HTTP_503');
+  assert.ok(err.status.alarmAt>=Date.now()+20000);
+  assert.equal(err.status.cursor,undefined);
+ });
+ await step('getupdates idle deadline preserves cursor and never calls the model',async()=>{
+  const r=await run({mode:'alarm',pollTimeout:true,messages:[]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.status.pollOutcome,'idle-timeout');
+  assert.equal(r.status.lastError,null);
+  assert.equal(r.status.cursor,undefined);
+  assert.ok(r.status.alarmAt>=Date.now()+18000);
+  assert.equal(r.models,0);
+ });
  await step('iLink photo -> durable acceptance -> AES -> local R2/D1 -> final reply; duplicate ignored',async()=>{const r=await run({mode:'alarm',messages:[raw('photo-ok')],alarms:2,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 张照片/);assert.equal(r.media.length,1);assert.equal(r.downloads,1);assert.equal(r.sent,2);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:photo-ok').state,'done')});
  await step('9 MiB encrypted video streams through real R2 multipart',async()=>{const bytes=Buffer.alloc(9*1024*1024,1);bytes.writeUInt32BE(24,0);bytes.write('ftypisom',4);const r=await run({mode:'alarm',messages:[raw('video-ok',5)],encryptedBase64:encrypt(bytes),expectedSHA256:sha(bytes)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 段视频/);assert.equal(r.media.length,2);assert.equal(r.originalMatches,true);assert.equal(r.media.find(x=>x.mime==='video/mp4').size,bytes.length)});
  await step('R2 commit survives failed D1 indexing; retry avoids CDN download',async()=>{const r=await run({mode:'alarm',messages:[raw('index-retry')],alarms:2,failIndexOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,3);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:index-retry').photo_attempts,1)});
