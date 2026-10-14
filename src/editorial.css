@@ -224,7 +224,7 @@ h1,h2,h3 { letter-spacing:normal; }
 }
 /* Hide the bottom bar only if the visual viewport confirms a software keyboard. */
 @media(max-width:800px) {
- .app.keyboard-open .mobile-nav { opacity:0; pointer-events:none; transform:translateY(100%); }
+ .app.keyboard-open .mobile-nav { visibility:hidden; opacity:0; pointer-events:none; transform:translateY(100%); }
 }
 @media(prefers-reduced-motion:reduce) { .mobile-nav,.topbar { backdrop-filter:none; -webkit-backdrop-filter:none; } .mobile-nav,.mobile-nav button { transition:none; } }
 
