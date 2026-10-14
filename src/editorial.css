@@ -217,3 +217,26 @@ h1,h2,h3 { letter-spacing:normal; }
  .wechat-photo-setting { padding:13px; }
  .settings-grid>.card { padding:18px 16px; }
 }
+
+
+/* AI provider status is distinct from WeChat poll/transport health. */
+.settings-ai-card .section-title{margin-bottom:14px}
+.settings-ai-overview{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.settings-ai-overview>div{min-width:0;flex:1}
+.settings-ai-overview strong{font-size:17px;font-weight:670;overflow-wrap:anywhere}
+.settings-ai-caption{display:block;color:var(--bm-muted);font-size:12px;margin-bottom:6px}
+.settings-ai-overview p{margin:5px 0 0}
+.settings-ai-probe{font-size:12px;font-weight:600;border:1px solid var(--bm-border);border-radius:999px;padding:6px 10px;color:var(--bm-muted);background:var(--bm-surface-soft,#f4f7fb)}
+.settings-ai-probe.ok{color:var(--bm-success);border-color:#c7e4d5;background:#f1f9f4}
+.settings-ai-probe.failed{color:var(--bm-error);border-color:#f1cdcd;background:#fff5f5}
+.settings-ai-hint{line-height:1.6;margin:14px 0 10px}
+.settings-ai-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.settings-ai-actions button{min-height:44px}
+.settings-ai-result{margin:10px 0 0;font-size:13px;line-height:1.6}
+.settings-ai-result.ok{color:var(--bm-success)}
+.settings-ai-result.failed{color:var(--bm-error)}
+.settings-ai-config{border-top:1px solid var(--bm-border);padding-top:9px;margin-top:12px}
+.settings-ai-config .stack{padding:8px 0 4px;gap:13px}
+.settings-ai-note{font-size:12px;margin:10px 0 0;line-height:1.6}
+.wechat-status .muted{margin:8px 0 0;line-height:1.6}
+@media(max-width:650px){.settings-ai-overview{align-items:flex-start;flex-direction:column}.settings-ai-actions button{width:100%}}

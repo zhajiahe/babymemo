@@ -1,4 +1,4 @@
-# DO 轮询成本专项：有界微信监听（PR，尚未上线）
+# DO 轮询成本专项：有界微信监听（2026-10-14 已随 PR #57 部署，实机效果仍待验证）
 
 ## 真实账单症状（Cloudflare GraphQL，UTC 2026-10-13）
 
@@ -36,11 +36,11 @@
 3. 发布后观察 24 小时：分对象的 `durableObjectsPeriodicGroups.sum.duration`、`alarm` 调用数与错误数；关注 95 分位微信回复延迟。
 4. 如果 iLink 服务端只在超过 8 秒之后才返回已到达的消息，**不得直接上线此策略**；先延长监听窗口或改用普通 Worker 的定时长轮询并保留 DO 处理和游标，避免丢失可用性。
 
-由于 iLink 未提供正式的 Bot 消息推送 SLA，短监听+低频空闲轮询存在漏过即时唤醒窗口的可能；该 PR **保持开放以便实机验收**，不直接部署生产。
+由于 iLink 未提供正式的 Bot 消息推送 SLA，短监听+低频空闲轮询存在漏过即时唤醒窗口的可能；该 PR 后续已合并部署，但仍需真实微信验收；**不能将 CI 通过当作 iLink 协议安全性得到证明**。
 
 ## 长期目标：DO 管状态，普通 Worker 管微信长轮询
 
-> **长期研究已形成单独 ADR**：[ADR-002：微信消息接收解耦及 DO 费用优化](wechat-transport-architecture.md)。本 PR 不实施架构迁移，不自动合并/生产部署。
+> **长期研究已形成单独 ADR**：[ADR-002：微信消息接收解耦及 DO 费用优化](wechat-transport-architecture.md)。最初 PR #57 不实施架构迁移；短期优化现已部署，但长期架构仍未实施。
 
 已核验的结论：腾讯官方 [iLink 协议](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol_zh_CN.md) 仍采用 `getupdates` 长轮询，返回服务端建议的 `longpolling_timeout_ms`（示例约 35 秒）；`notifyStart/notifyStop` 不是消息推送 Webhook。Cloudflare [DO 生命周期](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/) 明确未完成外部 `fetch` 阻止休眠并持续计费；[普通 Workers 的网络等待](https://developers.cloudflare.com/workers/platform/limits/) 不计入 CPU 时间（但免费 CPU 仅 10ms/调用）。
 
@@ -50,4 +50,4 @@ Cloudflare [Queues 定价](https://developers.cloudflare.com/queues/platform/pri
 
 长期验收目标（**不是当前 PR 的性能承诺**）：两个成员无消息时 DO 不进行外部长轮询，空闲 DO 计算时长 < 1,000 GB-s/天；原游标与家庭数据不迁移、不重绑微信；零跨成员、零额外写入、失败可恢复；真实微信试点目标接收 **p95 < 5 秒（尚未验证，不是 Cron SLA）**，并重点验证执行窗口末尾、Cron 触发偏移、交接空档、旧租约失效及消息去重。方案选型、故障/成本模型、P0–P3 任务与官方参考链接见 [ADR-002](wechat-transport-architecture.md)。
 
-**重要风险**：本 PR 的 8 秒客户端监听截止显著短于腾讯示例的 35 秒服务端长轮询。CI 模拟通过不能证明真实 iLink 的延迟或截断行为安全；如协议真机测试不通过，不能上线这套短轮询配置，应优先试验让普通 Worker 等待自然的长轮询响应。
+**重要风险**：已上线的 8 秒客户端监听截止显著短于腾讯示例的 35 秒服务端长轮询。CI 模拟通过不能证明真实 iLink 的延迟或截断行为安全；如协议真机测试不通过，不能上线这套短轮询配置，应优先试验让普通 Worker 等待自然的长轮询响应。
