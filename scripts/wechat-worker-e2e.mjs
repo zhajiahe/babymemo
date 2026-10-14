@@ -541,6 +541,13 @@ await step('multiple pictures share one pending batch and keep both edited descr
  assert.equal(r.status.queuedMedia.filter(x=>x.source_message_id?.startsWith('synthetic-bot:placeholder-two:')).length,2);
  assert.ok(records.every(x=>x.upload_state==='ready'&&x.description==='一起去海边'));
 });
+await step('family exports never promise absent originals from failed media placeholders',async()=>{
+ const r=await run({mode:'export'});
+ assert.equal(r.error,undefined);
+ assert.ok(r.status.unfinished>0);
+ assert.equal(r.status.onlyReady,true);
+ assert.equal(r.status.exportRows,r.status.exportFiles);
+});
 await step('older media edits advance the per-baby revision even when newest row is unchanged',async()=>{
  const r=await run({mode:'revision'});
  assert.equal(r.error,undefined);
