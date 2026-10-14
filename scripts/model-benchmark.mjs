@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Manual ONLY: same twenty virtual-family tasks, exact BabyMemo tool schema,
+// Manual ONLY: same thirty virtual-family tasks, exact BabyMemo tool schema,
 // same prompts/observations/scoring for Qwen Workers AI and Muse OpenRouter.
 // No production WeChat, D1, R2, personal messages or real tool side effects.
 import {writeFile} from 'node:fs/promises';
@@ -17,7 +17,7 @@ const provider=process.env.MODEL_BENCH_PROVIDER||'both';
 if(!['workers-ai','openrouter','both'].includes(provider))throw Error('INVALID_PROVIDER');
 const repetitions=Number(process.env.MODEL_BENCH_REPETITIONS||1);
 if(!Number.isInteger(repetitions)||repetitions<1||repetitions>3)throw Error('REPETITIONS_OUT_OF_RANGE');
-const maxNeurons=Number(process.env.MODEL_BENCH_MAX_NEURONS||3000);
+const maxNeurons=Number(process.env.MODEL_BENCH_MAX_NEURONS||6000);
 const maxUSD=Number(process.env.MODEL_BENCH_MAX_USD||0.10);
 if(!Number.isFinite(maxNeurons)||maxNeurons<=0||maxNeurons>10000||!Number.isFinite(maxUSD)||maxUSD<=0||maxUSD>1)
  throw Error('INVALID_BENCHMARK_BUDGET');
@@ -115,10 +115,10 @@ async function evaluate(modelProvider,item,iteration){
    finalize:({messages})=>complete({messages,tools:undefined},360),
    execute:async call=>{
     const checked=validateBenchmarkTool(item,call,wechatTools,calls);
-    calls.push({name:checked.name,args:checked.args});
+    calls.push({name:checked.name,args:checked.args,issue:checked.issue});
     log('tool_call',{...caseContext,toolNames:[checked.name],arguments:JSON.stringify(checked.args),status:checked.issue?'REJECTED_'+checked.issue:'SYNTHETIC_OBSERVATION'});
     if(checked.issue){issues.push(checked.issue);return {content:'测试工具调用被拒绝，未执行真实写入。',committed:false,halt:true}}
-    return {content:syntheticObservation(checked.name,checked.args),committed:/^(create_|update_|delete_|restore_)/.test(checked.name)};
+    return {content:syntheticObservation(checked.name,checked.args,item),committed:/^(create_|update_|delete_|restore_)/.test(checked.name)};
    }
   });
  }catch(e){error=e instanceof Error?e.message:'UNKNOWN_ERROR'}
