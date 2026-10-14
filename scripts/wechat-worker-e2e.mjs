@@ -414,7 +414,40 @@ try{
  await step('9 MiB encrypted video streams through real R2 multipart',async()=>{const bytes=Buffer.alloc(9*1024*1024,1);bytes.writeUInt32BE(24,0);bytes.write('ftypisom',4);const r=await run({mode:'alarm',messages:[raw('video-ok',5)],encryptedBase64:encrypt(bytes),expectedSHA256:sha(bytes)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 段视频/);assert.equal(r.media.length,2);assert.equal(r.originalMatches,true);assert.equal(r.media.find(x=>x.mime==='video/mp4').size,bytes.length)});
  await step('R2 commit survives failed D1 indexing; retry avoids CDN download',async()=>{const r=await run({mode:'alarm',messages:[raw('index-retry')],alarms:2,failIndexOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,3);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:index-retry').photo_attempts,1)});
  await step('failed final reply retries persisted response/client ID without re-import',async()=>{const r=await run({mode:'alarm',messages:[raw('send-retry')],alarms:2,failFinalSendOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,4);assert.equal(r.downloads,1);assert.equal(r.sent,3);assert.equal(r.finalClientIds.length,2);assert.equal(r.finalClientIds[0],r.finalClientIds[1]);assert.equal(r.originalMatches,true)});
- await step('CDN failures retain sanitized diagnostics through idle polling until media succeeds',async()=>{const failed=await run({mode:'alarm',messages:[raw('cdn-failed')],alarms:3,cdnStatus:503});assert.match(failed.reply,/图片或视频下载\/入库多次失败/);assert.equal(failed.media.length,4);assert.equal(failed.downloads,3);assert.deepEqual(Object.keys(failed.status.media.lastError).sort(),['at','attempt','code']);assert.equal(failed.status.media.lastError.code,'WECHAT_CDN_HTTP_503');assert.equal(failed.status.media.lastError.attempt,3);const idle=await run({mode:'alarm',messages:[],storage:failed.status,mediaStorage:failed.mediaStorage});assert.equal(idle.status.lastError,null);assert.deepEqual(idle.status.media.lastError,failed.status.media.lastError);const ok=await run({mode:'alarm',messages:[raw('cdn-recovered')],storage:idle.status,mediaStorage:idle.mediaStorage,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(ok.reply,/已保存/);assert.equal(ok.media.length,5);assert.equal(ok.status.media.lastError,null);assert.equal(ok.originalMatches,true)});
+ await step('media placeholders exist before CDN transfer and become ready with the same ID',async()=>{
+ const r=await run({mode:'alarm',holdMedia:true,messages:[raw('placeholder-early')],encryptedBase64:encrypt(jpeg)});
+ assert.equal(r.error,undefined);
+ const src='synthetic-bot:placeholder-early:image:0';
+ const before=r.status.queuedMedia.find(x=>x.source_message_id===src);
+ const after=r.media.find(x=>x.source_message_id===src);
+ assert.equal(before.upload_state,'processing');assert.equal(after.upload_state,'ready');
+ assert.equal(after.id,before.id);assert.equal(after.size,jpeg.length);
+});
+await step('non-caption measurements are saved before the queued photo finishes',async()=>{
+ const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+ const r=await run({mode:'alarm',holdMedia:true,messages:[raw('placeholder-unrelated')],
+  followupMessages:[textFrom('placeholder-weight','synthetic-user','synthetic-bot','测试宝宝今天体重12.3kg')],
+  responses:[tool('create_growth',{day,weight:12.3}),natural('体重已记录。')],encryptedBase64:encrypt(jpeg)});
+ assert.equal(r.error,undefined);
+ const src='synthetic-bot:placeholder-unrelated:image:0';
+ assert.equal(r.status.textWhileSaving.media.find(x=>x.source_message_id===src).upload_state,'processing');
+ assert.ok(r.growth.some(x=>x.source_message_id?.includes('placeholder-weight')&&x.weight===12.3));
+ assert.equal(r.media.find(x=>x.source_message_id===src).description,'');
+ assert.equal(r.media.find(x=>x.source_message_id===src).upload_state,'ready');
+});
+await step('a caption edits a real pending row and survives eventual file completion',async()=>{
+ const r=await run({mode:'alarm',holdMedia:true,messages:[raw('placeholder-caption')],
+  followupMessages:[textFrom('placeholder-description','synthetic-user','synthetic-bot','把刚刚那张照片描述为第一次去公园')],
+  responses:[tool('update_recent_media',{description:'第一次去公园'}),natural('照片描述已更新。')],encryptedBase64:encrypt(jpeg)});
+ assert.equal(r.error,undefined);
+ const src='synthetic-bot:placeholder-caption:image:0';
+ const before=r.status.textWhileSaving.media.find(x=>x.source_message_id===src);
+ const after=r.media.find(x=>x.source_message_id===src);
+ assert.equal(before.upload_state,'processing');assert.equal(before.description,'第一次去公园');
+ assert.equal(after.upload_state,'ready');assert.equal(after.description,'第一次去公园');
+ assert.equal(before.id,after.id);
+});
+await step('CDN failures retain sanitized diagnostics through idle polling until media succeeds',async()=>{const failed=await run({mode:'alarm',messages:[raw('cdn-failed')],alarms:3,cdnStatus:503});assert.match(failed.reply,/图片或视频下载\/入库多次失败/);assert.equal(failed.media.length,8);assert.equal(failed.media.find(x=>x.source_message_id==='synthetic-bot:cdn-failed:image:0').upload_state,'failed');assert.equal(failed.downloads,3);assert.deepEqual(Object.keys(failed.status.media.lastError).sort(),['at','attempt','code']);assert.equal(failed.status.media.lastError.code,'WECHAT_CDN_HTTP_503');assert.equal(failed.status.media.lastError.attempt,3);const idle=await run({mode:'alarm',messages:[],storage:failed.status,mediaStorage:failed.mediaStorage});assert.equal(idle.status.lastError,null);assert.deepEqual(idle.status.media.lastError,failed.status.media.lastError);const ok=await run({mode:'alarm',messages:[raw('cdn-recovered')],storage:idle.status,mediaStorage:idle.mediaStorage,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(ok.reply,/已保存/);assert.equal(ok.media.length,9);assert.equal(ok.status.media.lastError,null);assert.equal(ok.originalMatches,true)});
  await step('two WeChat accounts have independent cursors, sender filters and pause state',async()=>{
   const payload={mode:'multi',
    messagesA:[textFrom('same-message','synthetic-user','synthetic-bot','你好，你可以做什么'),textFrom('not-authorized','synthetic-user-2','synthetic-bot','你好，你可以做什么')],
@@ -433,7 +466,7 @@ try{
  });
  await step('same-batch text and a later D1 query finish while a CDN stream remains blocked',async()=>{
   const r=await run({mode:'alarm',holdMedia:true,messages:[raw('slow-media'),textFrom('same-batch-help','synthetic-user','synthetic-bot','你好，你可以做什么')],followupMessages:[textFrom('query-while-saving','synthetic-user','synthetic-bot','查询测试宝宝最近五条体重记录')],responses:[natural('你好，我可以帮你管理家庭成长记录。'),tool('list_growth',{limit:5}),natural('查到了，最近的体重是 10.2 公斤。')],encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});
-  assert.equal(r.error,undefined);assert.equal(r.status.textWhileSaving.beforeDownloads,0);assert.ok(r.status.textWhileSaving.elapsedMs<3000);assert.ok(r.status.textWhileSaving.replies.some(x=>/10\.2/.test(x)));assert.ok(r.status.textWhileSaving.replies.some(x=>/正在保存/.test(x)));assert.equal(r.media.length,6);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.status.media.pending,0);
+  assert.equal(r.error,undefined);assert.equal(r.status.textWhileSaving.beforeDownloads,0);assert.ok(r.status.textWhileSaving.elapsedMs<3000);assert.ok(r.status.textWhileSaving.replies.some(x=>/10\.2/.test(x)));assert.ok(r.status.textWhileSaving.replies.some(x=>/正在保存/.test(x)));assert.equal(r.media.length,10);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.status.media.pending,0);
  });
  await step('reset during a slow save suppresses stale caption writes and replies',async()=>{
   const media=raw('reset-in-flight');media.item_list.push({type:1,text_item:{text:'测试宝宝今天记录第一次走路里程碑'}});
