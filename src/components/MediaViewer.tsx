@@ -35,7 +35,8 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
   const [draftId,setDraftId]=useState(item.id);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [imageStatus,setImageStatus]=useState<'loading'|'ready'|'error'>('loading');
+  const [imageStatus,setImageStatus]=useState<{id:string;status:'loading'|'ready'|'error'}>(()=>({id:item.id,status:'loading'}));
+  const currentImageStatus=imageStatus.id===item.id?imageStatus.status:'loading';
   const [requestId,setRequestId]=useState(()=>mediaDraft(item).requestId||crypto.randomUUID());
 
   // Native modal dialog supplies focus trapping, Escape and focus restoration.
@@ -46,7 +47,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
   }, []);
   useEffect(() => {
     const draft=mediaDraft(item);setDay(draft.day||item.day);setDescription(draft.description??item.description??'');setVersion(draft.version??item.updated_at??'');setRequestId(draft.requestId||crypto.randomUUID());setDraftId(item.id);
-    setError('');setImageStatus('loading');
+    setError('');
   }, [item.id]);
   useEffect(()=>{if(draftId!==item.id)return;try{localStorage.setItem('babymemo-draft-media-'+item.id,JSON.stringify({day,description,requestId,version}))}catch{/* The visible form remains usable. */}},[day,description,requestId,version,item.id,draftId]);
 
@@ -106,10 +107,10 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
           {video
             ? <video key={item.id} src={src} controls playsInline preload="metadata" aria-label={'成长视频'} />
             : <>
-              {imageStatus==='loading'&&<span className="media-loading" role="status">照片加载中…</span>}
-              <img key={item.id} src={src} alt="成长照片" draggable={false} onLoad={()=>setImageStatus('ready')} onError={()=>setImageStatus('error')}/>
-              {imageStatus==='error'&&<span className="media-loading" role="alert">照片暂时无法显示，请检查网络后重试</span>}
-              {count>1&&<span className="media-swipe-hint" aria-hidden="true">左右滑动切换</span>}
+              {currentImageStatus==='loading'&&<span className="media-loading" role="status">照片加载中…</span>}
+              <img key={item.id} src={src} alt="成长照片" draggable={false} className={currentImageStatus==='error'?'media-image-error':undefined} onLoad={()=>setImageStatus({id:item.id,status:'ready'})} onError={()=>setImageStatus({id:item.id,status:'error'})}/>
+              {currentImageStatus==='error'&&<span className="media-loading" role="alert">照片暂时无法显示，请检查网络后重试</span>}
+              {currentImageStatus==='ready'&&count>1&&<span className="media-swipe-hint" aria-hidden="true">左右滑动切换</span>}
             </>}
         </div>
         <div className="media-viewer-toolbar">
