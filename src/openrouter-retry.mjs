@@ -1,4 +1,13 @@
 // Pure retry policy: the only retryable operation is LLM *tool selection*.
+export const DEEPSEEK_V41_FLASH='deepseek/deepseek-v4.1-flash';
+// OpenRouter supports a unified reasoning toggle. For DeepSeek V4.1 Flash,
+// disable reasoning by default for faster tool calls; keep all other models unchanged.
+export function openRouterReasoningForModel(model,mode='auto'){
+ if(!['auto','off','low'].includes(mode))throw Error('INVALID_REASONING_MODE');
+ if(mode==='off'||(mode==='auto'&&model===DEEPSEEK_V41_FLASH))return {enabled:false};
+ if(mode==='low')return {enabled:true,effort:'low'};
+ return null;
+}
 // No D1/R2 mutation happens inside this helper.
 export function retryAfterMs(value, now=Date.now()){
  if(!value)return null;
@@ -7,8 +16,9 @@ export function retryAfterMs(value, now=Date.now()){
  const when=Date.parse(value);
  return Number.isFinite(when)?Math.max(0,when-now):null;
 }
-export async function openRouterCompletion({key,model,messages,tools,max_tokens=450,tool_choice='auto',fetchImpl=fetch,sleep=ms=>new Promise(r=>setTimeout(r,ms)),maxAttempts=3,now=Date.now,random=Math.random}){
- const body=JSON.stringify({model,messages,...(tools?{tools,tool_choice}:{}),temperature:0,max_tokens});
+export async function openRouterCompletion({key,model,messages,tools,max_tokens=450,tool_choice='auto',fetchImpl=fetch,sleep=ms=>new Promise(r=>setTimeout(r,ms)),maxAttempts=3,now=Date.now,random=Math.random,reasoningMode='auto'}){
+ const reasoning=openRouterReasoningForModel(model,reasoningMode);
+ const body=JSON.stringify({model,messages,...(tools?{tools,tool_choice}:{}),temperature:0,max_tokens,...(reasoning?{reasoning}:{})});
  const headers={'Content-Type':'application/json',Authorization:'Bearer '+key,
    'HTTP-Referer':'https://github.com/zhajiahe/babymemo','X-Title':'BabyMemo WeChat Operations'};
  let cumulativeWait=0;
