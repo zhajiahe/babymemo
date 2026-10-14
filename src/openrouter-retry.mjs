@@ -2,9 +2,11 @@
 import {DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55} from './openrouter-model.mjs';
 export {DEEPSEEK_V41_FLASH};
 
-// DeepSeek is deliberately pinned to Relace, not silently served by another host.
-export function openRouterProviderForModel(model){
- return model===DEEPSEEK_V41_FLASH?{only:['relace'],allow_fallbacks:false}:null;
+// Prefer Relace for every OpenRouter model, but let OpenRouter select another
+// provider when Relace cannot serve this exact model/request. Do not use `only`:
+// that would prevent automatic provider fallback.
+export function openRouterProviderForModel(_model){
+ return {order:['relace'],allow_fallbacks:true};
 }
 export function openRouterReasoningForModel(model,mode='auto'){
  if(!['auto','off','low'].includes(mode))throw Error('INVALID_REASONING_MODE');

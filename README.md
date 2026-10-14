@@ -108,7 +108,7 @@ npm run test:e2e
 
 实测场景、消耗和上线限制详见 [Qwen3.8 模型测试报告](docs/workers-ai-qwen38-evaluation.md)。
 
-**OpenRouter 的默认模型**已从 Muse 调整为 **`deepseek/deepseek-v4.1-flash`（Relace，关闭思考）**，仅影响没有保存过 OpenRouter 模型偏好的实例；已明确保存的模型选择不会被覆盖。Workers AI Qwen 仍是未选择提供方时的默认服务，使用 OpenRouter 需要在网页设置中切换提供方。可选的 OpenRouter 模型包括原有 Muse、`deepseek/deepseek-v4.1-flash`（固定 Relace）、`openai/gpt-6-luna` 和 `anthropic/claude-haiku-5.5`。前三个新候选默认优先**关闭思考**，如果服务商明确不支持关闭思考，则用一次兼容性重试降到最低思考档（GPT-6 Luna `minimal`，Haiku 5.5 `low`）。可以在网站「设置 → 微信 AI 模型 → 切换模型或配置 OpenRouter」直接选择建议模型 ID，也可以手工填写其他 OpenRouter 模型。相关参数及同题测试说明见 [模型 Benchmark 文档](docs/ai-model-benchmark-and-quotas.md)。以上模型需 OpenRouter Key，**不改变默认 Workers AI Qwen**；真实模型调用可能产生费用。
+**OpenRouter 的默认模型**已从 Muse 调整为 **`deepseek/deepseek-v4.1-flash`（优先 Relace，允许服务商回退；关闭思考）**，仅影响没有保存过 OpenRouter 模型偏好的实例；已明确保存的模型选择不会被覆盖。Workers AI Qwen 仍是未选择提供方时的默认服务，使用 OpenRouter 需要在网页设置中切换提供方。可选的 OpenRouter 模型包括原有 Muse、`deepseek/deepseek-v4.1-flash`（优先 Relace，可回退）、`openai/gpt-6-luna` 和 `anthropic/claude-haiku-5.5`。前三个新候选默认优先**关闭思考**，如果服务商明确不支持关闭思考，则用一次兼容性重试降到最低思考档（GPT-6 Luna `minimal`，Haiku 5.5 `low`）。可以在网站「设置 → 微信 AI 模型 → 切换模型或配置 OpenRouter」直接选择建议模型 ID，也可以手工填写其他 OpenRouter 模型。**所有 OpenRouter 模型（包括自定义模型）统一优先 Relace，Relace 无法服务时可以回退至其他提供同一模型的服务商，不会替换模型 ID。** 相关参数及同题测试说明见 [模型 Benchmark 文档](docs/ai-model-benchmark-and-quotas.md)。以上模型需 OpenRouter Key，**不改变默认 Workers AI Qwen**；真实模型调用可能产生费用。
 
 若要验证真实 OpenRouter **自动工具调用冒烟测试**（与 Harness Live 采用同样的 `tool_choice: auto` 请求方式，检验只读工具路由），前往 **GitHub Actions → Manual OpenRouter Live E2E → Run workflow**，选中 `main` 后主动运行。该测试只发送合成宝宝的只读查询、不读写真实 D1/R2、不会运行真实微信，也**不会由 PR、push、定时任务或自动部署触发**。需事先配置 GitHub Secret `OPENROUTER_API_KEY`，可能产生少量模型费用。
 
