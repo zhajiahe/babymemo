@@ -66,13 +66,15 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   await nav('相册');await page.locator('.photo-preview').first().click();
   let dialog=page.getByRole('dialog',{name:'相册预览'});await dialog.waitFor();
   const mediaId=await dialog.locator('.media-viewer-stage img, .media-viewer-stage video').getAttribute('src').then(src=>src.split('/')[3]);
+  await dialog.getByRole('button',{name:/^(写下故事|编辑故事)$/}).click();
   await dialog.getByLabel('拍摄日期',{exact:true}).fill('2023-07-07');await dialog.getByRole('button',{name:'关闭预览',exact:true}).click();
-  await page.reload();await page.locator('.photo-preview').first().click();dialog=page.getByRole('dialog',{name:'相册预览'});await dialog.waitFor();assert.equal(await dialog.getByLabel('拍摄日期',{exact:true}).inputValue(),'2023-07-07');
+  await page.reload();await page.locator('.photo-preview').first().click();dialog=page.getByRole('dialog',{name:'相册预览'});await dialog.waitFor();await dialog.getByRole('button',{name:/^(写下故事|编辑故事)$/}).click();assert.equal(await dialog.getByLabel('拍摄日期',{exact:true}).inputValue(),'2023-07-07');
   const detail=await context.request.get(base+'/api/media/'+mediaId,{headers:requestHeaders});const previous=await detail.json();
   const external=await context.request.patch(base+'/api/media/'+mediaId,{headers:requestHeaders,data:{babyId,day:'2023-07-09',expectedUpdatedAt:previous.updated_at}});assert.equal(external.status(),200);
   await dialog.getByRole('button',{name:'保存信息',exact:true}).click();await dialog.getByText('记录已被其他设备修改。请重新载入后核对并编辑。',{exact:true}).waitFor();
   assert.equal(await dialog.getByLabel('拍摄日期',{exact:true}).inputValue(),'2023-07-07');page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'核对服务器版本（保留草稿）',exact:true}).click();await dialog.getByRole('button',{name:'核对服务器版本（保留草稿）',exact:true}).waitFor({state:'hidden'});
   await dialog.getByRole('button',{name:'保存信息',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.media-viewer-header strong')?.textContent==='2023-07-07');
+  await dialog.getByRole('button',{name:/^(写下故事|编辑故事)$/}).click();
   await dialog.getByLabel('拍摄日期',{exact:true}).fill('2023-07-08');await dialog.getByRole('button',{name:'保存信息',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.media-viewer-header strong')?.textContent==='2023-07-08');await dialog.getByRole('button',{name:'关闭预览',exact:true}).click();
  });
  await step('Chromium: offline original upload survives reload and logout clears private device data',async()=>{

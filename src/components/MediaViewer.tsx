@@ -37,6 +37,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
   const [version,setVersion]=useState(()=>mediaDraft(item).version??item.updated_at??'');
   const [draftId,setDraftId]=useState(item.id);
   const [saving, setSaving] = useState(false);
+   const [editing,setEditing]=useState(false);
   const [coverSaving,setCoverSaving]=useState(false);
   const [coverMessage,setCoverMessage]=useState('');
   const [error, setError] = useState('');
@@ -52,9 +53,9 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
   }, []);
   useEffect(() => {
     const draft=mediaDraft(item);setDay(draft.day||item.day);setDescription(draft.description??item.description??'');setVersion(draft.version??item.updated_at??'');setRequestId(draft.requestId||crypto.randomUUID());setDraftId(item.id);
-    setError('');setCoverMessage('');
+    setError('');setCoverMessage('');setEditing(false);
   }, [item.id]);
-  useEffect(()=>{if(draftId!==item.id)return;try{localStorage.setItem('babymemo-draft-media-'+item.id,JSON.stringify({day,description,requestId,version}))}catch{/* The visible form remains usable. */}},[day,description,requestId,version,item.id,draftId]);
+  useEffect(()=>{if(!editing||draftId!==item.id)return;try{localStorage.setItem('babymemo-draft-media-'+item.id,JSON.stringify({day,description,requestId,version}))}catch{/* The visible form remains usable. */}},[day,description,requestId,version,item.id,draftId,editing]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -63,7 +64,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
     setError('');
     try {
       const result=await onSave({day,description,requestId,expectedUpdatedAt:version});setVersion(result.queued?'pending:'+result.id:result.updated_at??version);
-      localStorage.removeItem('babymemo-draft-media-'+item.id);setRequestId(crypto.randomUUID());
+      localStorage.removeItem('babymemo-draft-media-'+item.id);setRequestId(crypto.randomUUID());setEditing(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存失败，请重试');
     } finally {
@@ -134,7 +135,19 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
               {currentImageStatus==='ready'&&count>1&&<span className="media-swipe-hint" aria-hidden="true">左右滑动切换</span>}
             </>}
         </div>
-        <div className="media-viewer-toolbar">
+        <section className="media-story-panel" aria-label="照片背后的故事">
+           <div className="media-story-head">
+             <div><span className="media-story-kicker">这天的故事</span><time dateTime={item.day}>{item.day}</time></div>
+             <button type="button" className="secondary media-story-edit-button" disabled={saving} aria-expanded={editing} aria-controls="media-story-edit" onClick={()=>setEditing(value=>!value)}>
+               {editing?'收起编辑':item.description?.trim()?'编辑故事':'写下故事'}
+             </button>
+           </div>
+           {item.description?.trim()
+             ?<p className="media-story-body">{item.description.trim()}</p>
+             :<p className="media-story-placeholder">这张{video?'视频':'照片'}还没有写下故事。回忆起当时的场景，就从这里记下来。</p>}
+           {item.pending&&<span className="media-story-sync">本机修改待同步</span>}
+         </section>
+         <div className="media-viewer-toolbar">
           <div className="media-viewer-arrows">
             <button type="button" className="secondary" disabled={index <= 0 || saving} onClick={() => onNavigate(-1)}><ChevronLeft size={16} /> 上一项</button>
             <button type="button" className="secondary" disabled={index >= count - 1 || saving} onClick={() => onNavigate(1)}>下一项 <ChevronRight size={16} /></button>
@@ -158,7 +171,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
             <span className="muted" role="status" aria-live="polite">{coverMessage}</span>
           </div>}
         </div>
-        <form className="media-viewer-edit" onSubmit={event => void save(event)}>
+        <form className="media-viewer-edit" id="media-story-edit" hidden={!editing} onSubmit={event => void save(event)}>
           <label className="field"><span>拍摄日期</span><input type="date" value={day} onChange={event => setDay(event.target.value)} required /></label>
           <label className="field"><span>照片或视频描述</span><textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={1000} rows={3} placeholder="写下这段回忆…" /></label>
           <button type="submit" className="primary" disabled={saving}><Save size={16} />{saving ? '保存中…' : '保存信息'}</button>

@@ -16,8 +16,8 @@ test('home is a real-media journal, without marketing dashboard ornaments',()=>{
  assert.match(css,/\.welcome,\.stats \{ display:none!important/);
 });
 
-test('album is a compact photo grid with actions in the native details dialog',()=>{
- assert.match(album,/className="photo-grid"/);
+test('album leads with readable stories while keeping a compact photo grid',()=>{
+ assert.match(album,/className={albumView==='stories'\?'photo-stories':'photo-grid'}/);
  assert.doesNotMatch(album,/className="photo-caption"/);
  assert.doesNotMatch(album,/onFavorite=|favoriteOnly|仅看收藏/);
  assert.match(album,/onDelete=/);

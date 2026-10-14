@@ -7,7 +7,7 @@ import {createAlbumThumbnail,createVideoThumbnail,fingerprintFile} from '../../m
 import {pickMatchingUpload,remainingPartNumbers} from '../../upload-plan.mjs';
 import {mapBounded,transferConcurrency,canDirectUpload} from '../../media-transfer.mjs';
 import {bestEffortFileDay} from '../../media-date.mjs';
-import {CloudUpload,Camera,Trash2,Plus,Play} from 'lucide-react';
+import {CloudUpload,Camera,Trash2,Plus,Play,BookOpenText,Images} from 'lucide-react';
 import {api,post,today,ApiFailure,type BabyInfo} from '../../lib/client';
 
 export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPage,filters,onFilters}:{baby:BabyInfo;media:MediaItem[];mediaEdited:(id:string,value:Partial<MediaItem>)=>void;changed:()=>void;notify:(v:string)=>void;hasMore:boolean;page:number;setPage:(v:number)=>void;filters:RecordFilters;onFilters:(value:RecordFilters)=>void}){
@@ -17,6 +17,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  const [uploadDay,setUploadDay]=useState(today(baby.time_zone)),[autoDate,setAutoDate]=useState(true);
  const [uploadDescription,setUploadDescription]=useState('');
  const [selected,setSelected]=useState<MediaItem|null>(null);
+ const [albumView,setAlbumView]=useState<'stories'|'grid'>('stories');
  useEffect(()=>{setSelected(null)},[baby.id]);
  type PendingUpload={id:string;day:string;title:string;description:string;mime:string;size:number;fingerprint:string;completedParts:number[];created_at:string};
  const [pending,setPending]=useState<PendingUpload[]>([]);
@@ -213,6 +214,10 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
   <div className="album-toolbar-actions">
    <button type="button" className="primary album-add-btn" aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(v=>!v)}><Plus size={17}/>{showUploader?'收起上传':'添加照片或视频'}</button></div>
  </div>
+ <div className="album-view-switch" role="group" aria-label="相册浏览方式">
+  <button type="button" aria-pressed={albumView==='stories'} onClick={()=>setAlbumView('stories')}><BookOpenText size={17} aria-hidden="true"/>故事</button>
+  <button type="button" aria-pressed={albumView==='grid'} onClick={()=>setAlbumView('grid')}><Images size={17} aria-hidden="true"/>照片墙</button>
+ </div>
  {showUploader&&<Card className="upload-card"><div id="album-upload-panel" className="album-upload-panel"><CloudUpload size={30}/><h3>上传照片或视频</h3><p className="muted">可一次选择多张照片或视频。网络中断后重新选择原文件即可续传。</p>
   <div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用拍摄日期</label><label>默认日期 <input type="date" value={uploadDay} max={today(baby.time_zone)} onChange={e=>setUploadDay(e.target.value)}/></label></div>
   <p className="muted small">照片自带拍摄日期时会按原日期归档；缺少日期时使用默认日期。关闭自动日期即可手动指定。</p>
@@ -220,12 +225,22 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
   <label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>
   {progress&&<p className="small" role="status">{progress}</p>}</div></Card>}
  {media.length?Array.from(new Set(media.map(item=>item.day.slice(0,7)))).map(month=>
-  <section className="photo-month" key={month}><h3>{month.replace('-', ' 年 ')} 月</h3><div className="photo-grid">{media.filter(item=>item.day.startsWith(month)).map(item=>
-   <div key={item.id} className="photo-item"><button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+item.day+' 的'+(item.mime.startsWith('video/')?'视频':'照片')}>
-    <span className="photo-frame">{item.mime.startsWith('image/')||item.thumbnail_ready?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt=""/>:<span className="video-placeholder" aria-hidden="true"><Camera size={26}/><span>视频</span></span>}{item.mime.startsWith('video/')&&<span className="video-play-badge" aria-hidden="true"><Play size={18} fill="currentColor"/></span>}</span>
-    <span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span></button>
-    {item.description&&<p className="photo-description" title={item.description}>{item.description}</p>}
-   </div>)}</div></section>
+  <section className={albumView==='stories'?'photo-month photo-month-stories':'photo-month'} key={month}>
+   <h3>{month.replace('-', ' 年 ')} 月</h3>
+   <div className={albumView==='stories'?'photo-stories':'photo-grid'}>{media.filter(item=>item.day.startsWith(month)).map(item=>
+    <article key={item.id} className={albumView==='stories'?'photo-story':'photo-item'}>
+     <button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+item.day+' 的'+(item.mime.startsWith('video/')?'视频':'照片')}>
+      <span className="photo-frame">{item.mime.startsWith('image/')||item.thumbnail_ready?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt=""/>:<span className="video-placeholder" aria-hidden="true"><Camera size={26}/><span>视频</span></span>}{item.mime.startsWith('video/')&&<span className="video-play-badge" aria-hidden="true"><Play size={18} fill="currentColor"/></span>}</span>
+      <span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span>
+     </button>
+     {albumView==='stories'&&<div className="photo-story-copy">
+      <time dateTime={item.day}>{item.day.slice(5).replace('-', ' 月 ')} 日</time>
+      {item.description?.trim()
+       ?<p className="photo-story-text">{item.description.trim()}</p>
+       :<button type="button" className="photo-story-empty" onClick={()=>setSelected(item)}>这一天，还没有写下故事。<span>补记这一刻 →</span></button>}
+     </div>}
+    </article>)}</div>
+  </section>
  ):<div className="empty card"><p>还没有照片，上传第一张成长回忆吧。</p><button type="button" className="primary" onClick={()=>setShowUploader(true)}><Plus size={16}/> 添加照片或视频</button></div>}
  <Pager page={page} setPage={setPage} hasMore={hasMore}/>
  {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">中断后重新选择原文件，可以继续上传已经保存的分片。</p>
