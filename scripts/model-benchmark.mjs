@@ -85,11 +85,13 @@ async function request(provider,messages,tools,maxTokens=1200,meta={}){
  }};
 }
 async function evaluate(modelProvider,item,iteration){
- const calls=[],issues=[],usage={inputTokens:0,outputTokens:0,neurons:modelProvider==='workers-ai'?0:null,reportedUSD:modelProvider==='openrouter'?0:null};
+ const calls=[],issues=[],usage={inputTokens:0,outputTokens:0,neurons:modelProvider==='workers-ai'?0:null,reportedUSD:modelProvider==='openrouter'?0:null,reasoningTokens:0};
+ const caseContext={provider:modelProvider,model:modelProvider==='workers-ai'?DEFAULT_QWEN_MODEL:openRouterModel,caseId:item.id,iteration};
+ log('scenario_start',{...caseContext,reasoningRequested:modelProvider==='workers-ai'?'off':effectiveReasoning});
  const started=Date.now();let modelRequests=0,reply='',error=null,modelFinal='';
  const complete=async({messages,tools},maxTokens=1200)=>{
-  const result=await request(modelProvider,messages,tools,maxTokens);modelRequests++;
-  for(const key of ['inputTokens','outputTokens','neurons','reportedUSD']){
+  const result=await request(modelProvider,messages,tools,maxTokens,{caseId:item.id,iteration,request:modelRequests+1});modelRequests++;
+  for(const key of ['inputTokens','outputTokens','neurons','reportedUSD','reasoningTokens']){
    if(usage[key]===null||result.usage[key]===null){usage[key]=null;continue}
    usage[key]+=result.usage[key];
   }
@@ -107,47 +109,62 @@ async function evaluate(modelProvider,item,iteration){
    execute:async call=>{
     const checked=validateBenchmarkTool(item,call,wechatTools,calls);
     calls.push({name:checked.name,args:checked.args});
+    log('tool_call',{...caseContext,toolNames:[checked.name],arguments:JSON.stringify(checked.args),status:checked.issue?'REJECTED_'+checked.issue:'SYNTHETIC_OBSERVATION'});
     if(checked.issue){issues.push(checked.issue);return {content:'测试工具调用被拒绝，未执行真实写入。',committed:false,halt:true}}
     return {content:syntheticObservation(checked.name),committed:/^(create_|update_|delete_|restore_)/.test(checked.name)};
    }
   });
  }catch(e){error=e instanceof Error?e.message:'UNKNOWN_ERROR'}
  const score=scoreModelCase(item,{calls,issues,reply,error});
+ if(modelProvider==='openrouter'&&effectiveReasoning==='off'&&Number(usage.reasoningTokens)>0)score.issues.push('REASONING_TOKENS_NONZERO');
  if(item.id!=='negated-save'&&calls.length&&(!modelFinal||modelFinal.trim()===''))score.issues.push('NO_NATURAL_MODEL_FINAL');
  score.passed=score.issues.length===0;
- return {caseId:item.id,name:item.name,iteration,passed:score.passed,issues:score.issues,
-  tools:calls.map(x=>x.name),modelRequests,latencyMs:Date.now()-started,usage,
-  finalReplyPresent:!!modelFinal?.trim(),errorCode:error?String(error).replace(/[^A-Z0-9_]/gi,'').slice(0,42):null};
+ const errorCode=error?String(error).replace(/[^A-Z0-9_]/gi,'').slice(0,42):null;
+ const taskResult={caseId:item.id,name:item.name,iteration,passed:score.passed,issues:score.issues,
+  tools:calls.map(x=>x.name),toolCalls:calls.map(x=>({name:x.name,args:x.args})),modelRequests,
+  latencyMs:Date.now()-started,usage,finalReplyPresent:!!modelFinal?.trim(),
+  finalReplyPreview:safeBenchPreview(modelFinal||reply,320),errorCode};
+ log('scenario_complete',{...caseContext,passed:taskResult.passed,modelRequests,latencyMs:taskResult.latencyMs,
+  toolNames:taskResult.tools,usage,issues:taskResult.issues,answer:taskResult.finalReplyPreview,
+  ...(errorCode?{status:benchmarkFailureKind(errorCode)}:{})});
+ return taskResult;
 }
-const models=[];
+const models=[];let blocked=false;
 for(const id of selected){
+ if(blocked)break;
  const tasks=[];
  for(let repeat=0;repeat<repetitions;repeat++){
   for(const item of MODEL_BENCH_CASES){
    const result=await evaluate(id,item,repeat+1);tasks.push(result);
+   if(result.errorCode&&isFatalBenchmarkError(result.errorCode)){
+    blocked=true;
+    console.error(diagnosticEvent('benchmark_blocked',{provider:id,caseId:item.id,category:benchmarkFailureKind(result.errorCode),
+     status:'Stopped remaining scenarios and models; fix access before paid comparison.'}));
+    break;
+   }
    if(result.errorCode&&/BUDGET|REQUEST_LIMIT/.test(result.errorCode))break;
   }
-  if(tasks.some(x=>x.errorCode&&/BUDGET|REQUEST_LIMIT/.test(x.errorCode)))break;
+  if(blocked||tasks.some(x=>x.errorCode&&/BUDGET|REQUEST_LIMIT/.test(x.errorCode)))break;
  }
  const model=id==='workers-ai'?DEFAULT_QWEN_MODEL:openRouterModel;
- models.push({provider:id,model,summary:aggregateBenchmark(tasks),results:tasks});
+ const fatal=tasks.find(x=>x.errorCode&&isFatalBenchmarkError(x.errorCode));
+ models.push({provider:id,model,reasoningRequested:id==='workers-ai'?'off':effectiveReasoning,
+  status:fatal?'BLOCKED_'+benchmarkFailureKind(fatal.errorCode):'COMPLETED',
+  summary:aggregateBenchmark(tasks),results:tasks});
 }
 const report={benchmark:'babymemo-model-parity-v1',timestamp:new Date().toISOString(),
  setup:{tasksPerModel:MODEL_BENCH_CASES.length,repetitions,identicalPromptsSchemasObservationsScoring:true,
   providerProductionTemperatures:{'workers-ai':1,'openrouter':0},
+  requestedReasoning:{'workers-ai':'off',openrouter:effectiveReasoning},
   sideEffects:'synthetic only; productionWrites=0',softLimits:{neurons:maxNeurons,usd:maxUSD}},
  results:models};
 const output=JSON.stringify(report,null,2);
 console.log(output);
 if(process.env.MODEL_BENCH_REPORT_FILE)await writeFile(process.env.MODEL_BENCH_REPORT_FILE,output+'\n','utf8');
-if(process.env.GITHUB_STEP_SUMMARY){
- const s=['## BabyMemo 模型同题 Benchmark','','- 全部数据为虚构测试数据；**未修改生产家庭记录**','- 相同的 10 道题、工具 Schema、系统提示词、工具结果和评分规则','- 温度沿用现有生产配置（Qwen 1、Muse 0），不代表仅比较模型权重','',
- '|模型|完成任务|总任务数|调用模型次数|输入 tokens|输出 tokens|Neurons|OpenRouter 实际报告 USD|',
- '|---|---:|---:|---:|---:|---:|---:|---:|'];
- for(const x of models){const u=x.summary.usage;s.push('|'+x.model+'|'+x.summary.passed+'|'+x.summary.cases+'|'+x.summary.modelRequests+'|'+(u.inputTokens??'未报告')+'|'+(u.outputTokens??'未报告')+'|'+(u.neurons??'不适用/未报告')+'|'+(u.reportedUSD??'未报告')+'|')}
- s.push('','详细的每场景报告保存在 workflow artifact（人工触发，不由 CI 自动计费）。');
- await writeFile(process.env.GITHUB_STEP_SUMMARY,s.join('\n')+'\n',{flag:'a'});
-}
+if(process.env.GITHUB_STEP_SUMMARY)
+ await writeFile(process.env.GITHUB_STEP_SUMMARY,benchmarkMarkdownReport(models,{repetitions}),{flag:'a'});
+console.log(diagnosticEvent('benchmark_finish',{status:blocked?'BLOCKED':'COMPLETED',modelRequests:spent.requests,neurons:spent.neurons,reportedUSD:spent.usd}));
+
 // A scored miss is a benchmark result, not a CI failure; security/credential
 // errors and unexpected fatal errors still fail the workflow.
-if(models.some(x=>x.results.some(r=>r.errorCode&&/BUDGET|HTTP|CREDENTIAL|REQUEST_LIMIT/.test(r.errorCode))))process.exitCode=2;
+if(blocked||models.some(x=>x.results.some(r=>r.errorCode&&/BUDGET|HTTP|CREDENTIAL|REQUEST_LIMIT/.test(r.errorCode))))process.exitCode=2;
