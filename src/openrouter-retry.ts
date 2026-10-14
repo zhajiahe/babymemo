@@ -2,9 +2,9 @@
 import {DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55} from './openrouter-model.mjs';
 export {DEEPSEEK_V41_FLASH};
 
-// DeepSeek is deliberately pinned to Relace, not silently served by another host.
-export function openRouterProviderForModel(model:string){
- return model===DEEPSEEK_V41_FLASH?{only:['relace'],allow_fallbacks:false}:null;
+// Prefer Relace with automatic provider fallback for every OpenRouter model.
+export function openRouterProviderForModel(_model:string){
+ return {order:['relace'],allow_fallbacks:true};
 }
 export function openRouterReasoningForModel(model:string,mode:'auto'|'off'|'low'='auto'){
  if(!['auto','off','low'].includes(mode))throw Error('INVALID_REASONING_MODE');
@@ -70,7 +70,7 @@ export async function openRouterCompletion({key,model,messages,tools,max_tokens=
    let errorResponse;
    try{errorResponse=await response.json()}catch{}
    if(reasoning?.enabled===false&&!usedReasoningFallback&&
-      ([DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55] as string[]).includes(model)&&isDisableReasoningRejected(errorResponse)){
+      (reasoningMode==='off'||([DEEPSEEK_V41_FLASH,GPT_6_LUNA,CLAUDE_HAIKU_55] as string[]).includes(model))&&isDisableReasoningRejected(errorResponse)){
     reasoning=fallbackReasoning;
     usedReasoningFallback=true;
     attempt--; // one guarded compatibility retry, even if maxAttempts=1
