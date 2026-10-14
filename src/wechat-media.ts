@@ -93,12 +93,12 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   }
   const indexStartedAt=performance.now();
   if(existing){
-   // Only the untouched placeholder date may be replaced by the EXIF day.
+   // Apply EXIF when the provisional reception date is unchanged; description-only edits must not block EXIF.
    // Descriptions, titles and dates edited during the transfer are preserved.
    const updated=await env.DB.prepare(
-    "UPDATE media SET mime=?,size=?,thumbnail_ready=?,day=CASE WHEN updated_at='' THEN ? ELSE day END,upload_state='ready' "+
+    "UPDATE media SET mime=?,size=?,thumbnail_ready=?,day=CASE WHEN day=? THEN ? ELSE day END,upload_state='ready' "+
     "WHERE id=? AND baby_id=? AND source_message_id=? AND upload_state='processing' AND deleted_at IS NULL AND purge_token IS NULL"
-   ).bind(mime,size,thumbReady,day,id,baby.id,sourceId).run();
+   ).bind(mime,size,thumbReady,localDay(raw,baby),day,id,baby.id,sourceId).run();
    if(!updated.meta.changes)throw Error('WECHAT_MEDIA_INDEX_FAILED');
   }else{
    await env.DB.prepare("INSERT OR IGNORE INTO media(id,baby_id,day,title,description,object_key,mime,size,created_at,thumbnail_ready,source_message_id,upload_state) VALUES(?,?,?,?,?,?,?,?,?,?,?,'ready')")
