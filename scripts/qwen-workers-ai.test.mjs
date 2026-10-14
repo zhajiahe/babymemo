@@ -16,7 +16,7 @@ test('Workers AI output interoperates with BabyMemo ReAct and journaling',async(
  const actual=[],requests=[];
  const ai={run:async(model,input)=>{
   assert.equal(model,DEFAULT_QWEN_MODEL);
-  requests.push(input);
+  requests.push(structuredClone(input));
   return requests.length===1?{choices:[{message:{role:'assistant',content:null,tool_calls:[{id:'test-tool',type:'function',function:{name:'list_growth',arguments:'{"limit":5}'}}]}}]}:
    {choices:[{message:{role:'assistant',content:'查询到最近体重 10.5kg，已为你整理好。',tool_calls:[]}}]};
  }};
