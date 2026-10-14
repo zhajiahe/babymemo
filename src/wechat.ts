@@ -384,6 +384,7 @@ export class WechatSession {
           }
          }
         }
+        if(published)await this.ctx.storage.delete('mediaResult');
         const version=(await this.ctx.storage.get<number>('conversationVersion')||0)+1;
         const clear=!hasMedia&&isClearContext(text);
         let reply=row?.reply_text?await decryptSecret(this.env,row.reply_text):'';
