@@ -108,20 +108,12 @@ npm run test:e2e
 
 许可证见 [LICENSE](LICENSE)。
 
-## 默认 Workers AI Qwen3.8 与可选 OpenRouter
+## AI 与深度测试
 
-新版本默认使用 Cloudflare-hosted [`@cf/qwen/qwen3.8-27b`](https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/)，`chat_template_kwargs.enable_thinking=false` 关闭思考，`reasoning_effort=low`，并直接复用内部微信 ReAct 工具，不依赖新 MCP 服务或 OpenRouter Key。可在「设置 → AI 模型配置」切回 OpenRouter；先前保存的 OpenRouter 模型 ID 和加密 Key 不删除。没有保存 `ai_provider` 偏好的旧实例也会使用新的 Qwen 默认提供方，切换前应关注每日 Neurons 额度和 DO 消耗。
+微信操作默认使用 Workers AI Qwen3.8，OpenRouter 为可选提供方。模型选择、费用、降级策略和测试数据参见 [模型评估](docs/ai-model-benchmark-and-quotas.md)、[Qwen 测试](docs/workers-ai-qwen38-evaluation.md)。
 
-实测场景、消耗和上线限制详见 [Qwen3.8 模型测试报告](docs/workers-ai-qwen38-evaluation.md)。
+真实模型测试和深度微信 Harness E2E 仅允许**手动触发**，不属于普通 CI 自动部署流程；不得上传生产家庭数据。步骤见 [Harness 测试方案](docs/wechat-harness-test-plan.md) 和 [回归矩阵](docs/qa-regression-matrix.md)。
 
-**OpenRouter 的默认模型**已从 Muse 调整为 **`deepseek/deepseek-v4.1-flash`（Relace，关闭思考）**，仅影响没有保存过 OpenRouter 模型偏好的实例；已明确保存的模型选择不会被覆盖。Workers AI Qwen 仍是未选择提供方时的默认服务，使用 OpenRouter 需要在网页设置中切换提供方。可选的 OpenRouter 模型包括原有 Muse、`deepseek/deepseek-v4.1-flash`（固定 Relace）、`openai/gpt-6-luna` 和 `anthropic/claude-haiku-5.5`。前三个新候选默认优先**关闭思考**，如果服务商明确不支持关闭思考，则用一次兼容性重试降到最低思考档（GPT-6 Luna `minimal`，Haiku 5.5 `low`）。可以在网站「设置 → 微信 AI 模型 → 切换模型或配置 OpenRouter」直接选择建议模型 ID，也可以手工填写其他 OpenRouter 模型。相关参数及同题测试说明见 [模型 Benchmark 文档](docs/ai-model-benchmark-and-quotas.md)。以上模型需 OpenRouter Key，**不改变默认 Workers AI Qwen**；真实模型调用可能产生费用。
+## 代码质量
 
-若要验证真实 OpenRouter **自动工具调用冒烟测试**（与 Harness Live 采用同样的 `tool_choice: auto` 请求方式，检验只读工具路由），前往 **GitHub Actions → Manual OpenRouter Live E2E → Run workflow**，选中 `main` 后主动运行。该测试只发送合成宝宝的只读查询、不读写真实 D1/R2、不会运行真实微信，也**不会由 PR、push、定时任务或自动部署触发**。需事先配置 GitHub Secret `OPENROUTER_API_KEY`，可能产生少量模型费用。
-
-也可在安全的本地终端提供 OpenRouter Key，设置 `OPENROUTER_E2E_CONFIRM=YES` 后执行 `npm run test:openrouter:live`。该开关缺失时脚本直接拒绝执行。Contributor 模型的提示词和输出可能用于改进 Meta 产品，真实家庭隐私请谨慎处理。
-
-## 微信 Harness 深度测试（手动触发）
-
-普通 PR / main CI 仅运行本地模拟的快速测试。耗时的合成场景回归和真实 OpenRouter 调用**不自动执行**，需前往 GitHub Actions → **Manual Harness Deep E2E** 主动选择 `offline` 或 `live`。`offline` 默认运行 240 组离线场景；`live` 单独选择付费请求数（**默认 5 次，最多 60 次**）和模型。`live` 会调用可能计费的外部模型，需配置 GitHub Secret `OPENROUTER_API_KEY`；测试仅发送合成文本，不访问生产 D1/R2 或微信。也可在本地使用 `npm run test:harness:deep`，真实模型需主动设置 `OPENROUTER_E2E_CONFIRM=YES`、`HARNESS_LIVE_CONFIRM=YES` 后执行 `npm run test:harness:live`。
-
-详情见 [Harness 实施与限制](docs/wechat-harness-implementation.md)、[场景审查](docs/wechat-harness-review.md)和[自动化测试方案](docs/wechat-harness-test-plan.md)。
+`npm run check` 使用 TypeScript 严格模式校验源码，`npm run verify` 还包括单元测试与构建。核心媒体上传辅助逻辑采用 .ts 实现，少量同名 .mjs 文件仅为 Node 测试兼容入口。类型模块覆盖回归由 `scripts/ts-coverage.test.mjs` 检查；它是**模块比例**，不等同于运行时测试覆盖率。
