@@ -1,42 +1,41 @@
 name: Manual Harness Deep E2E
 
-# No push, pull_request, deployment, or cron trigger: real LLM tests consume
-# Workers AI Neurons and/or OpenRouter credits, so require a human dispatch.
+# Manual only: live inference consumes OpenRouter USD / Workers AI Neurons.
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "offline (no inference) or live (real model calls)"
+        description: "offline (no inference) or live (billable model benchmark)"
         type: choice
         options: [offline, live]
         default: offline
       offline_cases:
-        description: "Deterministic offline combinations (only used in offline mode)"
+        description: "Deterministic offline combinations"
         type: choice
         options: ["240", "1200", "3000"]
         default: "240"
       provider:
-        description: "Live benchmark provider; both uses identical ten-case corpus"
+        description: "Benchmark Workers AI, OpenRouter, or both"
         type: choice
         options: [both, workers-ai, openrouter]
         default: both
       repetitions:
-        description: "Repeat every one of the ten live scenarios this many times"
+        description: "Repeat all 30 synthetic scenarios per model"
         type: choice
         options: ["1", "3"]
         default: "1"
       max_neurons:
-        description: "Soft budget for total Workers AI Neurons in this run"
+        description: "Workers AI Neurons soft limit per Workers AI job"
         type: choice
         options: ["1000", "3000", "6000"]
-        default: "3000"
+        default: "6000"
       max_usd:
-        description: "Soft budget for reported OpenRouter USD in this run"
+        description: "OpenRouter USD reported-cost soft limit PER model"
         type: choice
         options: ["0.05", "0.10", "0.50"]
         default: "0.10"
       model_preset:
-        description: "OpenRouter model preset for the ten synthetic scenarios"
+        description: "Single OpenRouter preset if model_ids is blank"
         type: choice
         options:
           - deepseek/deepseek-v4.1-flash
@@ -44,17 +43,12 @@ on:
           - openai/gpt-6-luna
           - anthropic/claude-haiku-5.5
         default: deepseek/deepseek-v4.1-flash
-      model_id:
-        description: "Optional custom OpenRouter model ID (overrides model_preset when nonempty)"
+      model_ids:
+        description: "Optional comma/space/newline-separated OpenRouter model IDs (1-6); overrides preset"
         type: string
         default: ""
-      reasoning_mode:
-        description: "OpenRouter reasoning: auto disables thinking for DeepSeek/GPT-6 Luna/Haiku 5.5, with lowest supported fallback"
-        type: choice
-        options: [auto, off, low]
-        default: auto
       confirm_live:
-        description: "I explicitly approve real AI requests that may consume Neurons or credits"
+        description: "I explicitly approve real model calls consuming credits / Neurons"
         type: boolean
         default: false
 
@@ -82,14 +76,36 @@ jobs:
         env:
           HARNESS_CASES: ${{ inputs.offline_cases }}
         run: npm run test:harness:deep
-      - name: Verify canonical model benchmark scoring (offline)
-        run: node --test scripts/model-benchmark.test.mjs
+      - name: Verify canonical 30-case model scoring and matrix (offline)
+        run: node --test scripts/model-benchmark.test.mjs scripts/model-benchmark-matrix.test.mjs scripts/openrouter-retry.test.mjs
 
-  live:
+  prepare-models:
     if: inputs.mode == 'live' && inputs.confirm_live == true
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    outputs:
+      matrix: ${{ steps.make-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate model IDs and build isolated matrix
+        id: make-matrix
+        env:
+          MODEL_BENCH_PROVIDER: ${{ inputs.provider }}
+          MODEL_BENCH_PRESET: ${{ inputs.model_preset }}
+          MODEL_BENCH_MODEL_IDS: ${{ inputs.model_ids }}
+        run: node scripts/model-benchmark-matrix.mjs >> "$GITHUB_OUTPUT"
+
+  live:
+    needs: prepare-models
+    if: inputs.mode == 'live' && inputs.confirm_live == true
+    name: ${{ matrix.provider }} / ${{ matrix.model }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
     environment: production
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare-models.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -98,27 +114,54 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --no-audit --no-fund
-      - name: Confirm manual real-model testing and run identical scenarios
+      - name: Run isolated 30-case benchmark (reasoning off; low compatibility fallback)
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }} # fallback only; 10000 is reported as permission issue
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           MODEL_BENCH_CONFIRM: "YES"
-          MODEL_BENCH_PROVIDER: ${{ inputs.provider }}
+          MODEL_BENCH_PROVIDER: ${{ matrix.provider }}
           MODEL_BENCH_REPETITIONS: ${{ inputs.repetitions }}
           MODEL_BENCH_MAX_NEURONS: ${{ inputs.max_neurons }}
           MODEL_BENCH_MAX_USD: ${{ inputs.max_usd }}
-          MODEL_BENCH_OPENROUTER_MODEL: ${{ inputs.model_id || inputs.model_preset }}
-          MODEL_BENCH_REASONING_MODE: ${{ inputs.reasoning_mode }}
-          MODEL_BENCH_REPORT_FILE: "model-benchmark-report.json"
+          MODEL_BENCH_OPENROUTER_MODEL: ${{ matrix.model }}
+          MODEL_BENCH_REASONING_MODE: "off"
+          MODEL_BENCH_REPORT_FILE: benchmark-${{ matrix.slot }}.json
         run: npm run test:model:benchmark
-      - name: Upload synthetic benchmark results
+      - name: Upload this model's synthetic results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: baby-model-benchmark-results
-          path: model-benchmark-report.json
+          name: baby-model-benchmark-${{ matrix.slot }}
+          path: benchmark-${{ matrix.slot }}.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  compare:
+    needs: [prepare-models, live]
+    if: always() && needs.prepare-models.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: baby-model-benchmark-*
+          path: bench-artifacts
+          merge-multiple: true
+        continue-on-error: true # merge step reports unavailable model results explicitly
+      - name: Combine all model results; flag missing reports
+        env:
+          MODEL_BENCH_MATRIX: ${{ needs.prepare-models.outputs.matrix }}
+        run: node scripts/model-benchmark-merge.mjs
+      - name: Publish combined comparison JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baby-model-benchmark-comparison
+          path: model-benchmark-comparison.json
           if-no-files-found: warn
           retention-days: 7
 

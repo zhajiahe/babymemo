@@ -48,6 +48,6 @@ export function benchmarkMarkdownReport(models,setup){
  }
  out.push('','模型完整工具参数、最终回复摘录、逐请求 token 数据在 JSON artifact 和 Actions 日志中。失败/身份认证不能当成模型答错。','');
  if(models.some(x=>x.status?.startsWith('BLOCKED')))out.push('**阻塞：部分模型没有成功推理。** 请检查专用 Workers AI Token 的权限（Account → Workers AI → Read）、余额和网络，修复后重新运行。','');
- out.push('参数：每模型 10 题 × '+setup.repetitions+' 次；费用限制均为软限额。');
+ out.push('参数：每模型 '+(setup.tasksPerModel||30)+' 题 × '+setup.repetitions+' 次；费用限制按模型分别计算，均为软限额。');
  return out.join('\n')+'\n';
 }

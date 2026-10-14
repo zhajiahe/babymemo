@@ -57,20 +57,20 @@ test('DeepSeek V4.1 Flash disables reasoning while Muse retains its original req
  assert.throws(()=>openRouterReasoningForModel(DEEPSEEK_V41_FLASH,'invalid'),/INVALID_REASONING_MODE/);
 });
 
-test('DeepSeek Flash routes exclusively through Relace with thinking disabled',async()=>{
+test('DeepSeek Flash prefers Relace with provider fallback and thinking disabled',async()=>{
  const req=[];
  await openRouterCompletion({...opts(async(_u,init)=>{req.push(JSON.parse(init.body));return Response.json({choices:[{message:{content:'ok'}}]})},async()=>{}),model:DEEPSEEK_V41_FLASH});
- assert.deepEqual(req[0].provider,{only:['relace'],allow_fallbacks:false});
+ assert.deepEqual(req[0].provider,{order:['relace'],allow_fallbacks:true});
  assert.deepEqual(req[0].reasoning,{enabled:false});
- assert.deepEqual(openRouterProviderForModel(DEEPSEEK_V41_FLASH),{only:['relace'],allow_fallbacks:false});
- assert.equal(openRouterProviderForModel(GPT_6_LUNA),null);
+ assert.deepEqual(openRouterProviderForModel(DEEPSEEK_V41_FLASH),{order:['relace'],allow_fallbacks:true});
+ assert.deepEqual(openRouterProviderForModel(GPT_6_LUNA),{order:['relace'],allow_fallbacks:true});
 });
 test('GPT-6 Luna and Claude Haiku 5.5 prefer reasoning disabled and are selectable presets',async()=>{
  const req=[];
  for(const model of [GPT_6_LUNA,CLAUDE_HAIKU_55]){
   await openRouterCompletion({...opts(async(_u,init)=>{req.push(JSON.parse(init.body));return Response.json({choices:[{message:{content:'ok'}}]})},async()=>{}),model});
  }
- for(const q of req){assert.deepEqual(q.reasoning,{enabled:false});assert.equal('provider' in q,false)}
+ for(const q of req){assert.deepEqual(q.reasoning,{enabled:false});assert.deepEqual(q.provider,{order:['relace'],allow_fallbacks:true})}
  assert.deepEqual(openRouterReasoningForModel(GPT_6_LUNA,'low'),{enabled:true,effort:'minimal'});
  assert.deepEqual(openRouterReasoningForModel(CLAUDE_HAIKU_55,'low'),{enabled:true,effort:'low'});
  for(const model of [GPT_6_LUNA,CLAUDE_HAIKU_55,DEEPSEEK_V41_FLASH]){
@@ -105,10 +105,10 @@ test('Unrelated 400 never retries; repeated reasoning 400 stops after guarded fa
  assert.equal(calls,2);
 });
 
-test('default OpenRouter model is DeepSeek Flash via Relace with thinking disabled',async()=>{
+test('default OpenRouter model is DeepSeek Flash preferring Relace with fallback and thinking disabled',async()=>{
  assert.equal(DEFAULT_OPENROUTER_MODEL,DEEPSEEK_V41_FLASH);
  assert.equal(OPENROUTER_MODEL_PRESETS[0].id,DEFAULT_OPENROUTER_MODEL);
- assert.deepEqual(openRouterProviderForModel(DEFAULT_OPENROUTER_MODEL),{only:['relace'],allow_fallbacks:false});
+ assert.deepEqual(openRouterProviderForModel(DEFAULT_OPENROUTER_MODEL),{order:['relace'],allow_fallbacks:true});
  assert.deepEqual(openRouterReasoningForModel(DEFAULT_OPENROUTER_MODEL),{enabled:false});
  const calls=[];
  const result=await openRouterCompletion({
@@ -118,8 +118,65 @@ test('default OpenRouter model is DeepSeek Flash via Relace with thinking disabl
  assert.equal(calls.length,1);
  assert.equal(calls[0].model,DEEPSEEK_V41_FLASH);
  assert.deepEqual(calls[0].reasoning,{enabled:false});
- assert.deepEqual(calls[0].provider,{only:['relace'],allow_fallbacks:false});
+ assert.deepEqual(calls[0].provider,{order:['relace'],allow_fallbacks:true});
  assert.equal(result._babymemo_request.reasoningFallbackUsed,false);
  assert.ok(OPENROUTER_MODEL_PRESETS.some(x=>x.id===LEGACY_MUSE_MODEL),'Muse must remain manually selectable');
  assert.equal(openRouterReasoningForModel(LEGACY_MUSE_MODEL),null);
+ assert.match(openRouterModelDescription('vendor/custom-model'),/优先 Relace，可回退其他服务商/);
+ assert.match(openRouterModelDescription(LEGACY_MUSE_MODEL),/优先 Relace，可回退其他服务商/);
+ assert.match(openRouterModelDescription(DEFAULT_OPENROUTER_MODEL),/优先 Relace，可回退其他服务商/);
+});
+
+test('benchmark explicit off requests reasoning disabled on arbitrary OpenRouter models',async()=>{
+ const requests=[];let count=0;
+ const response=await openRouterCompletion({...opts(async(_url,init)=>{
+  count++;requests.push(JSON.parse(init.body));
+  return count===1?Response.json({error:{message:'Reasoning cannot be disabled for this model'}},{status:400}):
+   Response.json({choices:[{message:{content:'OK'}}]});
+ },async()=>{}),model:'other/custom-model',reasoningMode:'off',maxAttempts:1});
+ assert.equal(count,2);
+ assert.deepEqual(requests[0].reasoning,{enabled:false});
+ assert.deepEqual(requests[1].reasoning,{enabled:true,effort:'low'});
+ assert.equal(response._babymemo_request.reasoningFallbackUsed,true);
+});
+test('unrelated 400 with explicit off never triggers low compatibility retry',async()=>{
+ let count=0;
+ await assert.rejects(openRouterCompletion({...opts(async()=>{
+  count++;return Response.json({error:{message:'Invalid tools schema'}},{status:400});
+ },async()=>{}),model:'other/custom-model',reasoningMode:'off',maxAttempts:1}),/OPENROUTER_HTTP_400/);
+ assert.equal(count,1);
+});
+
+test('every preset and custom model routes Relace first with other providers eligible',async()=>{
+ const models=[DEEPSEEK_V41_FLASH,LEGACY_MUSE_MODEL,GPT_6_LUNA,CLAUDE_HAIKU_55,'vendor/custom-model'];
+ for(const model of models){
+  const requests=[];
+  const r=await openRouterCompletion({
+   ...opts(async(_url,init)=>{
+    requests.push(JSON.parse(init.body));
+    // Simulate metadata emitted when OpenRouter selects another provider.
+    return Response.json({provider:'other-provider',choices:[{message:{content:'OK'}}]});
+   },async()=>{}),model
+  });
+  assert.equal(requests.length,1,model);
+  assert.deepEqual(requests[0].provider,{order:['relace'],allow_fallbacks:true},model);
+  assert.ok(!('only' in requests[0].provider),model+' must not be pinned to Relace');
+  assert.deepEqual(r._babymemo_request.requestedProvider,{order:['relace'],allow_fallbacks:true});
+  assert.equal(r.provider,'other-provider');
+ }
+});
+test('reasoning compatibility retry preserves Relace preference and fallback eligibility',async()=>{
+ const requests=[];
+ await openRouterCompletion({
+  ...opts(async(_url,init)=>{
+   requests.push(JSON.parse(init.body));
+   return requests.length===1
+    ?Response.json({error:{message:'Disabling reasoning is unsupported'}},{status:400})
+    :Response.json({choices:[{message:{content:'OK'}}]});
+  },async()=>{}),model:'vendor/custom-model',reasoningMode:'off',maxAttempts:1
+ });
+ assert.equal(requests.length,2);
+ for(const r of requests)assert.deepEqual(r.provider,{order:['relace'],allow_fallbacks:true});
+ assert.deepEqual(requests[0].reasoning,{enabled:false});
+ assert.deepEqual(requests[1].reasoning,{enabled:true,effort:'low'});
 });
