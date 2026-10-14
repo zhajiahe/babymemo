@@ -1,6 +1,13 @@
 # ADR-002：微信 iLink 消息接收解耦及 DO 费用优化（研究方案，未实施）
 
-> 状态：**Proposed / 待 PoC** · 2026-10-14。与 [PR #57 的短期方案](wechat-do-budget.md) 区分：本文是长期改造目标，不代表新架构已经部署。不得使用真实家庭消息、Token、密文或云端快照作为公开基准测试材料。
+> 状态：**Proposed / 待 PoC** · 2026-10-14。PR #57 的短期有界轮询已在历史运维记录中标记为部署，**真实 iLink 行为仍未验收**；本文的 Worker/Cron 解耦架构尚未实施。不得使用真实家庭消息、Token、密文或云端快照作为公开基准测试材料。
+
+
+## 历史短期轮询配置（PR #57，非长期目标）
+
+2026-10-13 的成本调查发现两个连接长时间等待 iLink 网络响应，造成较高的 DO 计费时长。PR #57 将最长客户端等待从 45 秒改为约 **8 秒**；无消息后约 **22 秒**再轮询，有消息后约 **1.5 秒**再轮询，网络错误约 **30 秒**退避。该方案在 2026-10-14 的历史记录中标记为已部署，但**仍缺少真实微信设备对消息完整性、延迟和断线恢复的独立验证**。有关 Cloudflare 用量的历史账号样本不属于通用成本基准，不复制到公开架构文档。
+
+短期方案保留原有 DO、D1 游标、去重和媒体队列，不等于取消了 DO 等待网络的计费；按两个空闲 128 MiB 对象、8/30 监听占空比计算约为 **5,900 GB-s/天** 的理论量级，**不是实测账单**。必须继续检查空闲 5 分钟后首次消息、取消请求时游标不前进、跨成员隔离、真实 p95 接收延迟及 24 小时全账号实际费用；短于协议示例 35 秒的客户端截止时间是关键风险。长期方案与短期缓解的状态不可混淆。
 
 ## 目标及不可妥协的边界
 
@@ -25,7 +32,7 @@
 | 方案 | 延迟模型 | DO 成本 | 新增依赖 / 免费配额 | 风险与当前结论 |
 | --- | --- | --- | --- | --- |
 | A. 保持 DO 连续长轮询 | 收到新消息最快 | 持续较高 | 无 | 10/13 已接近 DO 免费配额，**不适合作为长期方案** |
-| B. PR #57：DO 8s 监听 + 22s 休眠 | 估计增加数十秒级延迟，实际须测 | 有所下降但并未消除外部 I/O 计费 | 无 | 短期缓解；截断早于腾讯示例的 35s，**必须验证真实协议，未上线** |
+| B. PR #57：DO 8s 监听 + 22s 休眠 | 估计增加数十秒级延迟，实际须测 | 有所下降但并未消除外部 I/O 计费 | 无 | 短期缓解；截断早于腾讯示例的 35s，**已部署但实机效果未验证，不可视为通过** |
 | **C. 每分钟 Cron 启动 Worker → 在该执行窗口内连续 getupdates → DO 接收提交** | 监听时接近实时；交接短空档和 Cron 抖动仍可能带来延迟；**p95 < 5s 待实测** | **空闲时 DO 可休眠** | 使用现有 Worker 的 `scheduled()`，无需新队列 | **首选 PoC**；必须测量真实 Cron 抖动、租约接棒、服务端超时与重入，不保证 5 秒 SLA |
 | D. Queues 延迟任务 → Worker 长轮询 → DO | 可以设计更频繁的轮询，但队列延迟不是硬实时 SLA | 空闲时 DO 可休眠 | 2 成员×每分钟 1 次×3 操作≈**8,640 次/天**，仅余 1,360 次供重试及整个账号其他队列；30s 一次≈17,280 次/天，超过免费额度 | **备选**，必须先看账号整体 Queues 用量；不能仅为降低 DO 把瓶颈转移至 Queues |
 | E. iLink 官方 Webhook/推送（若未来发布） | 理论上最佳 | 接近仅消息处理的用量 | 依赖未公开确认的新接口 | 仅作为协议跟踪事项，不按存在假设开发 |
@@ -99,7 +106,7 @@ flowchart TD
 
 ### P0：读协议与成本基线（不修改线上）
 
-- 采用 **腾讯官方** [协议](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol_zh_CN.md) 与 [monitor](https://github.com/Tencent/openclaw-weixin/blob/main/src/monitor/monitor.ts) 对照 BabyMemo `src/wechat.ts`，确认长轮询返回时序、`longpolling_timeout_ms`、空响应、取消/重试游标、成员暂停/重绑行为。重点验证 **8 秒客户端取消后，服务器不会出现持久丢消息**，否则不合并 PR #57。
+- 采用 **腾讯官方** [协议](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol_zh_CN.md) 与 [monitor](https://github.com/Tencent/openclaw-weixin/blob/main/src/monitor/monitor.ts) 对照 BabyMemo `src/wechat.ts`，确认长轮询返回时序、`longpolling_timeout_ms`、空响应、取消/重试游标、成员暂停/重绑行为。重点验证 **8 秒客户端取消后，服务器不会出现持久丢消息**，若不能证明安全，应评估恢复更长的监听窗口或回滚，而不是仅凭 CI 通过继续使用。
 - Cloudflare Analytics 按**UTC 日、命名空间+对象**记录 `durableObjectsPeriodicGroups.sum.duration`、`durableObjectsInvocationsAdaptiveGroups.sum.requests`、errors、相册入库延迟和微信接收/回答 p50/p95/p99；同时记录 Workers 请求数/CPU、Queues 操作数和 D1 读写。
 - 仅使用虚构家庭和测试微信成员，不向模型或日志传送真实家庭媒体。保存可重放的合成 `getupdates` 响应样本，不保存生产 Token。
 

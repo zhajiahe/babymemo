@@ -22,6 +22,22 @@
 - 只记录 `MEDIA_TRANSFER_TIMING` 固定字段；浏览器端的 `client` 耗时才包括手机到 Worker 的上行网络。
 - 性能说明和人工验收指标见 [媒体上传性能](media-upload-performance.md)。**合成测试不等于真实国内网络和微信协议已测速度，未声称确定性加速倍数。**
 
+
+## 本地与 CI E2E 复现命令
+
+Node.js 22+，本地 Wrangler。隔离脚本 `scripts/e2e-local.mjs` 创建临时 D1/R2/DO 和测试配置，结束后清理。若工作目录存在 `.dev.vars`，脚本会主动退出以免覆盖密钥，请使用干净的工作区。
+
+```bash
+npm install --no-audit --no-fund
+npm run verify
+npm run test:e2e
+BROWSER_E2E=1 npm run test:e2e
+BROWSER_E2E=1 BROWSER_ENGINE=webkit npm run test:e2e
+E2E_DEPLOY_KEY=1 npm run test:e2e
+```
+
+最后一个命令仅用模拟 OpenRouter Key 测试部署管理优先级，不向真实服务发送请求。浏览器用例在安装相应 Playwright 依赖后运行；GitHub Actions 的 Chromium/Linux WebKit 截图使用合成数据。Linux WebKit 不是实际 iPhone Safari。运行前检查当前工具链的 Node 和 Wrangler 版本。
+
 ## 自动化入口
 
 | 入口 | 环境 | 覆盖内容 |
@@ -84,3 +100,7 @@ CI 使用自动生成的本地测试密钥与临时 D1/R2 存储，不连接生�
 - 家庭空间名称继续由 D1 `family_name` 设置提供，手机顶部和桌面侧栏都必须展示；长名称不得引起页面横向溢出。
 - 当前查看的宝宝仅可从「设置 → 宝宝资料」切换，切换后内容、草稿和相册必须按宝宝隔离。
 - 收藏按钮、收藏筛选、收藏写入 API 和微信收藏工具已停用；历史 D1 `favorite` 列及导出字段继续保留，不执行破坏性迁移。
+
+## 历史问题与证据索引
+
+2026-10-12 的隔离 Worker + Chromium 验收记录保留在 [PR #10](https://github.com/zhajiahe/babymemo/pull/10) 的测试、日志和截图中，当时发现相册编辑后列表标题未同步等问题。R2 Multipart 完成与 D1 提交间的失败一致性后续在 [PR #11](https://github.com/zhajiahe/babymemo/pull/11) 通过可恢复 finalization 与故障注入测试缓解。该历史记录**不是最新部署状态**，也不证明真实 Cloudflare 故障注入或物理 iPhone 验收。首次安装抢注窗口、HEIC/HEVC/MOV、旧媒体缩略图回退、上传会话清理及生产恢复演练仍应遵循现行测试和运维说明。

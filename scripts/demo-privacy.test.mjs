@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8');
+test('public demo stays synthetic and never contacts private endpoints',()=>{const html=read('public/demo.html');assert.match(html,/纯静态模拟 Demo/);assert.doesNotMatch(html,/<script[^>]+src=|fetch\s*\(|XMLHttpRequest|\/api\/|localStorage|sessionStorage|workers\.dev|r2\.dev|\.mp4|\.mov/i);for(const tab of ['home','album','growth','moments','wechat'])assert.ok(html.includes('data-tab="'+tab+'"'));});
+test('video play mark is visible on home and album thumbnails',()=>{const home=read('src/App.tsx'),album=read('src/features/album/Album.tsx');assert.match(home,/home-video-badge.*<Play/);assert.match(home,/home-thumb-video.*<Play/);assert.match(album,/video-play-badge.*<Play/);});
+test('typed bootstrap response and resumable upload descriptor',()=>{assert.doesNotMatch(read('src/App.tsx'),/api<any>\('\/api\/bootstrap\/status'/);assert.doesNotMatch(read('src/features/album/Album.tsx'),/resumable:Record<string,any>/);});

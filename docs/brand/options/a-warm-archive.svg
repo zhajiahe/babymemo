@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="BabyMemo 暖心书页"><title>BabyMemo 暖心书页</title><defs><clipPath id="tile"><rect width="512" height="512" rx="116"/></clipPath></defs><g clip-path="url(#tile)"><rect width="512" height="512" rx="116" fill="#A94B39"/>
-<circle cx="432" cy="76" r="157" fill="#CA745F" opacity=".35"/>
-<circle cx="40" cy="453" r="130" fill="#833728" opacity=".16"/>
-<path d="M95 178 C144 163 197 168 256 195 L256 372 C202 348 150 341 107 357 C98 361 92 355 92 346 L92 192 Q92 182 95 178Z" fill="#FFF6EC"/>
-<path d="M417 178 C368 163 315 168 256 195 L256 372 C310 348 362 341 405 357 C414 361 420 355 420 346 L420 192 Q420 182 417 178Z" fill="#FFE9D6"/>
-<path d="M256 198 L256 370" stroke="#D6A190" stroke-width="9" stroke-linecap="round"/>
-<path d="M147 216 Q187 211 222 225" fill="none" stroke="#EEC9BA" stroke-width="11" stroke-linecap="round"/>
-<path d="M290 230 C290 210 315 203 328 222 C341 203 366 210 366 230 C366 247 350 261 328 279 C306 261 290 247 290 230Z" fill="#A94B39"/>
-<path d="M344 110 L352 134 L375 143 L352 151 L344 175 L335 151 L312 143 L335 134Z" fill="#F6D49E"/></g></svg>

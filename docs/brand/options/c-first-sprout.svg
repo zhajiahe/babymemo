@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="BabyMemo 成长初芽"><title>BabyMemo 成长初芽</title><defs><clipPath id="tile"><rect width="512" height="512" rx="116"/></clipPath></defs><g clip-path="url(#tile)"><rect width="512" height="512" rx="116" fill="#E5F0E8"/>
-<circle cx="402" cy="67" r="153" fill="#FFFFFF" opacity=".38"/><circle cx="101" cy="453" r="120" fill="#A2C3B5" opacity=".17"/>
-<path d="M256 354 C251 299 249 257 257 210" fill="none" stroke="#39675A" stroke-width="22" stroke-linecap="round"/>
-<path d="M254 286 C189 294 150 270 137 213 C189 192 241 210 254 286Z" fill="#5C947C"/>
-<path d="M261 256 C271 198 309 168 369 174 C373 234 332 264 261 256Z" fill="#7AAF98"/>
-<path d="M170 363 C203 348 302 348 343 363" fill="none" stroke="#39675A" stroke-width="19" stroke-linecap="round"/>
-<path d="M235 128 C235 117 248 114 256 126 C264 114 278 117 278 128 C278 144 263 154 256 161 C249 154 235 144 235 128Z" fill="#CE7C70"/>
-<circle cx="344" cy="124" r="15" fill="#EDC17E"/></g></svg>

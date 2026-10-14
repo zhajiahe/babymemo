@@ -33,7 +33,7 @@ Cloudflare Dashboard 中的 [Workers AI 用量](https://dash.cloudflare.com/?to=
 
 当前 BabyMemo 的 DO 仍承担微信轮询以及一定的处理流程，网络等待和模型请求时间可能继续贡献 DO duration。即使模型 Qwen 免费推理成功，只要消息接收通道停止，微信仍不会得到回复。
 
-降本与接收架构计划见 [微信 DO 预算](wechat-do-budget.md) 和 [微信轮询架构 ADR](wechat-transport-architecture.md)。需要另行完成普通 Worker 长轮询迁移、Alarm/游标修复以及真实微信验收。
+降本与接收架构计划见 [微信 DO 预算](wechat-transport-architecture.md) 和 [微信轮询架构 ADR](wechat-transport-architecture.md)。需要另行完成普通 Worker 长轮询迁移、Alarm/游标修复以及真实微信验收。
 
 ## 4. Muse 旧记录 vs Qwen 旧记录（不是公平比较）
 

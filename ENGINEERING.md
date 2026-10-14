@@ -10,7 +10,7 @@
 | `src/features/` | 成长、相册、设置 | 处理 UI 交互、加载、重试和错误反馈 |
 | `src/worker.ts` | Hono HTTP API / Cloudflare bindings | 认证、权限、数据库参数化访问；不得返回密钥明文 |
 | `src/auth.ts`、`src/crypto.ts` | 会话签名、凭据加密和读取 | 不在客户端、日志中传播 Secret |
-| `src/wechat*.mjs`、`src/wechat.ts` | 受限工具、媒体处理、微信会话 | 模型选择与实际写入分离；去重和宝宝目标校验 |
+| `src/wechat*.ts`、`src/wechat.ts`（必要时兼容 `.mjs` 入口） | 受限工具、媒体处理、微信会话 | 模型选择与实际写入分离；去重和宝宝目标校验 |
 | `migrations/` | D1 结构演进 | 新增前向迁移；不可改写已发布迁移的含义 |
 | `scripts/` | 测试、部署与离线维护 | 明确区分只读、干跑和真实远端操作 |
 
@@ -43,14 +43,20 @@ npm run test:e2e
 - `docs/DEPLOY.md`：自托管管理员的首次安装与升级概览。
 - `docs/github-action-deploy.md`：GitHub Actions Secrets、配置和故障排查的权威操作源。
 - `docs/agent-deploy.md`：Agent 生产权限与分步操作。
-- `docs/e2e-testing.md`：开发者如何重现自动化；[QA 回归矩阵](docs/qa-regression-matrix.md)记录具体风险覆盖。
+- [QA 回归矩阵](docs/qa-regression-matrix.md)：自动化复现命令、风险覆盖与真机验收边界的统一入口。
 - `docs/wechat-harness-review.md`：基于真实家庭消息场景的 Harness 静态审查和分阶段演进提案；不是上线承诺。
 - `docs/wechat-harness-test-plan.md`：Harness 的场景和故障注入设计、门禁及验收指标；新增用例须附实际测试结果。
 - `docs/wechat-harness-implementation.md`：记录已经实现的 Harness 行为、自动/手动执行边界和仍需真机验证的风险。
 - `docs/BACKUP.md` 与 `docs/MIGRATION.md`：维护者的数据安全边界。
-- `docs/qa-e2e-report-2026-10-12.md`：历史报告，仅作当日证据，不作为当前功能清单。
+- 历史 E2E 问题与当日证据：参见 [QA 回归矩阵](docs/qa-regression-matrix.md) 的历史记录及对应 PR；旧报告不代表当前生产状态。
 
 修复旧文档时必须**删去已失效的操作步骤**，而不是在文末追加一段与旧内容相矛盾的新说明。
+
+## 文档维护约束
+
+README 是产品与入口，AGENTS 只保留不可变安全边界；部署步骤以 `docs/DEPLOY.md` / `docs/github-action-deploy.md` / `docs/agent-deploy.md` 分别面向使用者、自动发布维护者与 Agent。Harness 以实施文档为当前行为说明、测试计划为规划、QA 矩阵为实际检查、ADR 为未实施架构研究。历史问题证据保留 Git PR 与提交记录，不应和当前功能混写。
+
+删除文档前，先迁移仍有效的独有内容，修复全部 Markdown 相对链接，再运行 `node --test scripts/docs-quality.test.mjs`；**不存在静态链接不等于不存在外部书签**。变更声明需列明保留/合并/删除清单和 CI 结果。
 
 ## 外部 API 真实测试门禁
 

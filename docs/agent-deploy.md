@@ -7,7 +7,7 @@
 ## 0. 部署约束
 
 - 目标技术栈固定：Node.js 22+、React/Vite、Hono/Cloudflare Workers、D1 `DB`、R2 `MEDIA`、Durable Object `BOT`（类 `WechatSession`）。
-- AI 供应商仅使用 OpenRouter；管理员可在 GitHub Actions Secret `OPENROUTER_API_KEY` 中配置部署管理的 Key，或在 BabyMemo 网页加密保存 Key。部署 Secret 优先，网页仍能调整模型 ID；微信使用 iLink，**不需要** VPS / OpenClaw。
+- 微信工具模型默认通过 Cloudflare Workers AI，OpenRouter 为可选提供方；管理员可在 GitHub Actions Secret `OPENROUTER_API_KEY` 中配置部署管理的 Key，或在 BabyMemo 网页加密保存 Key。部署 Secret 优先，网页仍能调整模型 ID；微信使用 iLink，**不需要** VPS / OpenClaw。
 - 先看 [`wrangler.jsonc`](../wrangler.jsonc)、[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)、[`package.json`](../package.json)、[`migrations/`](../migrations) 和本文件，**以当前代码为准**。
 - 不准把密码、`SESSION_SECRET`、`DATA_KEY`、OpenRouter Key、微信授权 Token、Cookie 或日志中的敏感原文复制到聊天、PR、Issue、Git 仓库或命令行参数。
 - 不得生成虚假的“部署成功”“扫码成功”“数据迁移成功”报告；任何一项未实测要写成**未验证**。
@@ -130,7 +130,7 @@ curl -i https://baby.example.com/api/state
 
 预期：`/api/health` 为 200 且 `ok=true`，`bootstrap/status` 中 `sessionConfigured`、`encryptionConfigured` 为 `true`；未登录时 `/api/state` 返回 `401 LOGIN_REQUIRED`。之后初始化、登录和私有数据 CRUD 必须通过部署者的浏览器人工验收。不要为了自动验收将家庭密码写入 curl、Shell History 或日志。
 
-验收记录建议至少覆盖：家庭初始化、退出与重新登录、已有记录保留、宝宝切换、成长记录/里程碑 CRUD、图片上传/读取/删除、iPhone Safari 大图片与 MOV 上传、多分片网络失败、OpenRouter 模型测试、微信扫码/启停及 Durable Object 轮询状态。报告必须明确区分“脚本构建通过”“公开健康检查通过”和“真人/真实设备端到端验收通过”。
+验收记录建议至少覆盖：家庭初始化、退出与重新登录、已有记录保留、宝宝切换、成长记录/里程碑 CRUD、图片上传/读取/删除、iPhone Safari 大图片与 MOV 上传、多分片网络失败、默认 Workers AI 模型测试或可选 OpenRouter 模型测试、微信扫码/启停及 Durable Object 轮询状态。报告必须明确区分“脚本构建通过”“公开健康检查通过”和“真人/真实设备端到端验收通过”。
 
 ## 6. 故障处理与禁止性恢复操作
 
@@ -144,7 +144,7 @@ curl -i https://baby.example.com/api/state
 | 登录失败但健康检查正常 | 检查初始化是否完成、管理员名称/密码、Cookie 作用域、同源 POST `Origin` |
 | 切换到自定义域名后 `403 ORIGIN_REJECTED` | 浏览器 POST 请求的 `Origin` 必须和当前请求 origin 一致；不要直接取消同源校验 |
 | R2 上传失败 | 检查 `MEDIA` 绑定、对象权限、分片大小与网络状况；MOV 转码目前不支持 |
-| 微信一直未收到消息 | 检查网页内 iLink 绑定、`wechat_enabled` 状态、Bot 轮询错误和 OpenRouter 测试 |
+| 微信一直未收到消息 | 检查网页内 iLink 绑定、`wechat_enabled` 状态、Bot 轮询错误及当前选择的 Workers AI / OpenRouter 模型诊断 |
 | 发布后行为与预期不符 | 保留日志、优先前向修复。D1 迁移不会因为回滚 Worker 自动撤销；禁止直接清库 |
 
 ## 7. 交付报告

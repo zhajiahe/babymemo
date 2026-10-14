@@ -84,7 +84,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
     const fileStarted=performance.now();
     let uploadId:string|undefined;
     let completedId='';
-    let resumable:Record<string,any>|null=null;
+    let resumable:{babyId:string;day:string;title:string;description:string;mime:string;fingerprint:string}|null=null;
     try{
      if(file.size<1||file.size>209715200)throw Error('文件大小需在 1B～200MB 之间');
      const extension=file.name.toLowerCase().match(/\.(heic|heif|jpg|jpeg|png|webp|gif|mov|mp4|webm)$/)?.[1];
@@ -206,7 +206,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  return <>
  <RecordFilterBar value={filters} onChange={onFilters} media/>
  <div className="album-toolbar album-content-toolbar">
-  <div className="album-toolbar-heading"><h2>全部照片</h2></div>
+  <div className="album-toolbar-heading"><h2>照片与视频</h2></div>
   <div className="album-toolbar-actions">
    <button type="button" className="primary album-add-btn" aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(v=>!v)}><Plus size={17}/>{showUploader?'收起上传':'添加照片或视频'}</button></div>
  </div>
