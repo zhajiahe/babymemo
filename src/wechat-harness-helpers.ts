@@ -16,7 +16,7 @@ export const labelForKind:Record<Kind,string>={growth:'成长测量',milestones:
 export const maxLimit=(args:Record<string,any>)=>Number.isInteger(args.limit)?Math.min(10,Math.max(1,args.limit)):5;
 export const listLine=(kind:Kind,r:DbRow)=>{
  const bits=kind==='growth'?[r.weight!=null?'体重 '+r.weight+' kg':'',r.height!=null?'身高 '+r.height+' cm':'',r.head_circumference!=null?'头围 '+r.head_circumference+' cm':'',r.notes||'']:
- kind==='milestones'?[r.title||'',r.description||'']:[r.mime||'',r.description||''];
+ kind==='milestones'?[r.title||'',r.description||'']:[r.upload_state==='processing'?'正在保存':r.upload_state==='failed'?'保存失败':r.mime||'',r.description||''];
  return short(r.id)+' · '+r.day+' · '+bits.filter(Boolean).join('，');
 };
 export async function findTarget(env:Env,babyId:string,kind:Kind,args:Record<string,any>,deleted=false):Promise<DbRow>{
