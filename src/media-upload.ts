@@ -108,3 +108,45 @@ export async function createVideoThumbnail(file:File):Promise<Blob|null>{
   }catch{return null}
   finally{video.removeAttribute('src');video.load();URL.revokeObjectURL(objectUrl);}
 }
+
+/**
+ * Capture from a private streaming URL. The video element uses HTTP range requests;
+ * do not fetch a 200 MB MOV into a Blob on a memory-constrained iPhone.
+ */
+export async function createRemoteVideoThumbnail(id:string):Promise<Blob|null>{
+ const video=document.createElement('video');
+ video.preload='auto';video.muted=true;video.playsInline=true;
+ video.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10px;top:-10px';
+ document.body.append(video);
+ function waitForFrame(){
+  return new Promise<void>((resolve,reject)=>{
+   if(video.readyState>=2){resolve();return}
+   const timeout=setTimeout(()=>{cleanup();reject(Error('VIDEO_FRAME_TIMEOUT'))},12000);
+   const ok=()=>{cleanup();resolve()};
+   const bad=()=>{cleanup();reject(Error('VIDEO_UNSUPPORTED'))};
+   const cleanup=()=>{clearTimeout(timeout);video.removeEventListener('loadeddata',ok);video.removeEventListener('error',bad)};
+   video.addEventListener('loadeddata',ok,{once:true});
+   video.addEventListener('error',bad,{once:true});
+  });
+ }
+ try{
+  const ready=waitForFrame();
+  video.src='/api/media/'+encodeURIComponent(id)+'/content';
+  video.load();
+  await ready;
+  if(!video.videoWidth||!video.videoHeight)return null;
+  // Prefer a representative early frame, retaining the already decoded one on seek failure.
+  if(Number.isFinite(video.duration)&&video.duration>0.3){
+   try{
+    await new Promise<void>((resolve,reject)=>{
+     const timer=setTimeout(()=>reject(Error('VIDEO_SEEK_TIMEOUT')),7000);
+     video.onseeked=()=>{clearTimeout(timer);resolve()};
+     video.onerror=()=>{clearTimeout(timer);reject(Error('VIDEO_SEEK_FAILED'))};
+     video.currentTime=Math.min(1,video.duration*0.1);
+    });
+   }catch{/* Fallback to first decoded frame. */}
+  }
+  return await createVideoFrameThumbnail(video);
+ }catch{return null}
+ finally{video.pause();video.removeAttribute('src');video.load();video.remove();}
+}
