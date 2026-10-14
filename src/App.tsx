@@ -97,6 +97,17 @@ export default function App(){
  useEffect(()=>{refresh();const wake=()=>{if(document.visibilityState==='visible')void refresh()};window.addEventListener('focus',wake);document.addEventListener('visibilitychange',wake);return()=>{window.removeEventListener('focus',wake);document.removeEventListener('visibilitychange',wake)}},[]);
  // Resume only jobs explicitly started by the user on this device.
  useEffect(()=>{if(mode==='app'&&state)resumeThumbnailRepair(state.babies.map(item=>item.id))},[mode,state]);
+ useEffect(()=>{
+  const ready=(event:Event)=>{
+   const id=(event as CustomEvent<{id:string}>).detail?.id;
+   if(!id)return;
+   setMedia(items=>items.map(item=>item.id===id?{...item,thumbnail_ready:1}:item));
+   setMilestones(items=>items.map(item=>item.media?.some(m=>m.id===id)
+     ?{...item,media:item.media.map(m=>m.id===id?{...m,thumbnail_ready:1}:m)}:item));
+  };
+  window.addEventListener('babymemo:thumbnail-repaired',ready);
+  return()=>window.removeEventListener('babymemo:thumbnail-repaired',ready);
+ },[]);
  // Load only the resource required by the active view; avoid three D1 reads on
  // every navigation. Ignore late responses when baby or tab changes.
  useEffect(()=>{
