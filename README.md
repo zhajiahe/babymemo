@@ -108,7 +108,7 @@ npm run test:e2e
 
 实测场景、消耗和上线限制详见 [Qwen3.8 模型测试报告](docs/workers-ai-qwen38-evaluation.md)。
 
-若要验证真实 OpenRouter **自动工具调用冒烟测试**（与 Harness Live 采用同样的 `tool_choice: auto` 请求方式，检验只读工具路由），前往 **GitHub Actions → Manual OpenRouter Live E2E → Run workflow**，选中 `main` 后主动运行。该测试只发送合成宝宝的只读查询、不读写真实 D1/R2、不会运行真实微信，也**不会由 PR、push、定时任务或自动部署触发**。需事先配置 GitHub Secret `OPENROUTER_API_KEY`，可能产生少量模型费用。
+可选的 OpenRouter 模型包括原有 Muse、`deepseek/deepseek-v4.1-flash`（固定 Relace）、`openai/gpt-6-luna` 和 `anthropic/claude-haiku-5.5`。前三个新候选默认优先**关闭思考**，如果服务商明确不支持关闭思考，则用一次兼容性重试降到最低思考档（GPT-6 Luna `minimal`，Haiku 5.5 `low`）。可以在网站「设置 → 微信 AI 模型 → 切换模型或配置 OpenRouter」直接选择建议模型 ID，也可以手工填写其他 OpenRouter 模型。相关参数及同题测试说明见 [模型 Benchmark 文档](docs/ai-model-benchmark-and-quotas.md)。以上模型需 OpenRouter Key，**不改变默认 Workers AI Qwen**；真实模型调用可能产生费用。\n\n若要验证真实 OpenRouter **自动工具调用冒烟测试**（与 Harness Live 采用同样的 `tool_choice: auto` 请求方式，检验只读工具路由），前往 **GitHub Actions → Manual OpenRouter Live E2E → Run workflow**，选中 `main` 后主动运行。该测试只发送合成宝宝的只读查询、不读写真实 D1/R2、不会运行真实微信，也**不会由 PR、push、定时任务或自动部署触发**。需事先配置 GitHub Secret `OPENROUTER_API_KEY`，可能产生少量模型费用。
 
 也可在安全的本地终端提供 OpenRouter Key，设置 `OPENROUTER_E2E_CONFIRM=YES` 后执行 `npm run test:openrouter:live`。该开关缺失时脚本直接拒绝执行。Contributor 模型的提示词和输出可能用于改进 Meta 产品，真实家庭隐私请谨慎处理。
 
