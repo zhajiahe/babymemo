@@ -38,6 +38,7 @@ test('growth chart supports tapping and keyboard selection',()=>{
 test('WeChat administration favors status with progressively disclosed controls',()=>{
  assert.ok(settings.indexOf('className="wechat-row"')<settings.indexOf('className="wechat-photo-setting"'));
  assert.match(settings,/className="wechat-member-more"/);
- assert.match(settings,/AI 模型配置 · OpenRouter/);
+ assert.match(settings,/AI 模型配置 · .*Workers AI/);
+ assert.match(settings,/OpenRouter · 自定义模型/);
  assert.match(settings,/微信指令示例与使用说明/);
 });

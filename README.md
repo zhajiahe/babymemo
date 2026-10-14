@@ -37,10 +37,10 @@ BabyMemo 是部署在 Cloudflare 上的私密家庭成长记录应用，以相�
 
 可在独立的安全终端分别运行两次 `openssl rand -hex 32` 生成并保管密钥；不要把真实密钥粘贴到仓库、PR 或聊天。
 
-OpenRouter Key 是**可选**的微信指令模型配置，支持两种方式：
+默认通过 Cloudflare Workers AI（`@cf/qwen/qwen3.8-27b`）进行微信指令识别，关闭思考，无需额外 API Key；Workers AI Free 每日账号共享 10,000 Neurons。若要改用 OpenRouter，Key 是**可选提供方的必需配置**，支持两种方式：
 
 1. **部署管理**：在 GitHub Actions / `production` Environment 添加 Secret `OPENROUTER_API_KEY`，正式部署后作为 Cloudflare Worker Secret 使用，优先于 D1 设置。
-2. **网页管理**：管理员登录网站后，在「设置 → 微信操作引擎 · OpenRouter」填写 Key 和模型 ID。Key 用 `DATA_KEY` 加密保存于 D1。
+2. **网页管理**：管理员登录网站后，在「设置 → AI 模型配置」选择 OpenRouter 并填写 Key 和模型 ID。Key 用 `DATA_KEY` 加密保存于 D1。
 
 已经配置部署 Secret 时，网页仍可更改模型 ID，但不能覆盖部署 Key。**从 GitHub 删除 Secret 不会自动删除云端已有 Worker Secret**；需明确到 Cloudflare 控制台撤销。Key 不会传回浏览器。
 
@@ -97,13 +97,15 @@ npm run test:e2e
 
 ## 安全边界
 
-所有照片和视频默认保存在私有 R2。微信 iLink 是第三方协议，可能发生兼容性变化；发送给 OpenRouter 的微信文字和目标宝宝信息需由家庭管理员自行评估隐私。正式数据不应混入测试快照、CI Artifact、Issue 或 PR。旧 MyBaby 站点的 Neon/Vercel/R2 数据不在 BabyMemo 自动部署的迁移范围内。
+所有照片和视频默认保存在私有 R2。微信 iLink 是第三方协议，可能发生兼容性变化；发送给 Cloudflare Workers AI（或可选的 OpenRouter）的微信文字和目标宝宝信息需由家庭管理员自行评估隐私。正式数据不应混入测试快照、CI Artifact、Issue 或 PR。旧 MyBaby 站点的 Neon/Vercel/R2 数据不在 BabyMemo 自动部署的迁移范围内。
 
 许可证见 [LICENSE](LICENSE)。
 
-## OpenRouter 默认模型与主动 E2E
+## 默认 Workers AI Qwen3.8 与可选 OpenRouter
 
-尚未保存模型偏好时，默认使用 [`meta/muse-spark-1.3-contributor`](https://openrouter.ai/meta/muse-spark-1.3-contributor)。已经在 D1 保存过模型 ID 的实例不会被自动覆盖，可在「设置 → 微信操作引擎」调整。
+新版本默认使用 Cloudflare-hosted [`@cf/qwen/qwen3.8-27b`](https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/)，`chat_template_kwargs.enable_thinking=false` 关闭思考，`reasoning_effort=low`，并直接复用内部微信 ReAct 工具，不依赖新 MCP 服务或 OpenRouter Key。可在「设置 → AI 模型配置」切回 OpenRouter；先前保存的 OpenRouter 模型 ID 和加密 Key 不删除。没有保存 `ai_provider` 偏好的旧实例也会使用新的 Qwen 默认提供方，切换前应关注每日 Neurons 额度和 DO 消耗。
+
+实测场景、消耗和上线限制详见 [Qwen3.8 模型测试报告](docs/workers-ai-qwen38-evaluation.md)。
 
 若要验证真实 OpenRouter **自动工具调用冒烟测试**（与 Harness Live 采用同样的 `tool_choice: auto` 请求方式，检验只读工具路由），前往 **GitHub Actions → Manual OpenRouter Live E2E → Run workflow**，选中 `main` 后主动运行。该测试只发送合成宝宝的只读查询、不读写真实 D1/R2、不会运行真实微信，也**不会由 PR、push、定时任务或自动部署触发**。需事先配置 GitHub Secret `OPENROUTER_API_KEY`，可能产生少量模型费用。
 

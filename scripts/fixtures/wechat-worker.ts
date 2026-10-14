@@ -23,6 +23,14 @@ export default {async fetch(request:Request,env:any){
  }
  await env.DB.prepare('INSERT OR IGNORE INTO babies(id,name,birthday,gender,time_zone,created_at) VALUES(?,?,?,?,?,?)').bind(baby.id,baby.name,baby.birthday,'girl',baby.time_zone,new Date().toISOString()).run();
  let models=0,downloads=0;const sent:any[]=[],modelMessages:any[]=[],modelHasTools:boolean[]=[];const contexts=new Map<string,{session:WechatSession;store:Map<string,any>}>();
+ // Synthetic Workers AI binding: same model responses as the old OpenRouter
+ // fixture, but intercepted in-process. Never contacts Cloudflare inference.
+ env.AI={run:async(_model:string,params:any)=>{
+  models++;modelMessages.push(structuredClone(params.messages));modelHasTools.push(!!params.tools);
+  if(params.chat_template_kwargs?.enable_thinking!==false)throw Error('SYNTHETIC_THINKING_NOT_DISABLED');
+  return input.responses?.[models-1]||{choices:[{message:{tool_calls:[]}}]};
+ }};
+
  let inbound=input.messages||[],releaseMedia:any,mediaStarted:any;
  let pollIndex=0;
  const mediaGate=new Promise<void>(resolve=>releaseMedia=resolve),beganMedia=new Promise<void>(resolve=>mediaStarted=resolve);
