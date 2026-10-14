@@ -38,6 +38,16 @@
 
 由于 iLink 未提供正式的 Bot 消息推送 SLA，短监听+低频空闲轮询存在漏过即时唤醒窗口的可能；该 PR **保持开放以便实机验收**，不直接部署生产。
 
-## 进一步架构方向
+## 长期目标：DO 管状态，普通 Worker 管微信长轮询
 
-彻底消除 DO 的外部长轮询等待，需要把等待迁至非 DO Worker（如 Cron/Queue 驱动），收到批次后再调用会话 DO 做身份校验、幂等处理和游标推进。与目前 1 分钟 Cron 的延迟与重入风险比较后，另开阶段推进，不在这个低风险 PR 中连带替换微信链路。
+> **长期研究已形成单独 ADR**：[ADR-002：微信消息接收解耦及 DO 费用优化](wechat-transport-architecture.md)。本 PR 不实施架构迁移，不自动合并/生产部署。
+
+已核验的结论：腾讯官方 [iLink 协议](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol_zh_CN.md) 仍采用 `getupdates` 长轮询，返回服务端建议的 `longpolling_timeout_ms`（示例约 35 秒）；`notifyStart/notifyStop` 不是消息推送 Webhook。Cloudflare [DO 生命周期](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/) 明确未完成外部 `fetch` 阻止休眠并持续计费；[普通 Workers 的网络等待](https://developers.cloudflare.com/workers/platform/limits/) 不计入 CPU 时间（但免费 CPU 仅 10ms/调用）。
+
+推荐先做**每分钟 Cron → 普通 Worker（只负责 iLink 长轮询）→ 原 DO（租约、游标、幂等、消息处理）**的小型 PoC。这个方案几乎不新增 Cloudflare 资源，但相较持续长轮询会出现接近一分钟的潜在接收延迟，必须真微信测量。不采用“直接把 DO 的等待放进 `ctx.waitUntil`”的假优化。
+
+Cloudflare [Queues 定价](https://developers.cloudflare.com/queues/platform/pricing/) 为免费账号共享 10,000 次操作/天，一条队列消息一般有 3 次操作；两个连接每分钟一条自循环任务约消耗 **8,640 次/天**，还未计算账号里其他 Queues、重试和 DLQ，因此 Queues 是**备选**而非默认最佳方案。
+
+长期验收目标（**不是当前 PR 的性能承诺**）：两个成员无消息时 DO 不进行外部长轮询，空闲 DO 计算时长 < 1,000 GB-s/天；原游标与家庭数据不迁移、不重绑微信；零跨成员、零额外写入、失败可恢复；真实微信试点目标接收 p95 < 60 秒。方案选型、故障/成本模型、P0–P3 任务与官方参考链接见 [ADR-002](wechat-transport-architecture.md)。
+
+**重要风险**：本 PR 的 8 秒客户端监听截止显著短于腾讯示例的 35 秒服务端长轮询。CI 模拟通过不能证明真实 iLink 的延迟或截断行为安全；如协议真机测试不通过，不能上线这套短轮询配置，应优先试验让普通 Worker 等待自然的长轮询响应。
