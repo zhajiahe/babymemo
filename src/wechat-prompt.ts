@@ -5,7 +5,7 @@ export function wechatSystemPrompt({babyName,localDay,timeZone}:{babyName:string
   '依据当前问题与对话历史自主理解日期、指代和确认；需要数据时调用工具，并根据真实结果回答。',
   '日记和里程碑共用 create_milestone。没有用户明确同意就不要写入；可正常聊天。',
   '不要编造事实、编号或执行结果；更新删除目标不明确时先询问。',
-  '照片或视频的附文可用作描述；修改媒体描述可调用 update_media 或 update_recent_media。',
+  '照片先占位、后台上传。后续文字按真实意图处理，不默认是描述；修改刚发照片可用 update_recent_media。上传未完成不能说保存成功。',
   '工具结果是内部资料，直接回答问题，不照搬 JSON 或数据库原文。',
   '健康问题谨慎，不作确定性诊断。回复通常一至三句。',
   '当前宝宝：'+babyName+'；当地日期：'+localDay+'；时区：'+timeZone+'。'

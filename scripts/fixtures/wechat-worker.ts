@@ -1,4 +1,5 @@
 import {handleWechatCommand,handleWechatPhotoMessage,WechatSession} from '../../src/wechat';
+import {familySnapshot,familyExportManifest} from '../../src/family-export';
 import {encryptSecret,decryptSecret,setSetting} from '../../src/crypto';
 import {getActiveThread} from '../../src/wechat-memory.mjs';
 import {createCipheriv,createDecipheriv,createHash} from 'node:crypto';
@@ -59,9 +60,26 @@ export default {async fetch(request:Request,env:any){
  };
  try{
   let reply='',status:any=null;
-  if(input.failIndexOnce){const db=env.DB;let failed=false;env.DB={prepare(sql:string){const statement=db.prepare(sql);return new Proxy(statement,{get(target,key){if(key==='bind')return (...values:any[])=>{const bound=target.bind(...values);return new Proxy(bound,{get(t,k){if(k==='run')return async()=>{if(!failed&&sql.startsWith('INSERT OR IGNORE INTO media')){failed=true;throw Error('SYNTHETIC_D1_FAILURE')}return t.run()};const value=(t as any)[k];return typeof value==='function'?value.bind(t):value}})};const value=(target as any)[key];return typeof value==='function'?value.bind(target):value}})}}}
+  if(input.failIndexOnce){const db=env.DB;let failed=false;env.DB={batch:(statements:any[])=>db.batch(statements),prepare(sql:string){const statement=db.prepare(sql);return new Proxy(statement,{get(target,key){if(key==='bind')return (...values:any[])=>{const bound=target.bind(...values);return new Proxy(bound,{get(t,k){if(k==='run')return async()=>{if(!failed&&sql.startsWith('UPDATE media SET mime=?,size=?')){failed=true;throw Error('SYNTHETIC_D1_FAILURE')}return t.run()};const value=(t as any)[k];return typeof value==='function'?value.bind(t):value}})};const value=(target as any)[key];return typeof value==='function'?value.bind(target):value}})}}}
   if(input.mode==='text')reply=await handleWechatCommand(env,input.text,input.id,getActiveThread(null,'synthetic-bot','synthetic-user',at),at);
   else if(input.mode==='media')reply=await handleWechatPhotoMessage(env,input.raw,input.id);
+  else if(input.mode==='export'){
+   const snapshot=await familySnapshot(env);
+   const manifest=await familyExportManifest(env);
+   const unfinished=await env.DB.prepare("SELECT COUNT(*) AS total FROM media WHERE upload_state<>'ready'").first<{total:number}>();
+   status={unfinished:unfinished?.total||0,onlyReady:snapshot.media.every(x=>x.upload_state==='ready'),
+    exportRows:snapshot.media.length,exportFiles:manifest.files.filter(x=>x.kind==='original').length};
+   reply='EXPORT_OK';
+  }
+  else if(input.mode==='revision'){
+   const first=await env.DB.prepare("SELECT id FROM media WHERE baby_id=? AND upload_state='ready' ORDER BY created_at LIMIT 1").bind(baby.id).first<{id:string}>();
+   if(!first)throw Error('NO_SYNTHETIC_MEDIA_TO_REVISE');
+   const before=await env.DB.prepare('SELECT version FROM media_revisions WHERE baby_id=?').bind(baby.id).first<{version:number}>();
+   await env.DB.prepare('UPDATE media SET description=? WHERE id=? AND baby_id=?').bind('旧照片的新故事',first.id,baby.id).run();
+   const after=await env.DB.prepare('SELECT version FROM media_revisions WHERE baby_id=?').bind(baby.id).first<{version:number}>();
+   status={before:before?.version||0,after:after?.version||0};
+   reply='REVISION_OK';
+  }
   else if(input.mode==='multi'){
    const rows=[
     {id:'11111111-1111-4111-8111-111111111111',bot:'synthetic-bot',user:'synthetic-user',token:'synthetic-token'},
@@ -99,8 +117,11 @@ export default {async fetch(request:Request,env:any){
      await setSetting(env,'wechat_default_baby_id','synthetic-baby-two');
     }
     const consumer=contexts.get('wechat-media:legacy')!;const saving=consumer.session.alarm();await beganMedia;
+    const queuedRows=await env.DB.prepare('SELECT id,description,upload_state,source_message_id FROM media WHERE source_message_id IS NOT NULL ORDER BY created_at DESC').all();
+    saved.set('queuedMedia',queuedRows.results);
     inbound=input.followupMessages||[];const started=Date.now();await bot.alarm();
-    saved.set('textWhileSaving',{beforeDownloads,elapsedMs:Date.now()-started,replies:sent.map(x=>x.msg.item_list[0].text_item.text)});
+    const duringRows=await env.DB.prepare('SELECT id,description,upload_state,source_message_id FROM media WHERE source_message_id IS NOT NULL ORDER BY created_at DESC').all();
+    saved.set('textWhileSaving',{beforeDownloads,elapsedMs:Date.now()-started,replies:sent.map(x=>x.msg.item_list[0].text_item.text),media:duringRows.results});
     if(input.resetDuringMedia)await bot.fetch(new Request('https://bot.internal/reset',{method:'POST'}));
     releaseMedia();await saving;
    }else{
@@ -115,7 +136,7 @@ export default {async fetch(request:Request,env:any){
    reply=sent.at(-1)?.msg?.item_list?.[0]?.text_item?.text||'';
   }
   const growth=await env.DB.prepare('SELECT id,baby_id,day,weight,height,source_message_id FROM growth_records').all();
-  const media=await env.DB.prepare('SELECT id,baby_id,day,size,mime,source_message_id FROM media').all();
+  const media=await env.DB.prepare('SELECT id,baby_id,day,size,mime,description,upload_state,source_message_id FROM media').all();
   const milestones=await env.DB.prepare('SELECT id,baby_id,day,title,description,source_message_id FROM milestones').all();
   const messages=await env.DB.prepare('SELECT message_id,state,photo_attempts FROM wechat_messages').all();
   const rounds=input.id?await env.DB.prepare('SELECT round_index FROM wechat_agent_rounds WHERE message_id=? ORDER BY round_index').bind(input.id).all():{results:[]};

@@ -229,15 +229,19 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
    <h3>{month.replace('-', ' 年 ')} 月</h3>
    <div className={albumView==='stories'?'photo-stories':'photo-grid'}>{media.filter(item=>item.day.startsWith(month)).map(item=>
     <article key={item.id} className={albumView==='stories'?'photo-story':'photo-item'}>
-     <button type="button" className="photo-preview" onClick={()=>setSelected(item)} aria-label={'预览 '+item.day+' 的'+(item.mime.startsWith('video/')?'视频':'照片')}>
-      <span className="photo-frame">{item.mime.startsWith('image/')||item.thumbnail_ready?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt=""/>:<span className="video-placeholder" aria-hidden="true"><Camera size={26}/><span>视频</span></span>}{item.mime.startsWith('video/')&&<span className="video-play-badge" aria-hidden="true"><Play size={18} fill="currentColor"/></span>}</span>
-      <span className="photo-preview-hint">{item.mime.startsWith('image/')?'查看照片':'播放视频'}</span>
-     </button>
+     <button type="button" className="photo-preview" disabled={item.upload_state!==undefined&&item.upload_state!=='ready'} onClick={()=>setSelected(item)} aria-label={item.upload_state==='processing'?'照片正在保存':item.upload_state==='failed'?'照片保存失败':'预览 '+item.day+' 的'+(item.mime.startsWith('video/')?'视频':'照片')}>
+       <span className="photo-frame">{item.upload_state&&item.upload_state!=='ready'
+        ?<span className="video-placeholder" aria-hidden="true"><CloudUpload size={26}/><span>{item.upload_state==='processing'?'正在保存':'保存失败'}</span></span>
+        :item.mime.startsWith('image/')||item.thumbnail_ready?<img src={'/api/media/'+item.id+'/thumbnail'} loading="lazy" decoding="async" alt=""/>:<span className="video-placeholder" aria-hidden="true"><Camera size={26}/><span>视频</span></span>}
+        {(!item.upload_state||item.upload_state==='ready')&&item.mime.startsWith('video/')&&<span className="video-play-badge" aria-hidden="true"><Play size={18} fill="currentColor"/></span>}</span>
+       <span className="photo-preview-hint" role={item.upload_state&&item.upload_state!=='ready'?'status':undefined}>{item.upload_state==='processing'?'正在后台保存…':item.upload_state==='failed'?'保存失败，请在微信重新发送':item.mime.startsWith('image/')?'查看照片':'播放视频'}</span>
+      </button>
+     {item.upload_state==='failed'&&<button type="button" className="text-btn" onClick={()=>void remove(item.id)} aria-label={'移除保存失败的照片 '+item.day}><Trash2 size={15} aria-hidden="true"/>移除失败记录</button>}
      {albumView==='stories'&&<div className="photo-story-copy">
       <time dateTime={item.day}>{item.day.slice(5).replace('-', ' 月 ')} 日</time>
       {item.description?.trim()
        ?<p className="photo-story-text">{item.description.trim()}</p>
-       :<button type="button" className="photo-story-empty" onClick={()=>setSelected(item)}>这一天，还没有写下故事。<span>补记这一刻 →</span></button>}
+       :<button type="button" className="photo-story-empty" disabled={item.upload_state!==undefined&&item.upload_state!=='ready'} onClick={()=>setSelected(item)}>{item.upload_state==='processing'?'正在保存这段回忆':item.upload_state==='failed'?'保存失败，请在微信重新发送':'这一天，还没有写下故事。'}{(!item.upload_state||item.upload_state==='ready')&&<span>补记这一刻 →</span>}</button>}
      </div>}
     </article>)}</div>
   </section>

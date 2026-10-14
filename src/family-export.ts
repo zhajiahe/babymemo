@@ -4,13 +4,14 @@ type Row=Record<string,unknown>;
 export async function familySnapshot(env:Env){
  // All metadata reads share a single D1 transaction. Secrets, credentials and
  // authentication hashes are intentionally excluded from this user export.
+  // Pending/failed uploads do not have guaranteed originals and must never make a complete archive fail.
  const [family,babies,growth,milestones,media,links]=await env.DB.batch<Row>([
   env.DB.prepare("SELECT value FROM app_settings WHERE name='family_name'"),
   env.DB.prepare('SELECT * FROM babies ORDER BY created_at'),
   env.DB.prepare('SELECT * FROM growth_records ORDER BY baby_id,day,created_at'),
   env.DB.prepare('SELECT * FROM milestones ORDER BY baby_id,day,created_at'),
-  env.DB.prepare('SELECT * FROM media WHERE purge_token IS NULL ORDER BY baby_id,day,created_at'),
-  env.DB.prepare('SELECT mm.* FROM milestone_media mm JOIN media m ON m.id=mm.media_id WHERE m.purge_token IS NULL ORDER BY milestone_id,media_id')
+  env.DB.prepare("SELECT * FROM media WHERE purge_token IS NULL AND upload_state='ready' ORDER BY baby_id,day,created_at"),
+  env.DB.prepare("SELECT mm.* FROM milestone_media mm JOIN media m ON m.id=mm.media_id WHERE m.purge_token IS NULL AND m.upload_state='ready' ORDER BY milestone_id,media_id")
  ]);
  return {schema:'babymemo-family-export-v2',exportedAt:new Date().toISOString(),familyName:family.results[0]?.value||'家庭空间',babies:babies.results,growth:growth.results,milestones:milestones.results,media:media.results,milestoneMedia:links.results};
 }

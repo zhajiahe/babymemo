@@ -948,13 +948,32 @@ async function browserE2e(){
       await page.setViewportSize({width:390,height:844});
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
       const section=page.locator('.thumbnail-repair-card');
-      await section.getByRole('button',{name:'一键后台修复全部封面'}).click();
-      await section.getByText('正在后台修复').waitFor();
-      const checkpoint=await page.evaluate(()=>JSON.parse(localStorage.getItem('babymemo-thumbnail-repair-v1')||'null'));
-      assert.equal(checkpoint.phase,'running');
-      assert.ok(checkpoint.babyIds.length>=1);
-      await section.getByRole('button',{name:'暂停修复'}).click();
-      await section.getByText('任务已暂停').waitFor();
+      // Intercept the browser fetch itself: service workers can bypass Playwright
+      // route interception, making a fast empty scan detach the Pause button.
+      // Keep the scan pending until the pause checkpoint is verified.
+      await page.evaluate(()=>{
+        const original=window.fetch.bind(window);
+        window.__thumbnailRepairFetch=original;
+        window.fetch=(input,init)=>{
+          if(String(typeof input==='string'?input:input?.url||'').includes('/api/media/thumbnail-backfill'))
+            return new Promise(()=>{});
+          return original(input,init);
+        };
+      });
+      try{
+        await section.getByRole('button',{name:'一键后台修复全部封面'}).click();
+        await section.getByText('正在后台修复').waitFor();
+        const checkpoint=await page.evaluate(()=>JSON.parse(localStorage.getItem('babymemo-thumbnail-repair-v1')||'null'));
+        assert.equal(checkpoint.phase,'running');
+        assert.ok(checkpoint.babyIds.length>=1);
+        await section.getByRole('button',{name:'暂停修复'}).click();
+        await section.getByText('任务已暂停').waitFor();
+      }finally{
+        await page.evaluate(()=>{
+          if(window.__thumbnailRepairFetch)window.fetch=window.__thumbnailRepairFetch;
+          delete window.__thumbnailRepairFetch;
+        });
+      }
       await page.reload();
       await section.getByRole('button',{name:'继续修复缺失封面'}).waitFor();
       const response=await page.evaluate(async()=>{

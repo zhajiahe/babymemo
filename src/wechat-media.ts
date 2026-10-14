@@ -13,6 +13,44 @@ function localDay(raw:RawMessage,baby:BabyContext){
  try{return date.toLocaleDateString('sv-SE',{timeZone:baby.time_zone||'Asia/Shanghai'})}
  catch{return date.toISOString().slice(0,10)}
 }
+
+// Reserve stable, baby-scoped database identities before queue acceptance.
+// A placeholder is NOT an uploaded file. Retried messages retain the same IDs,
+// and a caption already edited by the Agent is never overwritten on completion.
+export async function reserveWechatMedia(env:Env,raw:RawMessage,baby:BabyContext,messageId:string):Promise<string[]>{
+ const items=mediaItems(raw);
+ if(!items.length)return [];
+ if(items.length>MAX_ITEMS)bad('单条消息最多保存 4 项媒体，请分批发送');
+ const caption=(raw.item_list??[]).filter(x=>x?.type===1&&typeof x.text_item?.text==='string')
+   .map(x=>x.text_item.text).join(' ').trim().slice(0,1000);
+ const day=localDay(raw,baby),createdAt=new Date().toISOString();
+ const sources=items.map((item,i)=>{
+  const kind=item.type===5?'video':'image',sourceId=messageId+':'+kind+':'+i,id=photoRecordId(sourceId);
+  return {id,sourceId,kind};
+ });
+ // Batch is transactional in D1. No task may be acknowledged without its media rows.
+ await env.DB.batch(sources.map(x=>env.DB.prepare(
+  "INSERT OR IGNORE INTO media(id,baby_id,day,title,description,object_key,mime,size,created_at,thumbnail_ready,source_message_id,upload_state) VALUES(?,?,?,?,?,?,?,?,?,?,?,'processing')"
+ ).bind(x.id,baby.id,day,caption.slice(0,120)||(x.kind==='video'?'微信视频 ':'微信照片 ')+day,
+   caption,'private/'+baby.id+'/'+x.id,x.kind==='video'?'video/mp4':'image/jpeg',0,createdAt,0,x.sourceId)));
+ for(const x of sources){
+  const row=await env.DB.prepare('SELECT baby_id,deleted_at,purge_token,upload_state FROM media WHERE source_message_id=?')
+   .bind(x.sourceId).first<{baby_id:string;deleted_at:string|null;purge_token:string|null;upload_state:string}>();
+  if(!row||row.baby_id!==baby.id||row.deleted_at||row.purge_token)throw Error('WECHAT_MEDIA_RESERVATION_CONFLICT');
+  // A permanent failure can be re-queued safely without changing its metadata.
+  if(row.upload_state==='failed')await env.DB.prepare(
+    "UPDATE media SET upload_state='processing' WHERE source_message_id=? AND baby_id=? AND upload_state='failed' AND deleted_at IS NULL"
+  ).bind(x.sourceId,baby.id).run();
+ }
+ return sources.map(x=>x.id);
+}
+export async function failWechatMediaReservations(env:Env,raw:RawMessage,babyId:string,messageId:string):Promise<void>{
+ const sources=mediaItems(raw).slice(0,MAX_ITEMS).map((item,i)=>messageId+(item.type===5?':video:':':image:')+i);
+ if(!sources.length)return;
+ await env.DB.batch(sources.map(source=>env.DB.prepare(
+  "UPDATE media SET upload_state='failed' WHERE source_message_id=? AND baby_id=? AND upload_state='processing' AND deleted_at IS NULL"
+ ).bind(source,babyId)));
+}
 export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext,messageId:string,options:MediaTransferOptions={}){
  const items=mediaItems(raw);
  if(!items.length)return null;
@@ -22,8 +60,9 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   const itemStartedAt=performance.now();
   const kind:'video'|'image'=items[i].type===5?'video':'image';
   const sourceId=messageId+':'+kind+':'+i,id=photoRecordId(sourceId);
-  const existing=await env.DB.prepare('SELECT id,deleted_at FROM media WHERE source_message_id=?').bind(sourceId).first<{id:string;deleted_at?:string|null}>();
-  if(existing)return {id:existing.id,kind,already:true};
+  const existing=await env.DB.prepare('SELECT id,baby_id,deleted_at,upload_state FROM media WHERE source_message_id=?').bind(sourceId).first<{id:string;baby_id:string;deleted_at?:string|null;upload_state:string}>();
+  if(existing&&(existing.baby_id!==baby.id||existing.deleted_at))throw Error('WECHAT_MEDIA_RESERVATION_CONFLICT');
+  if(existing&&(!existing.upload_state||existing.upload_state==='ready'))return {id:existing.id,kind,already:true};
   const objectKey='private/'+baby.id+'/'+id;
   const old=await env.MEDIA.head(objectKey);
   let size=old?.size||0,mime:string|null|undefined=old?.httpMetadata?.contentType;
@@ -53,8 +92,18 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
    }catch{/* Thumbnail is always optional. */}
   }
   const indexStartedAt=performance.now();
-  await env.DB.prepare('INSERT OR IGNORE INTO media(id,baby_id,day,title,description,object_key,mime,size,created_at,thumbnail_ready,source_message_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
-   .bind(id,baby.id,day,title,caption,objectKey,mime,size,new Date().toISOString(),thumbReady,sourceId).run();
+  if(existing){
+   // Apply EXIF when the provisional reception date is unchanged; description-only edits must not block EXIF.
+   // Descriptions, titles and dates edited during the transfer are preserved.
+   const updated=await env.DB.prepare(
+    "UPDATE media SET mime=?,size=?,thumbnail_ready=?,day=CASE WHEN day=? THEN ? ELSE day END,upload_state='ready' "+
+    "WHERE id=? AND baby_id=? AND source_message_id=? AND upload_state='processing' AND deleted_at IS NULL AND purge_token IS NULL"
+   ).bind(mime,size,thumbReady,localDay(raw,baby),day,id,baby.id,sourceId).run();
+   if(!updated.meta.changes)throw Error('WECHAT_MEDIA_INDEX_FAILED');
+  }else{
+   await env.DB.prepare("INSERT OR IGNORE INTO media(id,baby_id,day,title,description,object_key,mime,size,created_at,thumbnail_ready,source_message_id,upload_state) VALUES(?,?,?,?,?,?,?,?,?,?,?,'ready')")
+    .bind(id,baby.id,day,title,caption,objectKey,mime,size,new Date().toISOString(),thumbReady,sourceId).run();
+  }
   const indexed=await env.DB.prepare('SELECT id FROM media WHERE source_message_id=?').bind(sourceId).first<{id:string}>();
   if(!indexed)throw Error('WECHAT_MEDIA_INDEX_FAILED');
   mediaTiming({channel:'wechat',stage:'index',size,startedAt:indexStartedAt});

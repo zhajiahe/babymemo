@@ -2,7 +2,7 @@ import JSONBig from 'json-bigint';
 import type { Env, Baby } from './types';
 import { decryptSecret, encryptSecret, setting, resolveOpenRouterKey } from './crypto';
 import { wechatTools, wechatHelp, runWechatTool } from './wechat-harness.mjs';
-import {WechatPhotoError,mediaItems,persistWeChatMedia,wechatMediaErrorCode} from './wechat-media.mjs';
+import {WechatPhotoError,mediaItems,persistWeChatMedia,reserveWechatMedia,failWechatMediaReservations,wechatMediaErrorCode} from './wechat-media.mjs';
 import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {qwenCompletion,DEFAULT_AI_PROVIDER,friendlyWorkersAIError} from './qwen-workers-ai.mjs';
@@ -100,7 +100,7 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
   if(thread.babyId&&thread.babyId!==baby.id){thread.pending=null;thread.lastQuery=null;thread.lastMedia=null;thread.lastOperation=null;thread.pendingMedia=null}
   thread.selectedBabyId=baby.id;
  }
- if(thread?.pendingMedia?.babyId===baby.id&&/刚才|刚发|这些|这张|这段|最近/.test(command)&&/照片|视频|图片/.test(command))return '刚发送的照片或视频仍在保存，请收到保存结果后再操作。其他成长记录可以继续发送。';
+ // Media operations are gated by real DB records in the tool layer; do not block unrelated chat messages based on photo upload timing.
  const fast=forwarded?null:await quickCommand(env,baby,command,thread,at);
  if(fast!==null)return fast;
  const context=thread?buildCommandContext(command,thread,at,baby.id):{modelMessages:[{role:'user',content:command}],groundedText:command,milestoneGroundedText:null};
@@ -214,7 +214,11 @@ export class WechatSession {
   constructor(private readonly ctx: DurableObjectState,private readonly env: Env){
    const decode=async(payload:string)=>JSON.parse(await decryptSecret(env,payload)) as MediaTask;
    this.mediaQueue=new DurableMediaQueue(ctx.storage,{
-    permission:async payload=>{
+    abandon:async payload=>{
+      const task=await decode(payload);
+      await failWechatMediaReservations(env,task.raw,task.babyId,task.sourceId);
+     },
+     permission:async payload=>{
      const task=await decode(payload),c=await getWechatConnection(env,task.connectionId);
      if(!c||c.bot_id!==task.botId||c.user_id!==task.userId||await mediaTaskId(c.token_cipher)!==task.credentialHash)return 'stale';
      return c.enabled===1?'active':'paused';
@@ -224,6 +228,7 @@ export class WechatSession {
      const task=await decode(payload),thread=structuredClone(task.thread);
      let reply=await handleWechatPhotoMessage(env,task.raw,task.sourceId,thread,task.babyId);
      const ok=reply.startsWith('已保存')||reply.startsWith('这些照片或视频已经保存过');
+      if(!ok)await failWechatMediaReservations(env,task.raw,task.babyId,task.sourceId);
      const text=wechatMessageText(task.raw);
      if(ok){
       const ids=await savedWechatMediaIds(env,task.raw,task.babyId,task.sourceId);
@@ -249,6 +254,7 @@ export class WechatSession {
      const task=await decode(payload);
      await env.DB.prepare('UPDATE wechat_messages SET photo_attempts=? WHERE message_id=?').bind(attempt,task.sourceId).run();
      if(!(error instanceof WechatPhotoError)&&attempt<3)return null;
+      await failWechatMediaReservations(env,task.raw,task.babyId,task.sourceId);
      const reply=error instanceof WechatPhotoError?error.message:'图片或视频下载/入库多次失败，请检查相册内是否已有部分媒体，然后重新发送尚未保存的内容。';
      const result:MediaResult={reply,ok:false,sourceId:task.sourceId,babyId:task.babyId,epoch:task.epoch,version:task.version,thread:task.thread,expiresAt:task.receivedAt+1200000};
      return {payload:await encryptSecret(env,JSON.stringify(result)),ok:false};
@@ -268,7 +274,14 @@ export class WechatSession {
      await this.ctx.storage.put('role','media');
      if(path==='/media/start')await this.mediaQueue.start();
      else if(path==='/media/pause')await this.mediaQueue.pause();
-     else if(path==='/media/reset')await this.mediaQueue.reset();
+     else if(path==='/media/reset'){
+       const canceled=await this.mediaQueue.reset();
+       // A canceled job must not leave a permanent 'processing' photo in D1.
+       for(const encrypted of canceled){
+        const task=JSON.parse(await decryptSecret(this.env,encrypted)) as MediaTask;
+        await failWechatMediaReservations(this.env,task.raw,task.babyId,task.sourceId);
+       }
+      }
      else{
       const data=await request.json() as {sourceId:string;payload:string};
       if(typeof data.sourceId!=='string'||typeof data.payload!=='string'||data.payload.length>120000)return Response.json({error:'WECHAT_MEDIA_TASK_INVALID'},{status:400});
@@ -377,7 +390,7 @@ export class WechatSession {
          if(result.epoch===(await this.ctx.storage.get('conversationEpoch')||'')&&thread.pendingMedia?.sourceId===result.sourceId&&thread.babyId===result.babyId){
           thread.pendingMedia=null;
           if(result.ok&&result.expiresAt>Date.now()){
-           thread.lastMedia=result.thread.lastMedia;
+           if(!thread.lastMedia||JSON.stringify(thread.lastMedia.ids)===JSON.stringify(result.thread.lastMedia?.ids))thread.lastMedia=result.thread.lastMedia;
            if(result.version===(await this.ctx.storage.get<number>('conversationVersion')||0)){
             thread.lastOperation=result.thread.lastOperation;thread.pending=result.thread.pending;thread.lastQuery=result.thread.lastQuery;
            }
@@ -403,14 +416,29 @@ export class WechatSession {
                const payload=await encryptSecret(this.env,JSON.stringify(task));
                if(payload.length>120000)reply='照片或视频消息过大，未接收保存任务，请分开发送。';
                else{
-                const queued=await workerMediaBot(this.env,connectionId).fetch('https://bot.internal/media/enqueue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceId:unique,payload})});
+                const reservedIds=await reserveWechatMedia(this.env,sourceRaw,baby,unique);
+                 const queued=await workerMediaBot(this.env,connectionId).fetch('https://bot.internal/media/enqueue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceId:unique,payload})});
                 if(!queued.ok)throw Error('WECHAT_MEDIA_QUEUE_UNAVAILABLE');
-                const result=await queued.json() as {accepted:boolean};
-                if(!result.accepted)reply='当前待保存的照片或视频较多，本条尚未接收。请稍后重新发送；文字记录仍可继续。';
-                else{
-                 thread.selectedBabyId=baby.id;thread.lastMedia=null;
-                 thread.pendingMedia={sourceId:unique,babyId:baby.id,expiresAt:receivedAt+1200000};
-                 reply='已收到 '+mediaItems(sourceRaw).length+' 项照片或视频，正在保存。保存结果会另行通知，其他文字记录可以继续发送。';
+                const result=await queued.json() as {accepted:boolean;alreadyDone?:boolean};
+                if(result.alreadyDone){
+                  const rows=await this.env.DB.prepare('SELECT id,upload_state FROM media WHERE baby_id=? AND deleted_at IS NULL AND id IN ('+reservedIds.map(()=>'?').join(',')+')')
+                   .bind(baby.id,...reservedIds).all<{id:string;upload_state:string}>();
+                  if(rows.results.length===reservedIds.length&&rows.results.every(row=>row.upload_state==='ready')){
+                   thread.selectedBabyId=baby.id;
+                   thread.lastMedia={babyId:baby.id,ids:reservedIds,expiresAt:receivedAt+1200000};
+                   reply='这些照片或视频之前已经保存过，无需重复导入。';
+                  }else{
+                   await failWechatMediaReservations(this.env,sourceRaw,baby.id,unique);
+                   reply='此前照片任务已经结束，但仍有媒体未保存成功。请重新发送未保存的照片或视频。';
+                  }
+                 }else if(!result.accepted){
+                  await failWechatMediaReservations(this.env,sourceRaw,baby.id,unique);
+                  reply='当前待保存的照片或视频较多，本条尚未接收。请稍后重新发送；文字记录仍可继续。';
+                 }else{
+                  thread.selectedBabyId=baby.id;
+                  thread.lastMedia={babyId:baby.id,ids:reservedIds,expiresAt:receivedAt+1200000};
+                  thread.pendingMedia={sourceId:unique,babyId:baby.id,expiresAt:receivedAt+1200000};
+                  reply='已收到 '+mediaItems(sourceRaw).length+' 项照片或视频，正在保存。保存结果会另行通知，其他文字记录可以继续发送。';
                 }
                }
               }

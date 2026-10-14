@@ -57,7 +57,10 @@ async function backup(dir){
   chmodSync(dbFile,0o600);
   const fields=query(SOURCE_DB,'PRAGMA table_info(media)').map(x=>x.name);
   const thumbField=fields.includes('thumbnail_object_key')?',thumbnail_object_key':'';
-  const media=query(SOURCE_DB,'SELECT id,object_key,thumbnail_ready'+thumbField+' FROM media');
+  // A processing/failed placeholder has no guaranteed original in R2.
+   // Back up its database state, but do not require a file that does not exist.
+   const readyOnly=fields.includes('upload_state')?" WHERE upload_state='ready'":'';
+   const media=query(SOURCE_DB,'SELECT id,object_key,thumbnail_ready'+thumbField+' FROM media'+readyOnly);
   let keys=media.flatMap(row=>[row.object_key,...(row.thumbnail_object_key?[row.thumbnail_object_key]:row.thumbnail_ready?['private/thumbnails/'+row.id+'.jpg']:[])]);
   const babyFields=query(SOURCE_DB,'PRAGMA table_info(babies)').map(x=>x.name);
   for(const column of ['avatar_key','avatar_object_key'])if(babyFields.includes(column)){
