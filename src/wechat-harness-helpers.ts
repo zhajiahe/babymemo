@@ -1,5 +1,5 @@
 import type {Env} from './types';
-import type {WechatBaby} from './wechat-tool-schema';
+import type {WechatBaby} from './wechat-tool-schema.ts';
 import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
 export type Kind='growth'|'milestones'|'media';
 export type DbRow=Record<string,any>&{id:string;day:string;baby_id:string};
