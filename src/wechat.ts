@@ -355,14 +355,15 @@ export class WechatSession {
         const outcome=await this.pollOnce(body.result);
         return Response.json({ok:true,outcome});
       }finally{
-        const lease=await this.ctx.storage.get<PilotLease>('pilotPollLease');
-        if(lease?.id===body.leaseId){
-          await this.ctx.storage.delete('pilotPollLease');
-          // Even if no Cron arrives next minute, the legacy Alarm will recover the account.
-          if((await getWechatConnection(this.env,body.connectionId as string))?.enabled===1)
-            await this.ctx.storage.setAlarm(Math.max(Date.now()+PILOT_WATCHDOG_MS,await this.ctx.storage.get<number>('staleTokenPauseUntil')||0));
-        }
-        this.polling=false;
+        try{
+          const lease=await this.ctx.storage.get<PilotLease>('pilotPollLease');
+          if(lease?.id===body.leaseId){
+            await this.ctx.storage.delete('pilotPollLease');
+            // Even if no Cron arrives next minute, the legacy Alarm will recover the account.
+            if((await getWechatConnection(this.env,body.connectionId as string))?.enabled===1)
+              await this.ctx.storage.setAlarm(Math.max(Date.now()+PILOT_WATCHDOG_MS,await this.ctx.storage.get<number>('staleTokenPauseUntil')||0));
+          }
+        }finally{this.polling=false}
       }
     }
     if(request.method!=='POST')return new Response('Not found',{status:404});
@@ -418,7 +419,7 @@ export class WechatSession {
     // conversation state and alarm. The migrated account retains the old DO id.
     const connectionId=await this.ctx.storage.get<string>('connectionId')||'legacy';
     const connection=await getWechatConnection(this.env,connectionId);
-    if(!connection||connection.enabled!==1)return;
+    if(!connection||connection.enabled!==1)return 'error';
     const tokenEncrypted=connection.token_cipher;
     const botId=connection.bot_id,userId=connection.user_id;
     const base=connection.base_url||API_BASE;
@@ -562,7 +563,7 @@ export class WechatSession {
        if(code==='WECHAT_AUTH_EXPIRED'){
         await this.env.DB.prepare('UPDATE wechat_connections SET enabled=0,updated_at=? WHERE id=?').bind(new Date().toISOString(),connectionId).run();
         await this.ctx.storage.deleteAlarm();
-        return;
+        return 'error';
        }
       }
     }finally{
