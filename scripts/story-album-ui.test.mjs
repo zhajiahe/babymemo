@@ -5,12 +5,17 @@ const source=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
 const album=source('src/features/album/Album.tsx');
 const viewer=source('src/components/MediaViewer.tsx');
 const css=source('src/editorial.css');
+const primitives=source('src/components/ui.tsx');
+const tokens=source('src/design-system.css');
 
 test('story-first view can switch to compact photo wall',()=>{
  assert.match(album,/useState<'stories'\|'grid'>\('stories'\)/);
- assert.match(album,/aria-label="相册浏览方式"/);
- assert.match(album,/aria-pressed={albumView==='stories'}/);
- assert.match(album,/aria-pressed={albumView==='grid'}/);
+ assert.match(album,/<SegmentedControl className="album-view-switch" label="相册浏览方式"/);
+ assert.match(album,/value={albumView} onChange={setAlbumView}/);
+ assert.match(album,/value:'stories' as const/);
+ assert.match(album,/value:'grid' as const/);
+ assert.match(primitives,/role="group" aria-label={label}/);
+ assert.match(primitives,/aria-pressed={value===option.value}/);
  assert.match(album,/className={albumView==='stories'\?'photo-stories':'photo-grid'}/);
  assert.match(album,/className={albumView==='stories'\?'photo-story':'photo-item'}/);
  assert.match(album,/<time dateTime={item.day}>/);
@@ -23,7 +28,7 @@ test('story text wraps naturally on iPhone without silent clipping',()=>{
  assert.match(css,/\.photo-stories \{ display:grid; grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
  assert.match(css,/@media\(max-width:800px\) \{\s*\.photo-stories \{ grid-template-columns:minmax\(0,1fr\)/);
  assert.doesNotMatch(css,/\.photo-story-text[^}]*-webkit-line-clamp/);
- assert.match(css,/\.album-view-switch button \{[^}]*min-height:44px/);
+ assert.match(tokens,/\.bm-segmented button \{[^}]*min-height: var\(--bm-touch-min\)/);
 });
 test('preview reads the story first, with explicit editor and existing save safety',()=>{
  assert.ok(viewer.indexOf('className="media-story-panel"')<viewer.indexOf('className="media-viewer-toolbar"'));

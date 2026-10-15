@@ -22,7 +22,7 @@ h1,h2,h3 { letter-spacing:normal; }
 
 
 .card { border:1px solid var(--bm-border); background:var(--bm-surface); box-shadow:var(--bm-shadow-card); border-radius:var(--bm-radius-lg); }
-.primary,.secondary { border-radius:9px; }
+.primary,.secondary { border-radius:var(--bm-radius-sm); }
 .icon-subtle,.stat-icon { background:transparent; }
 .mobile-back-button { display:none; }
 .section-title h2,.section-title h3 { font-size:17px; font-weight:650; color:var(--bm-ink); margin:0; }
