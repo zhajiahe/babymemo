@@ -49,7 +49,7 @@ function runCli(args) {
   }
 }
 async function boot() {
-  writeFileSync(testConfig,JSON.stringify({name:'babymemo-isolated-e2e',main:join(root,'src/worker.ts'),compatibility_date:'2026-10-12',assets:{directory:join(root,'dist'),binding:'ASSETS',not_found_handling:'single-page-application',run_worker_first:['/api/*']},d1_databases:[{binding:'DB',database_name:'synthetic-db',database_id:'00000000-0000-0000-0000-000000000001',migrations_dir:join(root,'migrations')}],r2_buckets:[{binding:'MEDIA',bucket_name:'synthetic-media'}],durable_objects:{bindings:[{name:'BOT',class_name:'WechatSession'}]},migrations:[{tag:'v1',new_sqlite_classes:['WechatSession']}],triggers:{crons:['0 19 * * *']}}));
+  writeFileSync(testConfig,JSON.stringify({name:'babymemo-isolated-e2e',main:join(root,'src/worker.ts'),compatibility_date:'2026-10-12',assets:{directory:join(root,'dist'),binding:'ASSETS',not_found_handling:'single-page-application',run_worker_first:['/api/*','/demo','/demo/','/demo/mobile','/demo/mobile/']},d1_databases:[{binding:'DB',database_name:'synthetic-db',database_id:'00000000-0000-0000-0000-000000000001',migrations_dir:join(root,'migrations')}],r2_buckets:[{binding:'MEDIA',bucket_name:'synthetic-media'}],durable_objects:{bindings:[{name:'BOT',class_name:'WechatSession'}]},migrations:[{tag:'v1',new_sqlite_classes:['WechatSession']}],triggers:{crons:['0 19 * * *']}}));
   sessionSecret = randomBytes(32).toString('hex');
   writeFileSync(envFile,
     'SESSION_SECRET='+sessionSecret+'\n'+
@@ -110,6 +110,17 @@ async function e2e() {
     const html=await response.text();
     assert.match(html,/<title>产品体验/);
     assert.match(html,/assets\/demo-[^"]+\.js/,'Vite must compile a standalone React demo entry');
+    const live=await fetch(base+'/demo',{redirect:'manual'});
+    assert.equal(live.status,302,'/demo must redirect to real demo, not SPA login');
+    assert.equal(live.headers.get('location'),'/demo.html');
+    const mobile=await fetch(base+'/demo-mobile.html');
+    assert.equal(mobile.status,200,'mobile demo must be a separate build entry');
+    const mobileHtml=await mobile.text();
+    assert.match(mobileHtml,/<title>移动端体验/);
+    assert.match(mobileHtml,/assets\/mobileDemo-[^"]+\.js/);
+    const mobileLink=await fetch(base+'/demo/mobile',{redirect:'manual'});
+    assert.equal(mobileLink.status,302,'/demo/mobile must not hit SPA fallback');
+    assert.equal(mobileLink.headers.get('location'),'/demo-mobile.html');
     const main=await fetch(base+'/');
     assert.equal(main.status,200,'Demo must not replace the private app');
   });
@@ -693,6 +704,33 @@ async function browserE2e(){
         await preview.screenshot({path:join(evidence,'demo-mobile.png'),fullPage:true});
         assert.deepEqual(requests,[],'Preview must never call the private family API');
       }finally{await preview.close();}
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': dedicated mobile demo remains interactive in phone and desktop views',async()=>{
+      const preview=await context.newPage(),requests=[];
+      preview.on('pageerror',error=>errors.push('mobile demo: '+error.message));
+      await preview.route('**/api/**',route=>{requests.push(route.request().url());return route.abort()});
+      await preview.route('https://images.unsplash.com/**',route=>route.abort());
+      try{
+        await preview.goto(base+'/demo/mobile',{waitUntil:'domcontentloaded'});
+        const frame=preview.frameLocator('iframe[title="BabyMemo 移动端交互演示"]');
+        await frame.getByRole('heading',{name:'小星星'}).waitFor();
+        await frame.getByRole('button',{name:/查看相册/}).click();
+        await frame.getByRole('button',{name:'照片墙'}).click();
+        await frame.locator('.photo-item').first().click();
+        await frame.getByRole('dialog',{name:'照片故事'}).waitFor();
+        await frame.getByRole('button',{name:'关闭照片详情'}).click();
+        await preview.screenshot({path:join(evidence,'mobile-demo-desktop-frame.png'),fullPage:true});
+        await preview.setViewportSize({width:390,height:844});
+        await preview.reload({waitUntil:'domcontentloaded'});
+        await preview.getByRole('heading',{name:'小星星'}).waitFor();
+        assert.equal(await preview.locator('iframe').count(),0,'Phone should use direct React Demo, not a nested iframe');
+        await preview.locator('.mobile-nav').getByRole('button',{name:'相册'}).click();
+        await preview.getByRole('button',{name:'照片墙'}).click();
+        await preview.locator('.photo-item').first().waitFor();
+        assert.equal(await preview.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'mobile demo must not overflow at 390px');
+        await preview.screenshot({path:join(evidence,'mobile-demo-phone.png'),fullPage:true});
+        assert.deepEqual(requests,[],'Demo must never call private API');
+      }finally{await preview.close()}
     });
     if(useWebKit){
       // Safari/WebKit does not store Secure cookies on plain HTTP loopback.

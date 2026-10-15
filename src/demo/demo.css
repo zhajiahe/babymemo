@@ -8,6 +8,7 @@
 .demo-app .demo-note strong{color:var(--bm-brand);font-weight:700}
 .demo-app .demo-note a,.demo-setting-note a{color:var(--bm-brand);font-weight:650}
 .demo-app .demo-note a:hover,.demo-setting-note a:hover{text-decoration:underline}
+.demo-note-links{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .demo-sidebar-foot{padding:0 17px;font-size:11px;color:var(--bm-muted)}
 .demo-app .home-quick-add{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;padding:9px 12px;background:var(--bm-brand-soft);color:var(--bm-brand);border:0;border-radius:9px;font-size:13px;font-weight:650}
 .demo-story-highlight{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:7px;margin-top:15px;padding:20px 22px;text-align:left;border:1px solid var(--bm-border);border-radius:13px;background:var(--bm-surface);color:var(--bm-ink)}

@@ -2,9 +2,13 @@
 
 > 一家人的成长，都记在这里。
 
-![BabyMemo Design System 2.1 产品首页界面预览（虚构示例内容）](docs/assets/product-preview.svg)
+## 在线体验
 
-**网页产品预览：** 宝宝的照片故事、成长曲线与生活时间线。上图是依照 Design System 2.1 的配色与当前首页布局绘制的**虚构示意图，并非产品截图**。可在部署站点的 `/demo.html` 体验与正式版共用组件的只读 Demo（无需登录），包括相册视图切换和照片故事阅读。
+直接打开已部署的 BabyMemo，无需查看模拟界面截图：
+
+**[体验网页 Demo](https://babymemo.zhajiahe1994.workers.dev/demo)** · **[体验移动端 Demo](https://babymemo.zhajiahe1994.workers.dev/demo/mobile)**
+
+两种演示均使用虚构家庭和示例记录，**无需登录、只读、不访问真实家庭数据**。可浏览照片故事、切换相册视图和查看成长曲线。移动端入口在电脑上提供可交互的手机画面，在手机上直接展示移动界面。
 
 ## 微信里，直接记录和管理
 

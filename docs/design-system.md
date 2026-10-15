@@ -32,9 +32,13 @@
 - **移动端**：原生感底栏、安全区与软键盘避让；不牺牲文字可读性。操作状态、网络断开、空页面、上传和失败均有真实反馈。
 - **主题**：当前统一浅色；图表色、媒体占位色和输入焦点来自 Token。深色模式需要先审计遗留硬编码色，完成全页对比度与视频/图片测试后再开启，不能只改根变量。
 
-## 产品预览同步
+## 在线产品体验
 
-`docs/assets/product-preview.svg` 是根据当前首页结构绘制的**虚构静态示意**（不是截图），主要语义色须与 `src/design-system.css` 一致。正式可交互示例以 `/demo.html` 为准；Demo 不模拟写入或隐藏的微信聊天界面。README 不得将任何合成素材称为真实用户截图。
+README 不再展示静态的网页模拟截图，而是直接链接已部署的 [网页 Demo](https://babymemo.zhajiahe1994.workers.dev/demo) 和 [移动端 Demo](https://babymemo.zhajiahe1994.workers.dev/demo/mobile)。
+
+- `/demo` → `/demo.html`；`/demo/mobile` → `/demo-mobile.html`。通过 Worker 路由和 `assets.run_worker_first` 显式跳转，防止 SPA fallback 将演示链接误导到需要登录的应用首页。
+- 移动端 Demo 在电脑上使用独立 iframe 模拟真实窄屏布局，在手机上直接复用演示 React 应用，不维护第二份假 UI。
+- 所有 Demo 均为虚构、只读、不访问私有 API；微信模拟图明确标示为合成示意。
 
 ## 验收
 

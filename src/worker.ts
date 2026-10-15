@@ -21,6 +21,11 @@ export { WechatSession } from './wechat';
 import {runWechatCronPolling} from './wechat-cron-pilot';
 
 const app = new Hono<ApplicationEnv>();
+// Public read-only demos have clean URLs. SPA fallback would otherwise serve /index.html.
+app.get('/demo',c=>c.redirect('/demo.html',302));
+app.get('/demo/',c=>c.redirect('/demo.html',302));
+app.get('/demo/mobile',c=>c.redirect('/demo-mobile.html',302));
+app.get('/demo/mobile/',c=>c.redirect('/demo-mobile.html',302));
 const fail = (c: any, status:number, error:string) => c.json({error},status);
 const json = async (req: Request, limit=16_384):Promise<any> => {
   if(Number(req.headers.get('content-length'))>limit)throw Error('BODY_TOO_LARGE');

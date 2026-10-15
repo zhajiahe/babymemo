@@ -30,7 +30,7 @@ test('demo and production reuse the same view switch and native media dialog', (
 
 test('growth chart, preview and shared controls consume 2.1 semantic tokens', () => {
   const growth=read('src/features/growth/RecordView.tsx');
-  const preview=read('docs/assets/product-preview.svg');
+  const readme=read('README.md');
   const ui=read('src/components/ui.tsx');
   assert.match(growth, /<SegmentedControl className="chart-tabs"/);
   assert.match(growth, /var\(--bm-chart-line\)/);
@@ -39,10 +39,10 @@ test('growth chart, preview and shared controls consume 2.1 semantic tokens', ()
   assert.match(ui,/export function IconButton/);
   assert.match(ui,/export function StatusMessage/);
   assert.match(ui,/aria-busy=\{loading\|\|undefined\}/);
-  assert.match(preview,/data-design-system="2.1"/);
+  assert.match(readme,/体验网页 Demo/);
+  assert.match(readme,/体验移动端 Demo/);
   for(const [token,hex] of Object.entries({'--bm-page':'#F8F8F6','--bm-ink':'#263647','--bm-brand':'#245F91','--bm-border':'#E1E6E9'})){
     assert.ok(tokens.includes(token+': '+hex+';'),token);
-    assert.ok(preview.includes(hex),token+' in static preview');
   }
 });
 

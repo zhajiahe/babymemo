@@ -98,7 +98,7 @@ export default function Demo(){
     <div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><span className="avatar" aria-label="示例管理员">家</span></div>
    </div>
    <div className="page">
-    <div className="demo-note"><span><strong>产品体验</strong> · 虚构家庭与示例记录，直接浏览真实风格的应用界面</span><a href="https://github.com/zhajiahe/babymemo" target="_blank" rel="noopener noreferrer">了解 BabyMemo ↗</a></div>
+    <div className="demo-note"><span><strong>产品体验</strong> · 虚构家庭与示例记录，直接浏览真实风格的应用界面</span><div className="demo-note-links"><a href="/demo/mobile">移动端体验 ↗</a><a href="https://github.com/zhajiahe/babymemo" target="_blank" rel="noopener noreferrer">了解 BabyMemo ↗</a></div></div>
     <header className={'page-heading'+(active==='album'?' page-heading-album':'')}>
      <div className="page-heading-content"><h1>{active==='overview'?'小星星':titles[active]}</h1><p className="muted">{active==='overview'?'10 个月 · 成长日记':active==='album'?'照片与视频':'小星星 · 10 个月'}</p></div>
      {active==='overview'&&<button type="button" className="home-quick-add" onClick={()=>go('moments')}><Plus size={16}/> 记录瞬间</button>}
