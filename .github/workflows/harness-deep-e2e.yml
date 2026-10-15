@@ -20,7 +20,7 @@ on:
         options: [both, workers-ai, openrouter]
         default: both
       repetitions:
-        description: "Repeat all 30 synthetic scenarios per model"
+        description: "Repeat all 30 V2 synthetic scenarios per model"
         type: choice
         options: ["1", "3"]
         default: "1"
@@ -76,7 +76,7 @@ jobs:
         env:
           HARNESS_CASES: ${{ inputs.offline_cases }}
         run: npm run test:harness:deep
-      - name: Verify canonical 30-case model scoring and matrix (offline)
+      - name: Verify canonical 30-case V2 model scoring and matrix (offline)
         run: node --test scripts/model-benchmark.test.mjs scripts/model-benchmark-matrix.test.mjs scripts/openrouter-retry.test.mjs
 
   prepare-models:
@@ -114,7 +114,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --no-audit --no-fund
-      - name: Run isolated 30-case benchmark (reasoning off; low compatibility fallback)
+      - name: Run isolated 30-case V2 benchmark (reasoning off; low compatibility fallback)
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}

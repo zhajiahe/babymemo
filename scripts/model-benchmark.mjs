@@ -3,13 +3,15 @@
 // same prompts/observations/scoring for Qwen Workers AI and Muse OpenRouter.
 // No production WeChat, D1, R2, personal messages or real tool side effects.
 import {writeFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {wechatFinalMessages} from '../src/wechat-prompt.mjs';
 import {wechatTools} from '../src/wechat-harness.mjs';
 import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
 import {qwenRequest,DEFAULT_QWEN_MODEL} from '../src/qwen-workers-ai.mjs';
 import {openRouterCompletion} from '../src/openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from '../src/openrouter-model.mjs';
 import {diagnosticEvent,safeBenchPreview,benchmarkFailureKind,isFatalBenchmarkError,benchmarkMarkdownReport} from './model-benchmark-logging.mjs';
-import {MODEL_BENCH_CASES,BENCHMARK_SYSTEM,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
+import {MODEL_BENCH_CASES,BENCHMARK_DATE,BENCHMARK_ID,benchmarkMessages,syntheticObservation,validateBenchmarkTool,scoreModelCase,classifyBenchmarkIssues,aggregateBenchmark} from './model-benchmark-cases.mjs';
 
 if(process.env.MODEL_BENCH_CONFIRM!=='YES')throw Error('MANUAL_CONFIRMATION_REQUIRED');
 const provider=process.env.MODEL_BENCH_PROVIDER||'both';
@@ -108,16 +110,20 @@ async function evaluate(modelProvider,item,iteration){
  };
  try{
   reply=await runWechatAgentLoop({
-   messages:[{role:'system',content:BENCHMARK_SYSTEM},{role:'user',content:item.message}],
+   messages:benchmarkMessages(item),
    tools:wechatTools,
    complete:({messages,tools})=>complete({messages,tools},1200),
-   finalize:({messages})=>complete({messages,tools:undefined},360),
+   finalize:({observations,committedKinds,failedWrite})=>complete({
+    messages:wechatFinalMessages({command:item.message,babyName:item.babyName||'测试宝宝',
+     localDay:BENCHMARK_DATE,observations,committedKinds,failedWrite}),tools:undefined
+   },360),
    execute:async call=>{
     const checked=validateBenchmarkTool(item,call,wechatTools,calls);
     calls.push({name:checked.name,args:checked.args,issue:checked.issue});
     log('tool_call',{...caseContext,toolNames:[checked.name],arguments:JSON.stringify(checked.args),status:checked.issue?'REJECTED_'+checked.issue:'SYNTHETIC_OBSERVATION'});
     if(checked.issue){issues.push(checked.issue);return {content:'测试工具调用被拒绝，未执行真实写入。',committed:false,halt:true}}
-    return {content:syntheticObservation(checked.name,checked.args,item),committed:/^(create_|update_|delete_|restore_)/.test(checked.name)};
+    return {content:syntheticObservation(checked.name,checked.args,item),
+     committed:/^(create_|update_|delete_|restore_)/.test(checked.name)&&item.observationCommitted!==false};
    }
   });
  }catch(e){error=e instanceof Error?e.message:'UNKNOWN_ERROR'}
@@ -125,10 +131,12 @@ async function evaluate(modelProvider,item,iteration){
  if(modelProvider==='openrouter'&&effectiveReasoning==='off'&&!reasoningFallbackUsed&&usage.reasoningTokens!==null&&usage.reasoningTokens>0)score.issues.push('REASONING_TOKENS_NONZERO');
  if(item.id!=='negated-save'&&calls.length&&(!modelFinal||modelFinal.trim()===''))score.issues.push('NO_NATURAL_MODEL_FINAL');
  score.passed=score.issues.length===0;
+ Object.assign(score,classifyBenchmarkIssues(score.issues));
  const errorCode=error?String(error).replace(/[^A-Z0-9_]/gi,'').slice(0,42):null;
  const taskResult={caseId:item.id,name:item.name,iteration,passed:score.passed,issues:score.issues,
   tools:calls.map(x=>x.name),toolCalls:calls.map(x=>({name:x.name,args:x.args})),modelRequests,
   latencyMs:Date.now()-started,usage,reasoningFallbackUsed,requestedProvider,servedProvider,
+  dimensions:score.dimensions,safetyCritical:score.safetyCritical,
   finalReplyPresent:!!modelFinal?.trim(),
   finalReplyPreview:safeBenchPreview(modelFinal||reply,320),errorCode};
  log('scenario_complete',{...caseContext,passed:taskResult.passed,modelRequests,latencyMs:taskResult.latencyMs,
@@ -161,8 +169,12 @@ for(const id of selected){
   preferredProvider:id==='openrouter'?'relace':null,
   summary:aggregateBenchmark(tasks),results:tasks});
 }
-const report={benchmark:'babymemo-model-parity-v1',timestamp:new Date().toISOString(),
- setup:{tasksPerModel:MODEL_BENCH_CASES.length,repetitions,identicalPromptsSchemasObservationsScoring:true,
+const caseSetHash=createHash('sha256').update(JSON.stringify({cases:MODEL_BENCH_CASES,
+ messages:MODEL_BENCH_CASES.map(benchmarkMessages),tools:wechatTools})).digest('hex').slice(0,20);
+const report={benchmark:BENCHMARK_ID,timestamp:new Date().toISOString(),
+ setup:{tasksPerModel:MODEL_BENCH_CASES.length,repetitions,caseSetHash,
+  promptSource:'src/wechat-prompt.ts',syntheticToolObservations:true,
+  identicalPromptsSchemasObservationsScoring:true,
   providerProductionTemperatures:{'workers-ai':1,'openrouter':0},
   requestedReasoning:{'workers-ai':'off',openrouter:effectiveReasoning},
   sideEffects:'synthetic only; productionWrites=0',softLimits:{neurons:maxNeurons,usd:maxUSD}},
