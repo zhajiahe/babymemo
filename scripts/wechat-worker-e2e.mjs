@@ -106,6 +106,33 @@ try{
   assert.match(r.modelMessages[0].at(-1).content,/语音转写/);
   assert.match(r.modelMessages[0][0].content,/不可信的历史材料/);
  });
+ await step('Cron pilot leases block Alarm and concurrent claims; commit shares idempotent cursor processing and fallback',async()=>{
+  const r=await run({mode:'pilot',messages:[textFrom('pilot-message','synthetic-user','synthetic-bot','你好')],responses:[natural('你好，已收到')]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.status.claimStatus,200);
+  assert.equal(r.status.tokenValid,true);
+  assert.equal(r.status.rejectedConcurrentClaim,409);
+  assert.equal(r.status.cursorAfterClaim,null);
+  assert.equal(r.status.legacyDuringLease,0);
+  assert.equal(r.status.completed,200);
+  assert.equal(r.status.outcome,'messages');
+  assert.equal(r.status.cursorAfterComplete,'pilot-cursor');
+  assert.equal(r.status.rejectedReplay,409);
+  assert.equal(r.status.fallbackCalls,1);
+  assert.equal(r.sent,1,'fallback replay must not duplicate a sent answer');
+  assert.equal(r.messages.find(m=>m.message_id==='synthetic-bot:pilot-message')?.state,'done');
+ });
+ await step('Cron pilot stale -14 pauses all polling without advancing cursor or disabling account',async()=>{
+  const r=await run({mode:'pilot',stale:true});
+  assert.equal(r.error,undefined);
+  assert.equal(r.status.completed,200);
+  assert.equal(r.status.outcome,'error');
+  assert.equal(r.status.cursorAfterComplete,null);
+  assert.equal(r.status.lastError,'WECHAT_STALE_TOKEN');
+  assert.ok(r.status.staleUntil>Date.now()+3500000);
+  assert.equal(r.status.fallbackCalls,0);
+  assert.equal(r.sent,0);
+ });
  await step('voice without native transcription is acknowledged once, without ASR or model calls',async()=>{
   const r=await run({mode:'alarm',alarms:2,messages:[voiceFrom('voice-no-transcript',null)]});
   assert.equal(r.error,undefined);
