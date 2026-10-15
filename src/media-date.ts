@@ -74,7 +74,7 @@ export function jpegXmpCaptureDay(bytes:Uint8Array,timeZone:string='Asia/Shangha
  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
  const fields=['exif:DateTimeOriginal','photoshop:DateCreated','xmp:CreateDate'];
  const candidates=new Map<string,Set<string>>();
- const header='http://ns.adobe.com/xap/1.0/\\0'.replace('\\0','\\u0000');
+ const header='http://ns.adobe.com/xap/1.0/'+String.fromCharCode(0);
  let p=2;
  while(p+4<=bytes.length&&bytes[p]===255){
   const marker=bytes[p+1];
