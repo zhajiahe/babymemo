@@ -13,8 +13,8 @@ export function RecordFilterBar({value,onChange,media=false}:{value:RecordFilter
  const active=Object.values(value).some(Boolean);
  function submit(event:FormEvent){event.preventDefault();onChange(draft);setExpanded(false)}
  return <section className="record-filter-shell">
-  <button type="button" className="record-filter-toggle" aria-expanded={expanded} aria-controls="record-filter-fields" onClick={()=>setExpanded(v=>!v)}>
-   <SlidersHorizontal size={17}/><span>筛选记录</span>{active&&<span className="record-filter-active">已筛选</span>}<ChevronDown size={16} className={expanded?'rotated':''}/>
+  <button type="button" className="record-filter-toggle" aria-label="筛选记录" aria-expanded={expanded} aria-controls="record-filter-fields" onClick={()=>setExpanded(v=>!v)}>
+   <SlidersHorizontal size={17} aria-hidden="true"/><span className="record-filter-full">筛选记录</span><span className="record-filter-compact" aria-hidden="true">筛选</span>{active&&<span className="record-filter-active">已筛选</span>}<ChevronDown size={16} className={expanded?'rotated':''} aria-hidden="true"/>
   </button>
   {expanded&&<form className="record-filters" id="record-filter-fields" onSubmit={submit} aria-label="查询记录">
    <div className="record-filter-fields">

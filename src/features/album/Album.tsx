@@ -236,14 +236,15 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  }
  const selectedIndex=selected?media.findIndex(candidate=>candidate.id===selected.id):-1;
  return <>
- <RecordFilterBar value={filters} onChange={onFilters} media/>
- <div className="album-toolbar album-content-toolbar">
-  <div className="album-toolbar-heading"><h2>照片与视频</h2></div>
-  <div className="album-toolbar-actions">
-   <Button type="button" variant="primary" className="album-add-btn" aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(v=>!v)}><Plus size={17}/>{showUploader?'收起上传':'添加照片或视频'}</Button></div>
+ <div className="album-toolbar album-content-toolbar"><div className="album-toolbar-heading"><h2>照片与视频</h2></div></div>
+ <div className="album-controls" role="group" aria-label="相册操作">
+  <RecordFilterBar value={filters} onChange={onFilters} media/>
+  <Button type="button" variant="primary" className="album-add-btn" aria-label={showUploader?'收起上传':'添加照片或视频'} aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(v=>!v)}>
+   <Plus size={17} aria-hidden="true"/><span className="album-add-full">{showUploader?'收起上传':'添加照片或视频'}</span><span className="album-add-compact" aria-hidden="true">{showUploader?'收起':'添加'}</span>
+  </Button>
+  <SegmentedControl className="album-view-switch" label="相册浏览方式" value={albumView} onChange={setAlbumView}
+   options={[{value:'stories' as const,label:'故事',icon:<BookOpenText size={17}/>},{value:'grid' as const,label:'照片墙',icon:<Images size={17}/>}]} />
  </div>
- <SegmentedControl className="album-view-switch" label="相册浏览方式" value={albumView} onChange={setAlbumView}
-  options={[{value:'stories' as const,label:'故事',icon:<BookOpenText size={17}/>},{value:'grid' as const,label:'照片墙',icon:<Images size={17}/>}]} />
  {showUploader&&<Card className="upload-card"><div id="album-upload-panel" className="album-upload-panel"><CloudUpload size={30}/><h3>上传照片或视频</h3><p className="muted">可一次选择多张照片或视频。网络中断后重新选择原文件即可续传。</p>
   <div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用拍摄日期</label><label>默认日期 <input type="date" value={uploadDay} max={today(baby.time_zone)} onChange={e=>setUploadDay(e.target.value)}/></label></div>
   <p className="muted small">照片自带拍摄日期时会按原日期归档；缺少日期时使用默认日期。关闭自动日期即可手动指定。</p>

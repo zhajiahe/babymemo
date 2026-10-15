@@ -19,6 +19,17 @@ test('mobile filters collapse and date inputs fit one constrained column',()=>{
  assert.match(filters,/onChange\(emptyFilters\)/);
 });
 
+test('album filter, add and view switch share a single responsive toolbar',()=>{
+ assert.match(album,/className="album-controls" role="group" aria-label="相册操作"/);
+ assert.ok(album.indexOf('<RecordFilterBar value={filters}')<album.indexOf('className="album-add-btn"'));
+ assert.ok(album.indexOf('className="album-add-btn"')<album.indexOf('<SegmentedControl className="album-view-switch"'));
+ assert.match(album,/aria-label={showUploader\?'收起上传':'添加照片或视频'}/);
+ assert.match(filters,/aria-label="筛选记录"/);
+ assert.match(css,/\.album-controls \{ display:grid;/);
+ assert.match(css,/\.album-controls \.record-filter-shell \{ display:contents; \}/);
+ assert.match(css,/\.album-controls \.record-filters \{ grid-column:1 \/ -1; grid-row:2;/);
+ assert.match(css,/\.album-controls \.album-view-switch button \{ flex:1 1 0;/);
+});
 test('home and album prioritize photos and visibly identify videos',()=>{
  assert.match(app,/className="home-quick-add"/);
  assert.match(css,/\.home-photo-cover \{ aspect-ratio:16\/9; \}/);

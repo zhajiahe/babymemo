@@ -951,8 +951,36 @@ async function browserE2e(){
         for(const nav of ['成长','相册']){
           await page.locator('.mobile-nav button[aria-label="'+nav+'"]').click();
           const toggle=page.locator('.record-filter-toggle');
+          if(nav==='相册'){
+            const row=await page.locator('.album-controls').evaluate(el=>{
+              const names=['.record-filter-toggle','.album-add-btn','.album-view-switch'];
+              const rects=names.map(selector=>{
+                const b=el.querySelector(selector)?.getBoundingClientRect();
+                if(!b)throw Error('Missing '+selector);
+                return {top:b.top,bottom:b.bottom,left:b.left,right:b.right,height:b.height};
+              });
+              return {rects,pageWidth:document.documentElement.scrollWidth,windowWidth:innerWidth};
+            });
+            const [filterButton,addButton,viewSwitch]=row.rects;
+            assert.ok(Math.max(...row.rects.map(r=>r.top))-Math.min(...row.rects.map(r=>r.top))<=2,
+              'Album filter, add and view switch must stay on one row at '+width+': '+JSON.stringify(row));
+            assert.ok(filterButton.right<=addButton.left+1&&addButton.right<=viewSwitch.left+1,
+              'Album controls must remain in order without overlap at '+width+': '+JSON.stringify(row));
+            assert.ok(row.rects.every(r=>r.height>=44&&r.left>=-1&&r.right<=width+1),
+              'Album controls must fit viewport and remain tappable at '+width+': '+JSON.stringify(row));
+            assert.ok(row.pageWidth<=row.windowWidth+1,'Album row horizontal overflow at '+width);
+            await page.screenshot({path:join(evidence,'album-toolbar-single-row-'+width+'.png'),fullPage:false});
+          }
           await toggle.click();
           assert.equal(await toggle.getAttribute('aria-expanded'),'true','filter panel failed to expand');
+          if(nav==='相册'){
+            const panel=await page.locator('.album-controls').evaluate(el=>{
+              const form=el.querySelector('.record-filters')?.getBoundingClientRect();
+              const button=el.querySelector('.record-filter-toggle')?.getBoundingClientRect();
+              return {panelTop:form?.top,buttonBottom:button?.bottom};
+            });
+            assert.ok(panel.panelTop>=panel.buttonBottom-2,'Expanded album filter must appear BELOW toolbar '+width+': '+JSON.stringify(panel));
+          }
           const measure=await page.locator('.record-filter-fields input[type="date"]').evaluateAll(inputs=>
             inputs.map(input=>{const r=input.getBoundingClientRect();return{left:r.left,right:r.right,width:r.width}}));
           assert.equal(measure.length,2,'both date filters remain available');
