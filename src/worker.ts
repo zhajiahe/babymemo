@@ -11,7 +11,7 @@ import {getWechatConnection,listWechatConnections} from './wechat-connections';
 import { mediaDownloadHeader } from './media-filename.mjs';
 import { finalizeUpload, FinalizeMismatchError } from './upload-finalize.mjs';
 import { cleanupExpiredUploads } from './upload-cleanup.mjs';
-import {mediaTiming} from './media-timing.mjs';
+import {mediaTiming,mediaReadTiming} from './media-timing.mjs';
 import {canDirectUpload} from './media-transfer.mjs';
 import {webManagement} from './web-management';
 import {familySnapshot,completeFamilyExport,familyExportManifest} from './family-export';
@@ -383,16 +383,24 @@ app.post('/api/upload/:id/finish',async c=>{
 // Private R2 JPEG derivative: no public bucket and no new image service.
 // Existing media lacking thumbnails automatically fall back to the original.
 app.get('/api/media/:id/thumbnail',async c=>{
-  const id=c.req.param('id');
-  const row=await c.env.DB.prepare('SELECT object_key,mime FROM media WHERE id=? AND deleted_at IS NULL AND upload_state=\'ready\'').bind(id).first<{object_key:string;mime:string}>();
+  const started=performance.now(),id=c.req.param('id');
+  const row=await c.env.DB.prepare('SELECT object_key,mime,updated_at FROM media WHERE id=? AND deleted_at IS NULL AND upload_state=\'ready\'').bind(id).first<{object_key:string;mime:string;updated_at:string}>();
+  const d1Ms=performance.now()-started;
   if(!row)return fail(c,404,'NOT_FOUND');
+  const r2Started=performance.now();
   const thumb=await c.env.MEDIA.get(thumbKey(id));
   const obj=thumb||(row.mime.startsWith('image/')?await c.env.MEDIA.get(row.object_key):null);
+  const r2Ms=performance.now()-r2Started;
   if(!obj)return fail(c,404,'NOT_FOUND');
   const etag=obj.httpEtag||'"'+obj.etag+'"';
+  // HTTP caching stays disabled: only the session-gated, size-limited service
+  // worker cache may retain a versioned private JPEG derivative.
   const headers=new Headers({'Content-Type':thumb?'image/jpeg':row.mime,'Content-Length':String(obj.size),
-    'Cache-Control':'private, no-cache, must-revalidate','X-Content-Type-Options':'nosniff','ETag':etag});
-  if(c.req.header('If-None-Match')===etag)return new Response(null,{status:304,headers});
+    'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','ETag':etag,
+    'X-Thumbnail-Version':row.updated_at,'X-Thumbnail-Derivative':thumb?'1':'0'});
+  const status=c.req.header('If-None-Match')===etag?304:200;
+  mediaReadTiming({kind:'thumbnail',status,size:obj.size,d1Ms,r2Ms,totalMs:performance.now()-started});
+  if(status===304)return new Response(null,{status:304,headers});
   return new Response(obj.body,{headers});
 });
 // Thumbnail is optional: its failure must never invalidate an uploaded original.
@@ -422,8 +430,9 @@ app.put('/api/media/:id/thumbnail',async c=>{
   if(data[0]!==255||data[1]!==216||data[2]!==255||data[total-2]!==255||data[total-1]!==217)
     return fail(c,400,'INVALID_THUMBNAIL');
   await c.env.MEDIA.put(thumbKey(id),data,{httpMetadata:{contentType:'image/jpeg'}});
-  await c.env.DB.prepare('UPDATE media SET thumbnail_ready=1 WHERE id=?').bind(id).run();
-  return c.json({ok:true});
+  const updatedAt=crypto.randomUUID();
+  await c.env.DB.prepare('UPDATE media SET thumbnail_ready=1,updated_at=? WHERE id=?').bind(updatedAt,id).run();
+  return c.json({ok:true,updated_at:updatedAt});
 });
 // Metadata edits never alter the private R2 object.
 app.patch('/api/media/:id',async c=>{
@@ -452,7 +461,9 @@ app.patch('/api/media/:id',async c=>{
   return c.json({ok:true,updated_at:version});
 });
 app.get('/api/media/:id/content',async c=>{
+  const started=performance.now();
   const row=await c.env.DB.prepare('SELECT object_key,mime,title FROM media WHERE id=? AND deleted_at IS NULL AND upload_state=\'ready\'').bind(c.req.param('id')).first<{object_key:string;mime:string;title:string}>();
+  const d1Ms=performance.now()-started;
   if(!row)return fail(c,404,'NOT_FOUND');
   const range=c.req.header('Range');let options: R2GetOptions|undefined;
   if(range){
@@ -462,8 +473,12 @@ app.get('/api/media/:id/content',async c=>{
     if(!Number.isSafeInteger(offset)||end!==undefined&&(!Number.isSafeInteger(end)||end<offset))return fail(c,416,'INVALID_RANGE');
     options={range:{offset,length:end!==undefined?end-offset+1:undefined}};
   }
+  const r2Started=performance.now();
   const obj=await c.env.MEDIA.get(row.object_key,options);
+  const r2Ms=performance.now()-r2Started;
   if(!obj)return fail(c,404,'NOT_FOUND');
+  // Server timings exclude network transfer and browser decode; no IDs/URLs logged.
+  mediaReadTiming({kind:'original',status:range?206:200,size:obj.size,d1Ms,r2Ms,totalMs:performance.now()-started});
   const headers=new Headers({'Content-Type':row.mime,'Cache-Control':'private, no-store','Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff'});
   if(c.req.query('download')==='1')headers.set('Content-Disposition',mediaDownloadHeader(row.title,row.mime));
   if(range&&obj.range){

@@ -8,6 +8,15 @@ export function mediaSizeBand(size: number){
  if(size<=50*1024*1024)return '8-50MiB';
  return '>50MiB';
 }
+export function mediaReadTiming({kind,status,size,d1Ms,r2Ms,totalMs,emit=console.info}:{
+ kind:'thumbnail'|'original';status:number;size:number;d1Ms:number;r2Ms:number;totalMs:number;emit?:(line:string)=>void
+}){
+ const ms=(value:number)=>Math.min(600000,Math.max(0,Math.round(value)));
+ const event={level:'info',event:'MEDIA_READ_TIMING',kind,status,
+  sizeBand:mediaSizeBand(size),d1Ms:ms(d1Ms),r2Ms:ms(r2Ms),totalMs:ms(totalMs)};
+ emit(JSON.stringify(event));
+ return event;
+}
 export function mediaTiming({channel,stage,size,startedAt,status='ok',now=()=>performance.now(),emit=console.info}: {channel:string;stage:string;size:number;startedAt:number;status?:'ok'|'error';now?:()=>number;emit?:(message:string)=>void}){
  const channelName=['web','wechat'].includes(channel)?channel:'unknown';
  const stageName=['direct','part','finish','cdn','r2','thumbnail','index','total','client'].includes(stage)?stage:'unknown';
