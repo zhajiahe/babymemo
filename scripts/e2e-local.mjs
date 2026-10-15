@@ -666,12 +666,26 @@ async function browserE2e(){
         await preview.getByRole('button',{name:/查看相册/}).click();
         await preview.locator('.photo-story').first().waitFor();
         assert.ok(await preview.locator('.photo-story').count()>1);
+        const mode=preview.getByRole('group',{name:'相册浏览方式'});
+        assert.equal(await mode.getByRole('button',{name:'故事'}).getAttribute('aria-pressed'),'true');
         await preview.getByRole('button',{name:'照片墙'}).click();
+        assert.equal(await mode.getByRole('button',{name:'照片墙'}).getAttribute('aria-pressed'),'true');
         await preview.locator('.photo-item').first().waitFor();
         await preview.locator('.photo-item .photo-preview').first().click();
         await preview.getByRole('dialog',{name:'照片故事'}).waitFor();
         await preview.getByRole('button',{name:'下一张'}).click();
+        await preview.keyboard.press('Escape');
+        await preview.getByRole('dialog',{name:'照片故事'}).waitFor({state:'hidden'});
+        await preview.locator('.photo-item .photo-preview').first().click();
         await preview.getByRole('button',{name:'关闭照片详情'}).click();
+        for(const width of [320,375,390,768,1280]){
+          await preview.setViewportSize({width,height:812});
+          const overflow=await preview.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth+1);
+          assert.equal(overflow,false,'Demo horizontal overflow at '+width);
+          if(width===320||width===390||width===1280){
+            await preview.screenshot({path:join(evidence,'design-system-demo-album-'+width+'.png'),fullPage:true});
+          }
+        }
         await preview.setViewportSize({width:375,height:812});
         await preview.locator('.mobile-nav').getByRole('button',{name:'成长'}).click();
         await preview.getByRole('heading',{name:'成长记录'}).waitFor();

@@ -20,6 +20,13 @@ test('product preview is a React app using fictional data, not a legacy static m
  assert.equal(existsSync(new URL('../public/demo.html',import.meta.url)),false);
 });
 
+test('demo retains real shared design primitives without enabling private changes',()=>{
+ const demo=read('src/demo/Demo.tsx');
+ assert.match(demo,/SegmentedControl/);
+ assert.match(demo,/className="media-dialog demo-viewer"/);
+ assert.match(demo,/dialog\.showModal\(\)/);
+ assert.doesNotMatch(demo,/\/api\/|localStorage|sessionStorage/);
+});
 test('product preview never reads family sessions or requests private data',()=>{
  const code=read('src/demo/Demo.tsx')+'\n'+read('src/demo/main.tsx');
  assert.doesNotMatch(code,/fetch\s*\(|XMLHttpRequest|\/api\/|localStorage|sessionStorage|startOffline\s*\(|\bpost\s*\(|workers\.dev|r2\.dev/i);
