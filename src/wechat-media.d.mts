@@ -6,6 +6,8 @@ export function decodeWeChatAesKey(encoded:unknown):Uint8Array;
 export function wechatCdnUrl(media:unknown):string;
 export function imageReference(item:unknown):{media:Record<string,unknown>;key:string};
 export function mediaReference(item:unknown):{media:Record<string,unknown>;key:string;kind:'image'|'video'};
+export function fileAttachmentInfo(item:unknown):{kind:'image'|'video';mime:string;fileName:string}|null;
+export function mediaItemKind(item:unknown):'image'|'video';
 export function inspectImage(bytes:Uint8Array):string;
 export function inspectVideo(bytes:Uint8Array):string;
 export function downloadWeChatImage(item:unknown,options?:{fetchImpl?:typeof fetch;maxBytes?:number}):Promise<{bytes:Uint8Array;mime:string}>;
