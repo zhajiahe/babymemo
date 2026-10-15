@@ -32,8 +32,8 @@ test('missing video poster can be repaired from current video frame or an image'
  assert.match(viewer,/选择封面照片/);
  assert.match(viewer,/accept="image\/jpeg,image\/png,image\/webp"/);
  assert.match(viewer,/method:'PUT',body:thumb,headers:\{'Content-Type':'image\/jpeg'\}/);
- assert.match(viewer,/onThumbnailSaved\(id\)/);
- assert.match(album,/mediaEdited\(id,\{thumbnail_ready:1\}\)/);
+ assert.match(viewer,/onThumbnailSaved\(id,saved\.updated_at\)/);
+ assert.match(album,/mediaEdited\(id,\{thumbnail_ready:1,\.\.\.\(updatedAt/);
  assert.match(album,/onThumbnailSaved=/);
  assert.match(source('src/features/growth/RecordView.tsx'),/onThumbnailSaved=/);
  assert.match(css,/\.media-cover-picker:focus-within/);
@@ -44,6 +44,6 @@ test('thumbnail failures report error instead of success and originals remain un
  assert.match(album,/自动封面生成失败/);
  assert.match(worker,/app\.put\('\/api\/media\/:id\/thumbnail'/);
  assert.match(worker,/await c\.env\.MEDIA\.put\(thumbKey\(id\),data/);
- assert.match(worker,/UPDATE media SET thumbnail_ready=1 WHERE id=\?/);
+ assert.match(worker,/UPDATE media SET thumbnail_ready=1,updated_at=\? WHERE id=\?/);
  assert.doesNotMatch(viewer,/\/api\/upload\/direct|\/api\/upload\/start/);
 });
