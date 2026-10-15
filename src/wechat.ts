@@ -312,7 +312,8 @@ export class WechatSession {
         pollOutcome:await this.ctx.storage.get('pollOutcome')||null,
         lastPollDurationMs:await this.ctx.storage.get('lastPollDurationMs')||null,
         media:await (await workerMediaBot(this.env,id).fetch('https://bot.internal/media/status')).json(),
-        pollDriver:isActivePilotLease(await this.ctx.storage.get<PilotLease>('pilotPollLease'))?'cron-pilot':'alarm'});
+        pollDriver:isActivePilotLease(await this.ctx.storage.get<PilotLease>('pilotPollLease'))||
+          (Date.now()-(await this.ctx.storage.get<number>('lastCronPoll')||0)<130000)?'cron':'alarm'});
     }
 
     // Internal-only RPC over a cross-script DO binding. The pilot Worker has no public HTTP route.
@@ -325,7 +326,7 @@ export class WechatSession {
       this.polling=true;
       try{
         const saved=await this.ctx.storage.get<string>('connectionId');
-        if(saved!==id)return Response.json({error:'PILOT_CONNECTION_MISMATCH'},{status:409});
+        if((saved||'legacy')!==id)return Response.json({error:'PILOT_CONNECTION_MISMATCH'},{status:409});
         const current=await this.ctx.storage.get<PilotLease>('pilotPollLease');
         if(isActivePilotLease(current))return Response.json({error:'PILOT_ALREADY_RUNNING'},{status:409});
         const cooldown=await this.ctx.storage.get<number>('staleTokenPauseUntil')||0;
@@ -353,6 +354,7 @@ export class WechatSession {
         if(!isActivePilotLease(lease)||lease.id!==body.leaseId||lease.connectionId!==body.connectionId)
           return Response.json({error:'STALE_PILOT_LEASE'},{status:409});
         const outcome=await this.pollOnce(body.result);
+        await this.ctx.storage.put('lastCronPoll',Date.now());
         return Response.json({ok:true,outcome});
       }finally{
         try{
@@ -395,7 +397,7 @@ export class WechatSession {
       await this.ctx.storage.put('connectionId',id);
       await workerMediaBot(this.env,id).fetch('https://bot.internal/media/reset',{method:'POST'});
       await this.ctx.storage.put('conversationEpoch',crypto.randomUUID());
-      await Promise.all(['cursor','lastPoll','lastError','lastMessage','lastProcessing','lastMediaError','conversation','mediaResult','startedAt','conversationVersion','pollOutcome','lastPollDurationMs'].map(key=>this.ctx.storage.delete(key)));
+      await Promise.all(['lastCronPoll','cursor','lastPoll','lastError','lastMessage','lastProcessing','lastMediaError','conversation','mediaResult','startedAt','conversationVersion','pollOutcome','lastPollDurationMs'].map(key=>this.ctx.storage.delete(key)));
       return Response.json({ok:true});
     }
     return new Response('Not found',{status:404});
