@@ -21,7 +21,7 @@ function cameraMetadata(text){
  const keyHead=Buffer.alloc(8);keyHead.writeUInt32BE(1,4);
  const keys=box('keys',Buffer.concat([keyHead,entry]));
  const data=box('data',Buffer.concat([Buffer.alloc(8),Buffer.from(text)]));
- const keyed=Buffer.concat([Buffer.alloc(4),data]);keyed.writeUInt32BE(8+data.length,0);
+ const keyed=Buffer.concat([Buffer.alloc(8),data]);keyed.writeUInt32BE(8+data.length,0);keyed.writeUInt32BE(1,4);
  const ilst=box('ilst',keyed);
  return box('udta',box('meta',Buffer.concat([Buffer.alloc(4),keys,ilst])));
 }
