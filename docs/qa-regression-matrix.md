@@ -1,107 +1,30 @@
-# BabyMemo 回归测试矩阵
+# 测试与 CI
 
-本文件记录的是**自动化覆盖范围和边界**，不是生产环境验收证明。测试必须使用隔离数据，不使用用户照片、真实微信凭据或线上 D1/R2。
-
-## 微信 ReAct 升级测试（PR #37）
-
-- **新增 Node 纯离线** `scripts/wechat-agent-loop.test.mjs`：实际 role=tool 观察回传、多轮决定、稳定 step 索引、先 journal 再执行、重放、预算、部分成功、非法工具拒绝。
-- **新增本地真实 D1/Worker** `scripts/wechat-worker-e2e.mjs`：模拟 OpenRouter 连续响应，查询真实记录 ID 后修改、`10.1号` 日期回归、可信时间工具、同 ID 重试只落库一次。
-- **新增迁移** `0015_wechat_agent_rounds.sql`：只增表，不改变旧数据。新决策日志采用 DATA_KEY 加密。
-- **尚未涵盖** 真 OpenRouter 多轮一致性、真实微信双账号收发、生产 D1/R2 的宕机一致性和收费模型成本。
-- 覆盖详情见 [R-001～R-014 矩阵](wechat-harness-test-plan.md)；测试代码存在不等于 CI 已通过或生产完成部署。
-
-## 历史 Harness 新场景测试计划（T-001～T-024）
-
-新增的真实场景问题编号 H-01～H-22、待实现的自动化案例 T-001～T-024，分别见 [微信 Harness 场景审查](wechat-harness-review.md) 与 [Harness 自动化测试计划](wechat-harness-test-plan.md)。部分场景已经实现，详见 [Harness 实施对照](wechat-harness-implementation.md)。**原规划的 T-001～T-024 不等于全部已有独立断言或已经通过；应以实际测试名称和 CI 结果为准。** 当前已有的单元测试与模拟 E2E 覆盖范围仍以本文件下文为准。
-
-## 网页与微信媒体性能优化（PR #38）
-
-- 小文件 `PUT /api/upload/direct/:id`：已登录/同源/MIME/大小校验，原件与 D1 入库，重复请求不产生重复记录；大文件保留 Multipart 断点续传。
-- 网页批量传输使用有界并发；缩略图任务串行但不阻塞下一原件；`media-transfer.test.mjs` 验证并发上限和故障隔离。
-- 微信 8MiB Multipart 最多 2 个分片在途，`wechat-media.test.mjs` 测试分片顺序、并发上限与失败后 abort；已有 Worker E2E 覆盖真实隔离 R2 视频原件。
-- 只记录 `MEDIA_TRANSFER_TIMING` 固定字段；浏览器端的 `client` 耗时才包括手机到 Worker 的上行网络。
-- 性能说明和人工验收指标见 [媒体上传性能](media-upload-performance.md)。**合成测试不等于真实国内网络和微信协议已测速度，未声称确定性加速倍数。**
-
-
-## 本地与 CI E2E 复现命令
-
-Node.js 22+，本地 Wrangler。隔离脚本 `scripts/e2e-local.mjs` 创建临时 D1/R2/DO 和测试配置，结束后清理。若工作目录存在 `.dev.vars`，脚本会主动退出以免覆盖密钥，请使用干净的工作区。
-
-```bash
-npm install --no-audit --no-fund
-npm run verify
-npm run test:e2e
-BROWSER_E2E=1 npm run test:e2e
-BROWSER_E2E=1 BROWSER_ENGINE=webkit npm run test:e2e
-E2E_DEPLOY_KEY=1 npm run test:e2e
-```
-
-最后一个命令仅用模拟 OpenRouter Key 测试部署管理优先级，不向真实服务发送请求。浏览器用例在安装相应 Playwright 依赖后运行；GitHub Actions 的 Chromium/Linux WebKit 截图使用合成数据。Linux WebKit 不是实际 iPhone Safari。运行前检查当前工具链的 Node 和 Wrangler 版本。
+本文只记录**测试入口和不能由自动化证明的风险**。用例、断言和具体结果以代码和 [GitHub Actions 记录](https://github.com/zhajiahe/babymemo/actions) 为准，不在 Markdown 重写随版本变化的成绩表。
 
 ## 自动化入口
 
-| 入口 | 环境 | 覆盖内容 |
-| --- | --- | --- |
-| `npm run test:unit` | Node，离线 | 微信工具和记忆、OpenRouter 429/5xx 重试、微信加密媒体、上传最终化和回收、备份包完整性 |
-| `npm run test:e2e` | 本地 Wrangler + 独立 D1/R2/DO | 认证与 CSRF、同请求并发幂等、多宝宝隔离、私有媒体读写、视频分片、Range、删除和恢复 |
-| `BROWSER_E2E=1 npm run test:e2e` | Chromium / WebKit | 登录持久性、添加宝宝、上传与私有相册、编辑及删除、多视口、草稿隔离、可访问性基础断言 |
-| GitHub Actions `Check BabyMemo` | 四个隔离 Job | 检查和构建、Worker E2E（包括部署 Key 模拟）、Chromium、Linux WebKit；截图保存在 Artifacts |
+| 入口 | 检查 |
+| --- | --- |
+| `npm run verify` | TypeScript、Node 单测、构建 |
+| `npm run test:e2e` | 隔离本地 Worker/D1/R2/DO：鉴权、媒体、幂等、宝宝隔离 |
+| `BROWSER_E2E=1 npm run test:e2e` | Chromium 浏览器交互；可设 `BROWSER_ENGINE=webkit` |
+| [Check BabyMemo](https://github.com/zhajiahe/babymemo/actions/workflows/ci.yml) | CI 四类 Job：检查、Worker、Chromium、Linux WebKit；截图见各 Run Artifacts |
+| [Manual Harness Deep E2E](https://github.com/zhajiahe/babymemo/actions/workflows/harness-deep-e2e.yml) | 离线合成场景或人工确认的真实模型 30 题评估 |
+| [Manual OpenRouter Live E2E](https://github.com/zhajiahe/babymemo/actions/workflows/openrouter-live-e2e.yml) | 真实模型工具协议；手动、付费、虚构数据 |
 
-CI 使用自动生成的本地测试密钥与临时 D1/R2 存储，不连接生产 Cloudflare 资源。截图只含虚构数据。
+Node / Worker / 浏览器自动测试不能连接生产 D1/R2，也不使用真实家庭照片。外部收费模型和真实微信账号**不进入自动 CI**。
 
-## 关键场景与期望
+## 必须防回归
 
-| 风险场景 | 自动化断言 | 现状 |
-| --- | --- | --- |
-| 同一个用户请求并发提交两次 | 最终只有一个记录 ID，跨宝宝重用同一请求 ID 被拒绝 | Wrangler E2E |
-| 不同宝宝的记录与照片 | 分宝宝列表互不混入，删除与恢复保持目标不变 | Wrangler E2E |
-| 使用外站 Origin 伪造写入 | 403，且数据库中没有伪造记录 | Wrangler E2E |
-| 分片不完整或尺寸不合法 | 拒绝提前完成和错误大小的分片 | Wrangler E2E |
-| 视频上传及断点读取 | 原始字节保存，206 Content-Range 与原文件一致 | Wrangler E2E |
-| 未登录直接读取媒体 | 原件和缩略图均返回 401 | Wrangler E2E |
-| R2 已提交、D1 曾失败 | 再次 finalize 不重复完成 Multipart | Node 故障注入 |
-| 超时和 429 | 仅模型选择可有限重试，修改数据工具不重复执行 | Node 模拟测试 |
-| 微信图片与视频 | AES 解密、CDN 域名白名单、内容嗅探、50MB 上限、幂等入库 | Node 模拟测试 |
-| 慢微信媒体与后续文字 | CDN 流被阻塞时，同批文字与后续 D1 查询仍完成；重启/重试不重入业务 | Node 故障注入 + 本地 Worker fixture |
-| 上传占位与真实文字意图 | 图片入队即有 processing 记录；独立体重操作照常落库；描述只经既有 Agent 修改指定照片，上传成功保留修改；双照片、失败、重置和逐宝宝版本变更均验证 | 本地 Worker fixture + D1/R2 + 浏览器测试 |
-| 微信队列与成员上下文 | 接收时固定宝宝、重绑时抑制旧附文/回复、暂停保留任务、容量有界 | Node + 本地 Worker fixture |
-| 原图拍摄日期 | JPEG/HEIC/WebP 元数据、HEIC 尾部范围读取、缺失/非法日期回退、D1 索引重试与原始字节不变 | Node + Worker + Chromium/WebKit |
-| 微信中文运行状态 | 启用不等于健康，失效/暂停/重试分别显示；320/375/768/1280px 无溢出 | Node + Chromium/WebKit |
-| 家庭备份文件被篡改 | SQL/照片 checksum、缺失对象、重复 key、路径异常导致校验失败 | Node 离线 CLI |
-| 320 / 375 / 390 / 768px 屏宽 | 各主页面没有横向滚动；移动底部操作区最小 44px | Chromium 与 WebKit |
-| 宝宝之间的未提交草稿 | 切换宝宝/页面后仍只显示对应草稿 | Chromium 与 WebKit |
-| 图片预览与减少动效 | modal 在屏幕内、Escape 关闭、偏好减少动效生效 | Chromium 与 WebKit |
+- 跨宝宝/未登录/跨 Origin 写入不得访问或篡改其他人的数据；目标歧义时不得擅自修改。
+- 重复消息、掉线重试、R2 成功但 D1 失败、分片恢复不得导致重复记录、假成功或丢原件。
+- 微信图片上传可与后续独立文本并行：图片先生成 `processing` 占位；描述只由现有 Agent 在确定目标后修改，**不可假设照片后的第一句一定是描述**；上传完成不得覆盖用户编辑。
+- 离线草稿和队列须按宝宝隔离，冲突停止并告知；回收站恢复和 ZIP 备份校验不能退化。
+- 移动端无横向溢出，有键盘焦点、44px 触控目标、safe area；相册故事、封面和视频预览可用。
 
-## 尚未被自动化证明的事情
+## 自动化无法证明
 
-1. **真机**：实际 iPhone Safari（尤其 HEIC、HEVC/MOV、系统相册选择器、键盘、后台中断、PWA 离线）仍需要设备测试。Linux WebKit 不是 iOS Safari。
-2. **真实微信**：扫码授权、账号限额、消息发收延迟、视频/照片协议变种及持续轮询需要专用测试账号；当前测试以模拟对象和本地私有存储为主。
-3. **真实外部模型**：不执行产生费用的 OpenRouter 现场回归；工具调用功能是否符合具体模型契约需要在受控测试 Key 下单独验证。
-4. **生产容灾一致性**：本轮只能验证一个*已经生成*的备份包没有损坏；不能证明运行期间 D1 导出和 R2 复制处在同一快照。须做暂停写入/一致性点检查、隔离恢复演练及媒体对象清点。
-5. **黄金截图与性能预算**：截图作为人工证据，并未配置像素差分；未设置真实网络的 Lighthouse/LCP/INP、图片流量或 R2 费用性能阈值。
-6. **任意时刻宕机**：云端发生断电、网络分区、跨区域持久化异常等仍无法仅靠本地 Mock 证明安全。
+真实 iPhone Safari 的 HEIC/HEVC/MOV、后台/蜂窝网络；真实微信扫码、iLink 消息时序与长时间运行；真实模型稳定性和实际账单；生产 D1+R2 同一时刻的备份一致性及完整恢复演练。必须分别验收，不能把 Linux WebKit 或 HTTP 健康检查当作替代。
 
-## 发布门槛
-
-- 四个 GitHub Actions Job 全绿，不能以「已启动」或「已提交 PR」代替通过。
-- 新增场景如发现缺陷，应先修复生产代码或在 PR 中记录明确的阻塞项，不能简单删除失败断言。
-- 核验截图，并进行真实 iPhone、微信账号和完整离线恢复演练后，才可声称相关功能通过生产验收。
-- 合并测试 PR 时不要轮换 SESSION_SECRET / DATA_KEY，也不要运行生产数据迁移之外的破坏性脚本。
-
-## 手动真实模型验证（不随 CI 自动触发）
-
-| 测试 | 入口 | 自动执行 | 访问真实家庭数据 |
-| --- | --- | --- | --- |
-| OpenRouter Tool Calling E2E | GitHub Actions `Manual OpenRouter Live E2E` 或设置确认变量后执行 `npm run test:openrouter:live` | **否** | 不访问 Cloudflare D1/R2 或微信，仅向外部模型发送一条虚构指令 |
-
-本地 Worker E2E 与 Chromium/WebKit E2E **继续自动执行**，它们使用假 Key 和临时存储，不会产生 OpenRouter 调用费用。手动模型测试需要管理员配置真实 Key，可能产生小额 API 费用；可验证目标模型当前是否返回标准工具调用，而不是验证真实微信授权或用户家庭数据。
-
-## 家庭空间与相册交互约束（2026-10）
-
-- 家庭空间名称继续由 D1 `family_name` 设置提供，手机顶部和桌面侧栏都必须展示；长名称不得引起页面横向溢出。
-- 当前查看的宝宝仅可从「设置 → 宝宝资料」切换，切换后内容、草稿和相册必须按宝宝隔离。
-- 收藏按钮、收藏筛选、收藏写入 API 和微信收藏工具已停用；历史 D1 `favorite` 列及导出字段继续保留，不执行破坏性迁移。
-
-## 历史问题与证据索引
-
-2026-10-12 的隔离 Worker + Chromium 验收记录保留在 [PR #10](https://github.com/zhajiahe/babymemo/pull/10) 的测试、日志和截图中，当时发现相册编辑后列表标题未同步等问题。R2 Multipart 完成与 D1 提交间的失败一致性后续在 [PR #11](https://github.com/zhajiahe/babymemo/pull/11) 通过可恢复 finalization 与故障注入测试缓解。该历史记录**不是最新部署状态**，也不证明真实 Cloudflare 故障注入或物理 iPhone 验收。首次安装抢注窗口、HEIC/HEVC/MOV、旧媒体缩略图回退、上传会话清理及生产恢复演练仍应遵循现行测试和运维说明。
+PR 应记录本次 CI Run、未通过或未验收项目；历史缺陷与修复原因以 [PR 列表](https://github.com/zhajiahe/babymemo/pulls?q=is%3Apr) 和 [Actions](https://github.com/zhajiahe/babymemo/actions) 为证据。

@@ -1,63 +1,29 @@
 # BabyMemo 工程规范
 
-本文件是**日常代码质量约束**。生产权限、隐私红线以及 Agent 的工作方式详见 [AGENTS.md](AGENTS.md)；设计规范详见 [docs/design-system.md](docs/design-system.md)，部署步骤详见 [docs/github-action-deploy.md](docs/github-action-deploy.md)。不在本文件复制部署命令或凭据。
+本文件只记录代码协作规则。安全红线见 [AGENTS.md](AGENTS.md)，设计见 [设计规范](docs/design-system.md)，生产操作见 [部署指南](docs/github-action-deploy.md)。
 
-## 目录职责
+## 代码位置
 
-| 路径 | 责任 | 原则 |
-| --- | --- | --- |
-| `src/App.tsx` | 入口、视图选择、跨页面数据状态 | 不新增大型业务逻辑；按宝宝 `id` 隔离局部组件状态 |
-| `src/features/` | 成长、相册、设置 | 处理 UI 交互、加载、重试和错误反馈 |
-| `src/worker.ts` | Hono HTTP API / Cloudflare bindings | 认证、权限、数据库参数化访问；不得返回密钥明文 |
-| `src/auth.ts`、`src/crypto.ts` | 会话签名、凭据加密和读取 | 不在客户端、日志中传播 Secret |
-| `src/wechat*.ts`、`src/wechat.ts`（必要时兼容 `.mjs` 入口） | 受限工具、媒体处理、微信会话 | 模型选择与实际写入分离；去重和宝宝目标校验 |
-| `migrations/` | D1 结构演进 | 新增前向迁移；不可改写已发布迁移的含义 |
-| `scripts/` | 测试、部署与离线维护 | 明确区分只读、干跑和真实远端操作 |
+| 路径 | 职责 |
+| --- | --- |
+| `src/App.tsx`、`src/features/` | 视图及交互；草稿、异步响应按 babyId 隔离 |
+| `src/worker.ts`、`src/auth.ts`、`src/crypto.ts` | API、授权、签名及加密 |
+| `src/wechat*.ts` / `src/wechat*.mjs` | 微信收发、工具、记忆、媒体与 ReAct |
+| `migrations/` | 只能增加前向兼容 D1 迁移 |
+| `scripts/` | 测试、显式云端运维与故障恢复 |
 
-## 代码约定
+## 修改原则
 
-1. **状态范围最小化**：以 `baby.id` 分隔草稿、相册预览和设置表单；异步返回要检查请求对应的宝宝与视图。用户切换宝宝后不能显示上一个宝宝的待保存表单。
-2. **明确失败语义**：网络请求必须捕获异常并反馈。用户操作失败时不能静默声称成功；写入类操作只能在确认服务器成功后清除草稿或跳转。避免未处理 Promise。
-3. **类型与输入验证**：TypeScript 尽量使用具体返回类型，API 入口校验对象、日期、MIME、数值边界；D1 全部使用参数化 SQL。不要让模型输出直接变成未验证的写入参数。
-4. **资源与幂等性**：异步任务取消时清理计时器、对象 URL 和上传句柄；R2 multipart 创建失败或 D1 提交中断要可重试或显式回收。微信和网页双入口都需有重复提交测试。
-5. **性能**：照片网格优先私有缩略图和懒加载；视频仅在主动预览时读取；列表有界分页；避免为一次切换触发全部 D1 查询或在内存中全量载入大视频。
-6. **视觉与可访问性**：正文不小于设计规范的最低字号，触控目标至少 44 × 44 CSS px；在 320、375、390、768px 测试，支持 reduced motion、键盘和正确的 loading/empty/error 状态。
-7. **审查粒度**：功能与其测试一起修改；无关格式变更不应覆盖安全相关的 diff。一次 PR 的描述必须列出变更、风险、CI 结果和真机验收缺口。
+- 每次写入先验证权限、输入、宝宝范围与唯一目标；模型输出永远不是数据库授权。
+- 异步提交须有错误反馈、冲突提示与稳定幂等键；失败不报成功，不丢草稿。
+- 媒体采用私有缩略图、懒加载、有界并发与续传；不在内存一次加载全部视频。
+- UI 保持键盘操作、焦点、reduced motion、移动 safe area 和 loading/empty/error 状态。
+- 功能与测试同 PR；避免跨模块重格式化，不能为通过 CI 禁用用例。
 
-## 提交门槛
+## 验证与记录
 
-```bash
-npm run check
-npm run test:unit
-npm run build
-npm run test:e2e
-```
+`npm run verify` = 类型检查 + Node 单测 + 构建；`npm run test:e2e` = 隔离本地 Worker/D1/R2；浏览器及 Linux WebKit 在 [Check BabyMemo](https://github.com/zhajiahe/babymemo/actions/workflows/ci.yml) 中执行。真实 iPhone、iLink、收费模型、云端恢复需另行人工验收，不能从绿色 CI 推断通过。
 
-推送后等待 GitHub Actions 的本地 Worker、Chromium 和 WebKit 全绿，再考虑合并到 `main`。检查代码和文档时不能停用失败的用例来获得绿色结果。
+文档只保留**当前规则、步骤、边界与索引**。历史测试结果链接 Actions / PR，不复刻表格或按日期追加更新记录。README 是唯一文档目录；修改、合并或删除文档时同步修复引用，并运行 `node --test scripts/docs-quality.test.mjs`。
 
-`scripts/docs-quality.test.mjs` 在单元测试中检查 README、AGENTS 和 docs 下 Markdown 的仓库内相对链接。目录改名、文件移动或新增文档链接时必须同时更新链接。
-
-## 文档信息架构
-
-- `README.md`：产品能力与主要入口，避免把每个变更日志追加为新章节。
-- `docs/DEPLOY.md`：自托管管理员的首次安装与升级概览。
-- `docs/github-action-deploy.md`：GitHub Actions Secrets、配置和故障排查的权威操作源。
-- `docs/agent-deploy.md`：Agent 生产权限与分步操作。
-- [QA 回归矩阵](docs/qa-regression-matrix.md)：自动化复现命令、风险覆盖与真机验收边界的统一入口。
-- `docs/wechat-harness-review.md`：基于真实家庭消息场景的 Harness 静态审查和分阶段演进提案；不是上线承诺。
-- `docs/wechat-harness-test-plan.md`：Harness 的场景和故障注入设计、门禁及验收指标；新增用例须附实际测试结果。
-- `docs/wechat-harness-implementation.md`：记录已经实现的 Harness 行为、自动/手动执行边界和仍需真机验证的风险。
-- `docs/BACKUP.md` 与 `docs/MIGRATION.md`：维护者的数据安全边界。
-- 历史 E2E 问题与当日证据：参见 [QA 回归矩阵](docs/qa-regression-matrix.md) 的历史记录及对应 PR；旧报告不代表当前生产状态。
-
-修复旧文档时必须**删去已失效的操作步骤**，而不是在文末追加一段与旧内容相矛盾的新说明。
-
-## 文档维护约束
-
-README 是产品与入口，AGENTS 只保留不可变安全边界；部署步骤以 `docs/DEPLOY.md` / `docs/github-action-deploy.md` / `docs/agent-deploy.md` 分别面向使用者、自动发布维护者与 Agent。Harness 以实施文档为当前行为说明、测试计划为规划、QA 矩阵为实际检查、ADR 为未实施架构研究。历史问题证据保留 Git PR 与提交记录，不应和当前功能混写。
-
-删除文档前，先迁移仍有效的独有内容，修复全部 Markdown 相对链接，再运行 `node --test scripts/docs-quality.test.mjs`；**不存在静态链接不等于不存在外部书签**。变更声明需列明保留/合并/删除清单和 CI 结果。
-
-## 外部 API 真实测试门禁
-
-会调用收费模型、真实微信账号或生产资源的 E2E 不得加入 `test:unit`、`test:e2e` 或自动 CI 依赖。`scripts/openrouter-live-e2e.mjs` 刻意不采用 `.test.mjs` 后缀，要求 `OPENROUTER_E2E_CONFIRM=YES`，对应 GitHub Actions 仅允许 `workflow_dispatch` 和 `main` 分支，使用 GitHub Secret 注入 Key。真实请求只使用虚构数据且不自动重试；常规 Worker/浏览器 E2E 保持自动执行。
+外部模型现场测试仅能手动触发，必须使用合成数据、明确确认及独立密钥，绝不加入普通 PR/`main` 自动 CI。
