@@ -1,13 +1,13 @@
 # 微信 Harness：当前行为与安全边界
 
-当前链路为 **iLink → Durable Object → 有界 ReAct → 服务端白名单工具 → D1/私有 R2**。默认使用 Workers AI Qwen，可选 OpenRouter；不依赖外部通用 Agent 框架，不提供任意 SQL、代码执行或公开媒体链接。
+当前链路为 **iLink → Durable Object → 有界 ReAct → 服务端白名单工具 → D1/私有 R2**。默认使用 Workers AI Qwen，可选 OpenRouter；模型无任意 SQL、代码执行或公开媒体链接权限。
 
 ## 消息与执行
 
 - `src/wechat.ts` 负责成员绑定、消息去重和回复；`src/wechat-agent-loop.mjs` 最多 4 次模型决策、8 次工具调用、90 秒软预算，工具结果以 `role=tool` 反馈模型。
 - `src/wechat-harness.mjs` / `src/wechat-orchestrator.mjs` 只执行授权工具；`src/wechat-memory.mjs` 保存同连接短期上下文（最多 4 轮、20 分钟）。模型负责自然语言理解与规划，**不是**模型拥有数据库写权限。
 - 决策先使用 `DATA_KEY` 加密写入 D1 `wechat_agent_rounds`，再执行稳定步骤 ID 对应的工具。重放复用已保存决策；写入还依赖业务幂等。部分步骤成功后发生失败，不假称全局回滚。
-- 服务端仍检查身份、宝宝归属、参数类型/日期/数值范围、记录是否存在且唯一及写入成功事实。当前模型优先理解自然语言，未使用完整的中文逐词意图/证据校验器；明确的「不要保存/删除/修改」应阻止写操作，模糊目标需澄清。不要把本地模拟测试当成任意中文语义都安全的证明。
+- 服务端仍检查身份、宝宝归属、参数类型/日期/数值范围、记录是否存在且唯一及写入成功事实。明确的「不要保存/删除/修改」应阻止写操作，模糊目标需澄清；本地模拟测试不能证明所有自然语言表达都安全。
 - 自然回复只可基于真实工具观察声明写入；年龄等可靠事实按服务端计算核验。日记/里程碑保存、确认与语音文字只在有效会话/宝宝范围内处理，不能根据历史转发内容自动写入。
 
 ## 媒体与独立文字
@@ -21,4 +21,4 @@
 
 代码落点：`src/wechat-prompt.mjs`、`src/wechat-agent-loop.mjs`、`src/wechat-orchestrator.mjs`、`src/wechat-media.mjs` 与 `scripts/wechat-worker-e2e.mjs`。隔离 Worker、Node、Chromium/WebKit 的覆盖和实际结果见 [QA / Actions](qa-regression-matrix.md)。
 
-真实微信扫码、转发/语音格式、长会话、上传与后续消息交错、DO 重启及模型实际费用仍需人工/真实账号验证。长期降低 DO 等待成本的方案只是 [ADR-002 提案](wechat-transport-architecture.md)，不能视为已实施。
+真实微信扫码、转发/语音格式、长会话、上传与后续消息交错、DO 重启及模型实际费用仍需人工/真实账号验证。

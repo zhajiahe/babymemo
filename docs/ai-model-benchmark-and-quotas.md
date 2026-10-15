@@ -6,7 +6,7 @@
 
 Workers AI Neurons、Durable Objects duration、OpenRouter 美元余额是**三套独立额度**，不可互换。最新定价与限制直接查：[Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/) · [Durable Objects](https://developers.cloudflare.com/durable-objects/platform/pricing/) · [Qwen 模型](https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/) · [OpenRouter](https://openrouter.ai/)。
 
-不要根据单次评测推断「一天可用多少次」。微信不回复可能是 DO / iLink 停止接收而非模型故障，轮询解耦尚处 [ADR 研究阶段](wechat-transport-architecture.md)。网页不声称能实时读取 Cloudflare 剩余额度；「测试当前模型」会消耗额度且只证明模型接口可达。
+不要根据单次评测推断「一天可用多少次」。微信不回复也可能是消息接收链路故障，而非模型调用失败。网页不声称能实时读取 Cloudflare 剩余额度；「测试当前模型」会消耗额度且只证明模型接口可达。
 
 ## 运行对比（以 Actions 为事实来源）
 
@@ -20,6 +20,6 @@ Workers AI Neurons、Durable Objects duration、OpenRouter 美元余额是**三�
 
 工作流所需 Secrets：OpenRouter 使用 `OPENROUTER_API_KEY`；Workers AI REST 评测使用 `CLOUDFLARE_ACCOUNT_ID` 和有 Workers AI 权限的 `CLOUDFLARE_AI_API_TOKEN`（普通部署 Token 可能无权推理）。日志、报告只用合成信息，不包含任何真实 Key。
 
-**历史证据示例**：[2026-10-14 手动评测 Run](https://github.com/zhajiahe/babymemo/actions/runs/38511146287)；历史 Qwen 独立评测和 Muse 测试可能采用不同题目/工具定义，不能直接比较成绩。以后新增模型只链接新的 Run，不再往文档追加逐题或费用快照。
+不同版本的题库、工具和评分器不可直接横向比较。具体成绩及费用以该次 Actions Run 和平台账单为准，文档不保留历次结果快照。
 
 离线验证：`node --test scripts/model-benchmark.test.mjs scripts/model-benchmark-matrix.test.mjs scripts/openrouter-retry.test.mjs`。评测实现见 `scripts/model-benchmark.mjs` 和 `scripts/model-benchmark-cases.mjs`。

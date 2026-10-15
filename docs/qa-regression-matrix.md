@@ -27,4 +27,4 @@ Node / Worker / 浏览器自动测试不能连接生产 D1/R2，也不使用真�
 
 真实 iPhone Safari 的 HEIC/HEVC/MOV、后台/蜂窝网络；真实微信扫码、iLink 消息时序与长时间运行；真实模型稳定性和实际账单；生产 D1+R2 同一时刻的备份一致性及完整恢复演练。必须分别验收，不能把 Linux WebKit 或 HTTP 健康检查当作替代。
 
-PR 应记录本次 CI Run、未通过或未验收项目；历史缺陷与修复原因以 [PR 列表](https://github.com/zhajiahe/babymemo/pulls?q=is%3Apr) 和 [Actions](https://github.com/zhajiahe/babymemo/actions) 为证据。
+PR 应记录本次 CI Run 及未完成的验收项目。
