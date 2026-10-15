@@ -109,10 +109,10 @@ export function jpegXmpCaptureDay(bytes:Uint8Array,timeZone:string='Asia/Shangha
  return null;
 }
 
-function metadataCaptureDay(metadata:Record<string,unknown>|null|undefined,timeZone:string){
+function metadataCaptureDay(metadata:Record<string,unknown>|null|undefined,timeZone:string,strictExif=false){
  // Camera EXIF wins. XMP/IPTC creation dates are useful fallbacks for exports
  // that preserve creation metadata but not the camera's original EXIF block.
- for(const field of ['DateTimeOriginal','DateCreated','CreateDate']){
+ for(const field of strictExif?['DateTimeOriginal']:['DateTimeOriginal','DateCreated','CreateDate']){
   const date=validCaptureDay(metadata?.[field],timeZone);
   if(date)return date;
  }
@@ -139,7 +139,9 @@ export async function photoCaptureDay(input:Blob|Uint8Array,timeZone:string='Asi
    return null;
   }
   const metadata=await (await metadataParser()).parse(input,photoOptions);
-  return metadataCaptureDay(metadata,timeZone);
+  // For JPEG, XMP is parsed above with duplicate/conflict detection: do not
+  // allow exifr's lossy merged XMP tags to override an ambiguous timestamp.
+  return metadataCaptureDay(metadata,timeZone,prefix[0]===255&&prefix[1]===216);
  }catch{return null}
 }
 // A lazy Blob for EXIF's supported Blob reader: all I/O stays in private R2.
