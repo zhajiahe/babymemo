@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-export type WechatMediaItem=Record<string,any>&{type?:number;image_item?:Record<string,any>;video_item?:Record<string,any>};
+export type WechatMediaItem=Record<string,any>&{type?:number;image_item?:Record<string,any>;video_item?:Record<string,any>;file_item?:Record<string,any>};
 export const MAX_WECHAT_MEDIA_BYTES=50*1024*1024;
 export const MAX_WECHAT_IMAGE_BYTES=MAX_WECHAT_MEDIA_BYTES; // backwards compatibility
 export const MAX_ITEMS=4,PART=8*1024*1024,CDN='novac2c.cdn.weixin.qq.com';
@@ -26,6 +26,25 @@ export function decodeWeChatAesKey(encoded:unknown):Buffer{
  if(raw.length===32&&/^[a-f0-9]{32}$/i.test(raw.toString('ascii')))return Buffer.from(raw.toString('ascii'),'hex');
  throw new WechatPhotoError('微信媒体密钥格式无效');
 }
+// iLink type=4 is a file attachment, not an image message. Restrict it to
+// explicitly supported image/video filenames before fetching any CDN bytes.
+const FILE_MIMES:Record<string,string>={
+ jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',
+ heic:'image/heic',heif:'image/heic',gif:'image/gif',
+ mp4:'video/mp4',mov:'video/quicktime',webm:'video/webm'
+};
+export function fileAttachmentInfo(item:WechatMediaItem):{kind:'image'|'video';mime:string;fileName:string}|null{
+ if(item?.type!==4||!item.file_item||typeof item.file_item.file_name!=='string'||!item.file_item.media)return null;
+ const name=item.file_item.file_name.trim();
+ if(!name||name.length>255||/[\/\\\x00-\x1f\x7f]/.test(name))return null;
+ const extension=/\.([a-z0-9]+)$/i.exec(name)?.[1]?.toLowerCase();
+ const mime=extension?FILE_MIMES[extension]:undefined;
+ if(!mime)return null;
+ return {kind:mime.startsWith('video/')?'video':'image',mime,fileName:name.slice(0,120)};
+}
+export function mediaItemKind(item:WechatMediaItem):'image'|'video'{
+ return item.type===5?'video':fileAttachmentInfo(item)?.kind||'image';
+}
 export function imageReference(item:WechatMediaItem){
  const source=item?.image_item;
  if(!source||(item.type!==2&&item.type!==undefined))throw new WechatPhotoError('微信照片引用无效');
@@ -34,6 +53,12 @@ export function imageReference(item:WechatMediaItem){
  return {media,key:source.aeskey||source.aes_key||media.aes_key||media.aeskey};
 }
 export function mediaReference(item:WechatMediaItem){
+ if(item?.type===4){
+  const file=fileAttachmentInfo(item);
+  if(!file)bad('微信文件不是受支持的照片或视频附件');
+  const media=item.file_item!.media;
+  return {media,key:media.aes_key||media.aeskey,kind:file.kind};
+ }
  if(item?.type===5&&item?.video_item?.media){
   const m=item.video_item.media;
   return {media:m,key:m.aes_key||m.aeskey,kind:'video' as const};
@@ -80,10 +105,10 @@ export function inspectImage(bytes:Uint8Array):string{const mime=sniff(bytes,'im
 export function inspectVideo(bytes:Uint8Array):string{const mime=sniff(bytes,'video');if(!mime)throw new WechatPhotoError('微信文件不是可识别的 MP4、MOV 或 WebM 视频');return mime}
 export function mediaItems(raw:any):WechatMediaItem[]{
  if(!Array.isArray(raw?.item_list))return [];
- return raw.item_list.filter((i:WechatMediaItem)=>(i?.type===2&&i?.image_item)||(i?.type===5&&i?.video_item?.media));
+ return raw.item_list.filter((i:WechatMediaItem)=>(i?.type===2&&i?.image_item)||(i?.type===5&&i?.video_item?.media)||(i?.type===4&&fileAttachmentInfo(i)));
 }
-export function photoItems(raw:any){return mediaItems(raw).filter(i=>i.type===2)}
-export function videoItems(raw:any){return mediaItems(raw).filter(i=>i.type===5)}
+export function photoItems(raw:any){return mediaItems(raw).filter(i=>mediaItemKind(i)==='image')}
+export function videoItems(raw:any){return mediaItems(raw).filter(i=>mediaItemKind(i)==='video')}
 export function photoRecordId(sourceId:string){
  const h=createHash('sha256').update('babymemo-wechat-photo-v1:'+sourceId).digest('hex').slice(0,32);
  return h.slice(0,8)+'-'+h.slice(8,12)+'-5'+h.slice(13,16)+'-a'+h.slice(17,20)+'-'+h.slice(20,32);

@@ -2,9 +2,9 @@ import {r2VideoCaptureDay} from './video-date.ts';
 import type {Env} from './types';
 import {r2PhotoCaptureDay,validCaptureDay} from './media-date.mjs';
 import {mediaTiming} from './media-timing.mjs';
-import {MAX_ITEMS,bad,mediaItems,photoRecordId,type WechatMediaItem} from './wechat-media-codec.ts';
+import {MAX_ITEMS,bad,mediaItems,mediaItemKind,fileAttachmentInfo,photoRecordId,type WechatMediaItem} from './wechat-media-codec.ts';
 import {storeEncryptedMedia,downloadWeChatImage,type MediaTransferOptions} from './wechat-media-transfer.ts';
-export {MAX_WECHAT_MEDIA_BYTES,MAX_WECHAT_IMAGE_BYTES,WechatPhotoError,wechatMediaErrorCode,decodeWeChatAesKey,wechatCdnUrl,imageReference,mediaReference,inspectImage,inspectVideo,mediaItems,photoItems,videoItems,photoRecordId} from './wechat-media-codec.ts';
+export {MAX_WECHAT_MEDIA_BYTES,MAX_WECHAT_IMAGE_BYTES,WechatPhotoError,wechatMediaErrorCode,decodeWeChatAesKey,wechatCdnUrl,imageReference,mediaReference,inspectImage,inspectVideo,mediaItems,photoItems,videoItems,fileAttachmentInfo,mediaItemKind,photoRecordId} from './wechat-media-codec.ts';
 export {downloadWeChatImage,downloadWeChatVideo,storeEncryptedMedia} from './wechat-media-transfer.ts';
 type RawMessage={create_time_ms?:unknown;item_list?:WechatMediaItem[]};
 type BabyContext={id:string;name:string;time_zone?:string};
@@ -26,14 +26,15 @@ export async function reserveWechatMedia(env:Env,raw:RawMessage,baby:BabyContext
    .map(x=>x.text_item.text).join(' ').trim().slice(0,1000);
  const day=localDay(raw,baby),createdAt=new Date().toISOString();
  const sources=items.map((item,i)=>{
-  const kind=item.type===5?'video':'image',sourceId=messageId+':'+kind+':'+i,id=photoRecordId(sourceId);
-  return {id,sourceId,kind};
+  const kind=mediaItemKind(item),sourceId=messageId+':'+kind+':'+i,id=photoRecordId(sourceId);
+  const file=fileAttachmentInfo(item);
+  return {id,sourceId,kind,file};
  });
  // Batch is transactional in D1. No task may be acknowledged without its media rows.
  await env.DB.batch(sources.map(x=>env.DB.prepare(
   "INSERT OR IGNORE INTO media(id,baby_id,day,title,description,object_key,mime,size,created_at,thumbnail_ready,source_message_id,upload_state) VALUES(?,?,?,?,?,?,?,?,?,?,?,'processing')"
- ).bind(x.id,baby.id,day,caption.slice(0,120)||(x.kind==='video'?'微信视频 ':'微信照片 ')+day,
-   caption,'private/'+baby.id+'/'+x.id,x.kind==='video'?'video/mp4':'image/jpeg',0,createdAt,0,x.sourceId)));
+ ).bind(x.id,baby.id,day,x.file?.fileName||caption.slice(0,120)||(x.kind==='video'?'微信视频 ':'微信照片 ')+day,
+   caption,'private/'+baby.id+'/'+x.id,x.file?.mime||(x.kind==='video'?'video/mp4':'image/jpeg'),0,createdAt,0,x.sourceId)));
  for(const x of sources){
   const row=await env.DB.prepare('SELECT baby_id,deleted_at,purge_token,upload_state FROM media WHERE source_message_id=?')
    .bind(x.sourceId).first<{baby_id:string;deleted_at:string|null;purge_token:string|null;upload_state:string}>();
@@ -46,7 +47,7 @@ export async function reserveWechatMedia(env:Env,raw:RawMessage,baby:BabyContext
  return sources.map(x=>x.id);
 }
 export async function failWechatMediaReservations(env:Env,raw:RawMessage,babyId:string,messageId:string):Promise<void>{
- const sources=mediaItems(raw).slice(0,MAX_ITEMS).map((item,i)=>messageId+(item.type===5?':video:':':image:')+i);
+ const sources=mediaItems(raw).slice(0,MAX_ITEMS).map((item,i)=>messageId+':'+mediaItemKind(item)+':'+i);
  if(!sources.length)return;
  await env.DB.batch(sources.map(source=>env.DB.prepare(
   "UPDATE media SET upload_state='failed' WHERE source_message_id=? AND baby_id=? AND upload_state='processing' AND deleted_at IS NULL"
@@ -56,14 +57,15 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
  const items=mediaItems(raw);
  if(!items.length)return null;
  if(items.length>MAX_ITEMS)bad('单条消息最多保存 4 项媒体，请分批发送');
- const result:{id:string;kind:'image'|'video';already:boolean}[]=[];
+ const result:{id:string;kind:'image'|'video';already:boolean;fileAttachment:boolean}[]=[];
  async function persistItem(i:number){
   const itemStartedAt=performance.now();
-  const kind:'video'|'image'=items[i].type===5?'video':'image';
+  const kind:'video'|'image'=mediaItemKind(items[i]);
+  const file=fileAttachmentInfo(items[i]);
   const sourceId=messageId+':'+kind+':'+i,id=photoRecordId(sourceId);
   const existing=await env.DB.prepare('SELECT id,baby_id,deleted_at,upload_state FROM media WHERE source_message_id=?').bind(sourceId).first<{id:string;baby_id:string;deleted_at?:string|null;upload_state:string}>();
   if(existing&&(existing.baby_id!==baby.id||existing.deleted_at))throw Error('WECHAT_MEDIA_RESERVATION_CONFLICT');
-  if(existing&&(!existing.upload_state||existing.upload_state==='ready'))return {id:existing.id,kind,already:true};
+  if(existing&&(!existing.upload_state||existing.upload_state==='ready'))return {id:existing.id,kind,already:true,fileAttachment:!!file};
   const objectKey='private/'+baby.id+'/'+id;
   const old=await env.MEDIA.head(objectKey);
   let size=old?.size||0,mime:string|null|undefined=old?.httpMetadata?.contentType;
@@ -80,7 +82,7 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   const day=validCaptureDay(captured,baby.time_zone||'Asia/Shanghai')||localDay(raw,baby);
   const caption=(raw.item_list??[]).filter(x=>x?.type===1&&typeof x.text_item?.text==='string')
     .map(x=>x.text_item.text).join(' ').trim().slice(0,1000);
-  const title=caption.slice(0,120)||(kind==='video'?'微信视频 ':'微信照片 ')+day;
+  const title=file?.fileName||caption.slice(0,120)||(kind==='video'?'微信视频 ':'微信照片 ')+day;
   let thumbReady=0;
   const thumbKey='private/thumbnails/'+id+'.jpg';
   if(await env.MEDIA.head(thumbKey))thumbReady=1;
@@ -111,7 +113,7 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   if(!indexed)throw Error('WECHAT_MEDIA_INDEX_FAILED');
   mediaTiming({channel:'wechat',stage:'index',size,startedAt:indexStartedAt});
   mediaTiming({channel:'wechat',stage:'total',size,startedAt:itemStartedAt});
-  return {id:indexed.id,kind,already:false};
+  return {id:indexed.id,kind,already:false,fileAttachment:!!file};
  }
  // At most two parallel decrypt+R2 streams; preserve source order and await all
  // in-flight uploads before surfacing a failure to the idempotent retry path.
@@ -124,6 +126,7 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
  const fresh=result.filter(x=>!x.already),dupes=result.length-fresh.length;
  if(!fresh.length)return '这些照片或视频已经保存过，无需重复导入。';
  const images=fresh.filter(x=>x.kind==='image').length,videos=fresh.filter(x=>x.kind==='video').length;
- return '已保存 '+baby.name+' 的'+(images?' '+images+' 张照片':'')+(videos?' '+videos+' 段视频':'')+'到私密家庭相册。'+(dupes?'（'+dupes+' 项重复消息已跳过）':'')+'\n可在网页家庭相册查看原件。';
+ const originals=fresh.filter(x=>x.fileAttachment).length;
+ return '已保存 '+baby.name+' 的'+(images?' '+images+' 张照片':'')+(videos?' '+videos+' 段视频':'')+'到私密家庭相册。'+(originals?'（'+originals+' 个文件附件按收到的原始字节保存）':'')+(dupes?'（'+dupes+' 项重复消息已跳过）':'')+'\n可在网页家庭相册查看原件。';
 }
 export const persistWeChatPhotos=persistWeChatMedia;

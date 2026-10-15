@@ -1,13 +1,15 @@
 import {createDecipheriv} from 'node:crypto';
 import {mediaTiming} from './media-timing.mjs';
-import {bad,WechatPhotoError,decodeWeChatAesKey,wechatCdnUrl,mediaReference,inspectImage,inspectVideo,MAX_WECHAT_MEDIA_BYTES,PART,type WechatMediaItem} from './wechat-media-codec.ts';
+import {bad,WechatPhotoError,decodeWeChatAesKey,wechatCdnUrl,mediaReference,fileAttachmentInfo,inspectImage,inspectVideo,MAX_WECHAT_MEDIA_BYTES,PART,type WechatMediaItem} from './wechat-media-codec.ts';
 export type MediaTransferOptions={fetchImpl?:typeof fetch;maxBytes?:number};
 async function cdnFetch(item:WechatMediaItem,{fetchImpl=fetch,maxBytes=MAX_WECHAT_MEDIA_BYTES}:MediaTransferOptions={}){
  const startedAt=performance.now();
  const {media,key,kind}=mediaReference(item);
  const aesKey=decodeWeChatAesKey(key),url=wechatCdnUrl(media);
- const expected=kind==='video'?item.video_item?.video_size:item.image_item?.mid_size;
- if(expected!==undefined&&Number(expected)>maxBytes+16)bad('微信图片或视频超过 50 MB 限制');
+ const expected=item.type===4?item.file_item?.len:kind==='video'?item.video_item?.video_size:item.image_item?.mid_size;
+ if(item.type===4&&expected!==undefined&&(!/^(?:0|[1-9]\d*)$/.test(String(expected))||!Number.isSafeInteger(Number(expected))||Number(expected)<1))
+  bad('微信文件大小无效');
+ if(expected!==undefined&&Number(expected)>maxBytes+(item.type===4?0:16))bad('微信图片或视频超过 50 MB 限制');
  let response;
  try{response=await fetchImpl(url,{method:'GET',redirect:'manual',signal:AbortSignal.timeout(60000)})}
  catch{throw Error('WECHAT_CDN_NETWORK_ERROR')}
@@ -33,7 +35,11 @@ async function decryptAndSink(item:WechatMediaItem,write:(chunk:Buffer,mime:stri
   plain+=chunk.length;
   if(plain>maxBytes)bad('微信图片或视频超过 50 MB 限制');
   if(first.length<32)first=Buffer.concat([first,chunk.subarray(0,32-first.length)]);
-  if(!mime&&first.length>=12)mime=kind==='video'?inspectVideo(first):inspectImage(first);
+  if(!mime&&first.length>=12){
+   mime=kind==='video'?inspectVideo(first):inspectImage(first);
+   const declared=item.type===4?fileAttachmentInfo(item)?.mime:null;
+   if(declared&&mime!==declared)bad('微信附件扩展名与实际格式不一致，请发送原始照片或视频文件');
+  }
   await write(chunk,mime);
  }
  try{
