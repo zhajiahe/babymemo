@@ -485,7 +485,7 @@ export class WechatSession {
           try{
             if(clear)reply='已清除本次微信会话的短期上下文和宝宝选择。';
             else if(!text&&!hasMedia&&hasVoice)reply='收到语音消息，但微信没有附带文字转写。请在微信里转成文字后发送；暂不识别语音音频。';
-            else if(!text&&!hasMedia&&unsupportedFiles)reply='收到文件，但只能将 JPG、PNG、WebP、HEIC、GIF 照片或 MP4、MOV、WebM 视频文件保存到相册。请使用微信「文件」发送这些格式，单个文件不超过 50 MB。';
+            else if(!hasMedia&&unsupportedFiles)reply='收到文件，但只能将 JPG、PNG、WebP、HEIC、GIF 照片或 MP4、MOV、WebM 视频文件保存到相册。请使用微信「文件」发送这些格式，单个文件不超过 50 MB。';
             else if(hasMedia){
               const baby=await resolveWechatMediaBaby(this.env,raw,thread);
               if(typeof baby==='string')reply=baby;
