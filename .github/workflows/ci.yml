@@ -18,6 +18,8 @@ jobs:
       - run: npm run check
       - run: npm run test:unit
       - run: npm run build
+      - name: Bundle isolated Cron pilot without deploying
+        run: npx wrangler deploy --config wrangler.wechat-pilot.jsonc --dry-run --outdir /tmp/babymemo-cron-pilot
 
   e2e:
     name: Local Worker E2E
