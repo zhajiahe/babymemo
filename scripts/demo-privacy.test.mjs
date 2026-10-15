@@ -20,6 +20,35 @@ test('product preview is a React app using fictional data, not a legacy static m
  assert.equal(existsSync(new URL('../public/demo.html',import.meta.url)),false);
 });
 
+test('README links to deployed interactive web and mobile demos instead of a mock screenshot',()=>{
+ const readme=read('README.md');
+ assert.match(readme,/https:\/\/babymemo\.zhajiahe1994\.workers\.dev\/demo\)/);
+ assert.match(readme,/https:\/\/babymemo\.zhajiahe1994\.workers\.dev\/demo\/mobile\)/);
+ assert.doesNotMatch(readme,/product-preview\.svg/);
+ assert.equal(existsSync(new URL('../docs/assets/product-preview.svg',import.meta.url)),false);
+});
+
+test('mobile demo reuses real read-only Demo and avoids private API or nested mobile iframe',()=>{
+ const mobile=read('src/demo/MobileDemo.tsx'),entry=read('src/demo/mobile-main.tsx');
+ const html=read('demo/mobile.html'),vite=read('vite.config.ts');
+ assert.match(html,/src\/demo\/mobile-main\.tsx/);
+ assert.match(vite,/mobileDemo:.*demo\/mobile\.html/);
+ assert.match(entry,/import MobileDemo from '.\/MobileDemo'/);
+ assert.match(mobile,/if\(onPhone\)return <div className="mobile-demo-live"><Demo\/><\/div>/);
+ assert.match(mobile,/src="\/demo\.html"/);
+ assert.doesNotMatch(mobile+entry,/\/api\/|localStorage|sessionStorage|startOffline|XMLHttpRequest/);
+});
+
+test('clean demo URLs are built as HTML assets without Worker redirects',()=>{
+ const vite=read('vite.config.ts'),wrangler=read('wrangler.jsonc');
+ const worker=read('src/worker.ts');
+ assert.match(vite,/mobileDemo:.*demo\/mobile\.html/);
+ assert.match(vite,/demo:fileURLToPath/);
+ assert.doesNotMatch(wrangler,/run_worker_first[^\n]*\/demo/);
+ assert.doesNotMatch(worker,/app\.get\('\/demo/);
+ assert.match(vite,/demo-clean-url-redirects/); // Local Vite also supports the same clean URLs.
+});
+
 test('demo retains real shared design primitives without enabling private changes',()=>{
  const demo=read('src/demo/Demo.tsx');
  assert.match(demo,/SegmentedControl/);

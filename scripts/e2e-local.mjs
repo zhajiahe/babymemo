@@ -110,6 +110,14 @@ async function e2e() {
     const html=await response.text();
     assert.match(html,/<title>产品体验/);
     assert.match(html,/assets\/demo-[^"]+\.js/,'Vite must compile a standalone React demo entry');
+    const live=await fetch(base+'/demo');
+    assert.equal(live.status,200,'Cloudflare must resolve /demo to the standalone demo.html asset');
+    assert.match(await live.text(),/<title>产品体验/);
+    const mobile=await fetch(base+'/demo/mobile');
+    assert.equal(mobile.status,200,'Cloudflare must resolve /demo/mobile to the standalone demo/mobile.html asset');
+    const mobileHtml=await mobile.text();
+    assert.match(mobileHtml,/<title>移动端体验/);
+    assert.match(mobileHtml,/assets\/mobileDemo-[^"]+\.js/);
     const main=await fetch(base+'/');
     assert.equal(main.status,200,'Demo must not replace the private app');
   });
@@ -694,6 +702,33 @@ async function browserE2e(){
         assert.deepEqual(requests,[],'Preview must never call the private family API');
       }finally{await preview.close();}
     });
+    await step((useWebKit?'WebKit':'Chromium')+': dedicated mobile demo remains interactive in phone and desktop views',async()=>{
+      const preview=await context.newPage(),requests=[];
+      preview.on('pageerror',error=>errors.push('mobile demo: '+error.message));
+      await preview.route('**/api/**',route=>{requests.push(route.request().url());return route.abort()});
+      await preview.route('https://images.unsplash.com/**',route=>route.abort());
+      try{
+        await preview.goto(base+'/demo/mobile',{waitUntil:'domcontentloaded'});
+        const frame=preview.frameLocator('iframe[title="BabyMemo 移动端交互演示"]');
+        await frame.getByRole('heading',{name:'小星星'}).waitFor();
+        await frame.getByRole('button',{name:/查看相册/}).click();
+        await frame.getByRole('button',{name:'照片墙'}).click();
+        await frame.locator('.photo-item').first().click();
+        await frame.getByRole('dialog',{name:'照片故事'}).waitFor();
+        await frame.getByRole('button',{name:'关闭照片详情'}).click();
+        await preview.screenshot({path:join(evidence,'mobile-demo-desktop-frame.png'),fullPage:true});
+        await preview.setViewportSize({width:390,height:844});
+        await preview.reload({waitUntil:'domcontentloaded'});
+        await preview.getByRole('heading',{name:'小星星'}).waitFor();
+        assert.equal(await preview.locator('iframe').count(),0,'Phone should use direct React Demo, not a nested iframe');
+        await preview.locator('.mobile-nav').getByRole('button',{name:'相册'}).click();
+        await preview.getByRole('button',{name:'照片墙'}).click();
+        await preview.locator('.photo-item').first().waitFor();
+        assert.equal(await preview.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'mobile demo must not overflow at 390px');
+        await preview.screenshot({path:join(evidence,'mobile-demo-phone.png'),fullPage:true});
+        assert.deepEqual(requests,[],'Demo must never call private API');
+      }finally{await preview.close()}
+    });
     if(useWebKit){
       // Safari/WebKit does not store Secure cookies on plain HTTP loopback.
       // Test-only response adaptation: production Worker keeps HttpOnly; Secure.
@@ -1057,7 +1092,9 @@ try {
   });
 } catch (error) {
   console.error('E2E FAILED: '+(error instanceof Error?error.stack:error));
-  if (!started) console.error('Wrangler output:\n'+serverLog);
+  // Always surface local runtime failures, including crashes after the health probe.
+  if(error instanceof Error&&error.cause)console.error('Underlying cause: '+String(error.cause));
+  console.error('Wrangler output:\n'+serverLog);
   process.exitCode=1;
 } finally {
   if(worker && worker.exitCode===null)worker.kill('SIGTERM');
