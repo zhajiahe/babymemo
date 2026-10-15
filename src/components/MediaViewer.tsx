@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Download, Save, X, Trash2 } from 'lucide-rea
 import {saveMediaOffline} from '../offline';
 import {createAlbumThumbnail,createVideoFrameThumbnail} from '../media-upload';
 import {api} from '../lib/client';
-import {Button} from './ui';
+import {Button,IconButton,StatusMessage} from './ui';
 
 export type MediaItem = {
   id: string;
@@ -125,7 +125,7 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
             <strong>{item.day}</strong>
             <span className="muted" aria-live="polite" aria-atomic="true">第 {index + 1} / {count} 项</span>
           </div>
-          <button type="button" className="icon-btn" onClick={() => dialogRef.current?.close()} aria-label="关闭预览"><X size={20} /></button>
+          <IconButton onClick={() => dialogRef.current?.close()} aria-label="关闭预览"><X size={20} /></IconButton>
         </header>
         <div className="media-viewer-stage" role="group" tabIndex={video?undefined:0} aria-label={video?'视频预览':'照片预览，左右滑动或方向键切换'} aria-keyshortcuts={video?undefined:'ArrowLeft ArrowRight'} onTouchStart={startSwipe} onTouchEnd={finishSwipe} onTouchCancel={()=>{touchStart.current=null}}>
           {video
@@ -151,18 +151,18 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
          </section>
          <div className="media-viewer-toolbar">
           <div className="media-viewer-arrows">
-            <button type="button" className="secondary" disabled={index <= 0 || saving} onClick={() => onNavigate(-1)}><ChevronLeft size={16} /> 上一项</button>
-            <button type="button" className="secondary" disabled={index >= count - 1 || saving} onClick={() => onNavigate(1)}>下一项 <ChevronRight size={16} /></button>
+            <Button type="button" variant="secondary" disabled={index <= 0 || saving} onClick={() => onNavigate(-1)}><ChevronLeft size={16} /> 上一项</Button>
+            <Button type="button" variant="secondary" disabled={index >= count - 1 || saving} onClick={() => onNavigate(1)}>下一项 <ChevronRight size={16} /></Button>
           </div>
           <div className="media-detail-actions">
-           <button type="button" className="secondary" disabled={saving} onClick={()=>{setSaving(true);setError('');void saveMediaOffline(src).then(()=>setError('已保存到本机，可离线查看。')).catch(e=>setError(e instanceof Error?e.message:'本机存储不足')).finally(()=>setSaving(false))}}>离线保存</button>
+           <Button type="button" variant="secondary" disabled={saving} onClick={()=>{setSaving(true);setError('');void saveMediaOffline(src).then(()=>setError('已保存到本机，可离线查看。')).catch(e=>setError(e instanceof Error?e.message:'本机存储不足')).finally(()=>setSaving(false))}}>离线保存</Button>
            <a className="secondary media-download" href={src + '?download=1'} download={item.title||'babymemo-media'}><Download size={16}/>下载</a>
-           <button type="button" className="icon-btn media-remove" onClick={onDelete} aria-label="移入回收站"><Trash2 size={19}/></button>
+           <IconButton className="media-remove" onClick={onDelete} aria-label="移入回收站"><Trash2 size={19}/></IconButton>
           </div>
           {video&&<div className="media-cover-actions">
-            <button type="button" className="secondary" disabled={coverSaving} onClick={()=>void saveCover(async()=>videoRef.current?createVideoFrameThumbnail(videoRef.current):null)}>
+            <Button type="button" variant="secondary" disabled={coverSaving} onClick={()=>void saveCover(async()=>videoRef.current?createVideoFrameThumbnail(videoRef.current):null)}>
               {coverSaving?'保存封面中…':'将当前视频画面设为封面'}
-            </button>
+            </Button>
             <label className="secondary media-cover-picker" aria-disabled={coverSaving}>
               选择封面照片
               <input type="file" accept="image/jpeg,image/png,image/webp" disabled={coverSaving} aria-label="选择视频封面照片" onChange={event=>{
@@ -170,16 +170,16 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
                 if(file)void saveCover(()=>createAlbumThumbnail(file));
               }}/>
             </label>
-            <span className="muted" role="status" aria-live="polite">{coverMessage}</span>
+            <StatusMessage tone={coverMessage.includes("失败")||coverMessage.includes("无法")?"error":"info"}>{coverMessage}</StatusMessage>
           </div>}
         </div>
         <form className="media-viewer-edit" id="media-story-edit" hidden={!editing} onSubmit={event => void save(event)}>
           <label className="field"><span>拍摄日期</span><input type="date" value={day} onChange={event => setDay(event.target.value)} required /></label>
           <label className="field"><span>照片或视频描述</span><textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={1000} rows={3} placeholder="写下这段回忆…" /></label>
-          <button type="submit" className="primary" disabled={saving}><Save size={16} />{saving ? '保存中…' : '保存信息'}</button>
+          <Button type="submit" variant="primary" disabled={saving}><Save size={16} />{saving ? '保存中…' : '保存信息'}</Button>
         </form>
         {error && <p className="error" role="alert">{error}</p>}
-        {error&&navigator.onLine&&<button type="button" className="secondary" disabled={saving} onClick={()=>void reviewVersion()}>核对服务器版本（保留草稿）</button>}
+        {error&&navigator.onLine&&<Button type="button" variant="secondary" disabled={saving} onClick={()=>void reviewVersion()}>核对服务器版本（保留草稿）</Button>}
       </div>
     </dialog>
   );

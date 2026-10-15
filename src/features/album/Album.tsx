@@ -1,7 +1,7 @@
 import {RecordFilterBar,type RecordFilters} from '../../components/RecordFilters';
 import {queueMedia} from '../../offline';
 import {useEffect,useRef,useState} from 'react';
-import {Card,Pager,SegmentedControl} from '../../components/ui';
+import {Button,Card,Pager,SegmentedControl} from '../../components/ui';
 import {MediaViewer,type MediaItem} from '../../components/MediaViewer';
 import {createAlbumThumbnail,createVideoThumbnail,createRemoteVideoThumbnail,fingerprintFile} from '../../media-upload';
 import {pickMatchingUpload,remainingPartNumbers} from '../../upload-plan.mjs';
@@ -238,7 +238,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  <div className="album-toolbar album-content-toolbar">
   <div className="album-toolbar-heading"><h2>照片与视频</h2></div>
   <div className="album-toolbar-actions">
-   <button type="button" className="primary album-add-btn" aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(v=>!v)}><Plus size={17}/>{showUploader?'收起上传':'添加照片或视频'}</button></div>
+   <Button type="button" variant="primary" className="album-add-btn" aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(v=>!v)}><Plus size={17}/>{showUploader?'收起上传':'添加照片或视频'}</Button></div>
  </div>
  <SegmentedControl className="album-view-switch" label="相册浏览方式" value={albumView} onChange={setAlbumView}
   options={[{value:'stories' as const,label:'故事',icon:<BookOpenText size={17}/>},{value:'grid' as const,label:'照片墙',icon:<Images size={17}/>}]} />
@@ -269,10 +269,10 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
      </div>}
     </article>)}</div>
   </section>
- ):<div className="empty card"><p>还没有照片，上传第一张成长回忆吧。</p><button type="button" className="primary" onClick={()=>setShowUploader(true)}><Plus size={16}/> 添加照片或视频</button></div>}
+ ):<div className="empty card"><p>还没有照片，上传第一张成长回忆吧。</p><Button type="button" variant="primary" onClick={()=>setShowUploader(true)}><Plus size={16}/> 添加照片或视频</Button></div>}
  <Pager page={page} setPage={setPage} hasMore={hasMore}/>
  {pending.length>0&&<Card className="pending-uploads"><div className="section-title"><h3>待续传文件</h3><span className="muted small">{pending.length} 项</span></div><p className="muted small">中断后重新选择原文件，可以继续上传已经保存的分片。</p>
-  {pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><div className="pending-actions">{item.completedParts.length===Math.ceil(item.size/8388608)&&<button className="primary" type="button" disabled={uploading} onClick={()=>void finishPending(item.id)}>完成保存</button>}<button className="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</button></div></div>)}
+  {pending.map(item=><div className="pending-upload" key={item.id}><div><strong>{item.title||'未命名文件'}</strong><p className="muted small">已完成 {item.completedParts.length}/{Math.ceil(item.size/8388608)} 个分片 · {Math.ceil(item.size/1048576)} MB</p></div><div className="pending-actions">{item.completedParts.length===Math.ceil(item.size/8388608)&&<Button variant="primary" type="button" disabled={uploading} onClick={()=>void finishPending(item.id)}>完成保存</Button>}<Button variant="secondary" type="button" disabled={uploading} onClick={()=>void discard(item.id)}>取消上传</Button></div></div>)}
  </Card>}
  {selected&&<MediaViewer key={baby.id} item={selected} index={media.findIndex(item=>item.id===selected.id)} count={media.length} onNavigate={navigateMedia} onClose={()=>setSelected(null)} onSave={saveMedia} onDelete={()=>{if(selected)void remove(selected.id)}} onThumbnailSaved={id=>{
     mediaEdited(id,{thumbnail_ready:1});

@@ -2,7 +2,7 @@
  * Base styles own functional controls, state and accessibility.
  * This sheet owns editorial layout, navigation, album and brand presentation.
  */
-body { background:var(--bm-page); color:var(--bm-ink); font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Noto Sans SC",sans-serif; }
+body { background:var(--bm-page); color:var(--bm-ink); font-family:var(--bm-font-ui); }
 h1,h2,h3 { letter-spacing:normal; }
 .app { background:var(--bm-page); }
 .sidebar { background:var(--bm-surface); border-color:var(--bm-border); padding-top:26px; }
@@ -51,7 +51,7 @@ h1,h2,h3 { letter-spacing:normal; }
 .home-photo-cover { position:relative; border:0; display:grid; place-items:center; padding:0; width:100%; height:auto; aspect-ratio:4/3; border-radius:var(--bm-radius-lg); overflow:hidden; background:var(--bm-photo-bg); cursor:pointer; }
 .home-photo-cover img { width:100%; height:100%; object-fit:cover; display:block; }
 .home-photo-strip { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin-top:7px; }
-.home-photo-thumb { position:relative; display:grid; place-items:center; overflow:hidden; border-radius:7px; border:0; padding:0; background:#EAF1F7; aspect-ratio:1; }
+.home-photo-thumb { position:relative; display:grid; place-items:center; overflow:hidden; border-radius:7px; border:0; padding:0; background:var(--bm-photo-bg); aspect-ratio:1; }
 .home-photo-thumb img { width:100%; height:100%; object-fit:cover; }
 .home-video-placeholder { color:var(--bm-muted); display:flex; flex-direction:column; align-items:center; gap:10px; }
 .home-empty-photos { min-height:300px; background:#EEF5FB; border-radius:13px; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--bm-muted); gap:8px; }
@@ -152,12 +152,12 @@ h1,h2,h3 { letter-spacing:normal; }
 .photo-month { margin:17px 0 29px; }
 .photo-month h3 { font-size:15px; font-weight:630; margin:0 0 10px; }
 .photo-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; margin:0; }
-.photo-item { padding:0; min-width:0; aspect-ratio:1; background:#E8EFF6; border-radius:3px; overflow:hidden; }
+.photo-item { padding:0; min-width:0; aspect-ratio:1; background:var(--bm-photo-bg); border-radius:3px; overflow:hidden; }
 .photo-preview { position:relative; width:100%; height:100%; border-radius:3px; cursor:pointer; }
 .photo-frame { width:100%; height:100%; display:block; }
 .photo-frame img { width:100%; height:100%; object-fit:cover; display:block; }
 .photo-preview-hint { display:none!important; }
-.video-placeholder { height:100%; min-height:0; background:#E8EFF6; }
+.video-placeholder { height:100%; min-height:0; background:var(--bm-photo-bg); }
 .video-placeholder span { font-size:12px; }
 .video-play-badge { position:absolute; inset:auto 8px 8px auto; width:28px; height:28px; border-radius:50%; background:rgba(20,34,51,.66); color:white; display:grid; place-items:center; pointer-events:none; }
 .home-thumb-video { position:absolute; bottom:5px; right:6px; color:#fff; font-size:12px; text-shadow:0 1px 4px #000; }

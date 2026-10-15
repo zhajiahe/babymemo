@@ -33,11 +33,18 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 }
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'secondary' | 'quiet';
+  variant?: 'primary' | 'secondary' | 'quiet' | 'danger';
+  loading?: boolean;
 };
 
-export function Button({variant='secondary',className='',type='button',children,...props}:ButtonProps) {
-  return <button type={type} className={['bm-button',variant==='quiet'?'bm-button--quiet':variant,className].filter(Boolean).join(' ')} {...props}>{children}</button>;
+export function Button({variant='secondary',className='',type='button',children,loading=false,disabled,...props}:ButtonProps) {
+  return <button type={type} className={['bm-button',variant==='quiet'?'bm-button--quiet':variant==='danger'?'bm-button--danger':variant,className].filter(Boolean).join(' ')} disabled={disabled||loading} aria-busy={loading||undefined} {...props}>{children}</button>;
+}
+export function IconButton({className='',type='button',children,...props}:ButtonHTMLAttributes<HTMLButtonElement> & {'aria-label':string}) {
+  return <button type={type} className={['bm-icon-button','icon-btn',className].filter(Boolean).join(' ')} {...props}>{children}</button>;
+}
+export function StatusMessage({children,tone='info'}:{children:ReactNode;tone?:'info'|'success'|'error'}) {
+  return <span className={'bm-status bm-status--'+tone} role={tone==='error'?'alert':'status'} aria-live={tone==='error'?'assertive':'polite'}>{children}</span>;
 }
 
 type SegmentOption<T extends string> = {value:T;label:string;icon?:ReactNode};

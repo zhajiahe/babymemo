@@ -8,7 +8,7 @@ import {ageLabel} from './lib/age.mjs';
 import {Album} from './features/album/Album';
 import {Settings} from './features/settings/Settings';
 import { useEffect, useState, useRef, type FormEvent, type ReactNode } from 'react';
-import { Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
+import { Button, Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
 import { MediaViewer, type MediaItem } from './components/MediaViewer';
 import { createAlbumThumbnail, createStoredThumbnail, createVideoThumbnail, fingerprintFile } from './media-upload';
 import { pickMatchingUpload, remainingPartNumbers } from './upload-plan.mjs';
@@ -26,7 +26,7 @@ function Gate({onReady}:{onReady:()=>void}){
  }
  return <div className="gate"><div className="gate-intro"><Logo/><h1>一家人的成长，<br/>都记在这里。</h1><p>照片、成长记录和那些第一次。<br/>留下一份只属于家人的日记。</p><a className="demo-gate-link" href="/demo.html">先看看 BabyMemo 长什么样 <ChevronRight size={17}/></a></div>
  <div className="gate-panel"><div className="gate-card"><div className="eyebrow">{mode==='setup'?'首次设置':'家庭登录'}</div><h2>{mode==='setup'?'创建家庭空间':'登录 BabyMemo'}</h2><p className="muted">{mode==='setup'?'完成以下必填信息后，才会开放记录功能。':'使用你初始化时设置的家庭账号登录。'}</p>
- {mode==='loading'?<div className="skeleton">正在检查服务状态…</div>:mode==='unavailable'?<div className="stack"><div className="error" role="alert">{error}</div><button className="secondary" onClick={()=>location.reload()}><RefreshCw size={15}/>重新检查</button></div>:<form onSubmit={submit} className="stack">
+ {mode==='loading'?<div className="skeleton">正在检查服务状态…</div>:mode==='unavailable'?<div className="stack"><div className="error" role="alert">{error}</div><Button variant="secondary" onClick={()=>location.reload()}><RefreshCw size={15}/>重新检查</Button></div>:<form onSubmit={submit} className="stack">
  {mode==='setup'&&<><div className="setup-check">{[['会话密钥',ready.sessionConfigured],['加密密钥',ready.encryptionConfigured]].map(([label,ok])=><span key={String(label)} className={ok?'good':'bad'}>{ok?<Check size={13}/>:<WifiOff size={13}/>} {label}</span>)}</div><p className="setup-security-note">首次访问未初始化实例的人可以创建管理员。请部署后立即完成初始化；如需限制访问，请提前为站点启用 Cloudflare Access。</p></>}
  <>{mode==='setup'&&<Field label="家庭名称（必填）"><input required maxLength={80} value={form.familyName} onChange={e=>setForm({...form,familyName:e.target.value})} placeholder="例如：我们的温暖小家"/></Field>}<Field label={mode==='setup'?'管理员登录名':'管理员登录名'}><input required value={form.ownerName} autoComplete="username" onChange={e=>setForm({...form,ownerName:e.target.value})} placeholder="例如：爸爸 / 妈妈"/></Field>
  </><Field label="家庭密码"><input type="password" autoComplete={mode==='setup'?'new-password':'current-password'} minLength={mode==='setup'?6:1} required value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder={mode==='setup'?'至少 6 位字符（可使用数字）':'输入家庭密码'}/></Field>
@@ -175,7 +175,7 @@ export default function App(){
   }
  if(mode==='loading')return <div className="loading-screen"><Logo/><div>正在载入家庭空间…</div></div>;
  if(mode==='gate')return <Gate onReady={()=>void refresh()}/>;
- if(mode==='unavailable')return <div className="loading-screen"><Logo/><p>暂时无法连接家庭空间，已保留你的会话。</p><button className="secondary" onClick={()=>void refresh()}><RefreshCw size={16}/>重新连接</button></div>;
+ if(mode==='unavailable')return <div className="loading-screen"><Logo/><p>暂时无法连接家庭空间，已保留你的会话。</p><Button variant="secondary" onClick={()=>void refresh()}><RefreshCw size={16}/>重新连接</Button></div>;
  if(!state||!baby)return <div className="loading-screen">家庭空间中暂无宝宝档案</div>;
  const titles:Record<Tab,string>={overview:'成长日记',growth:'成长记录',moments:'成长瞬间',album:'相册',settings:'设置'};
  return <div className={'app'+(keyboardVisible?' keyboard-open':'')}><Nav active={active} setActive={selectTab} logout={logout} familyName={state.familyName||"家庭空间"}/><main className="workspace"><div className={'topbar'+(active==='moments'?' has-back':'')}>{active==='moments'&&<button type="button" className="mobile-back-button" onClick={()=>selectTab('overview')} aria-label="返回首页"><ChevronLeft size={19}/>首页</button>}<div className="crumb"><span className="space-name" aria-label="家庭空间名称" title={state.familyName||'家庭空间'}>{state.familyName||'家庭空间'}</span> <ChevronRight size={14}/> <strong>{titles[active]}</strong></div><div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><div className="avatar">{state.ownerName.slice(0,1)}</div></div></div>
@@ -192,7 +192,7 @@ export default function App(){
    </button>
    {media.length>1&&<div className="home-photo-strip">{media.slice(1,5).map(item=><button key={item.id} type="button" className="home-photo-thumb" onClick={()=>setActive('album')} aria-label={'查看 '+item.day+' 的媒体'}>
     {item.upload_state&&item.upload_state!=='ready'?<Camera size={22} aria-label={item.upload_state==='processing'?'正在保存':'保存失败'}/>:item.mime.startsWith('image/')||item.thumbnail_ready?<><img src={'/api/media/'+encodeURIComponent(item.id)+'/thumbnail'} loading="lazy" alt=""/>{item.mime.startsWith('video/')&&<span className="home-thumb-video" aria-hidden="true"><Play size={13} fill="currentColor"/></span>}</>:<>{item.mime.startsWith("video/")?<Play size={20} aria-hidden="true"/>:<Camera size={22}/>}</>}
-   </button>)}</div>}</>:<div className="home-empty-photos"><Camera size={26}/><p>还没有照片</p><button className="secondary" type="button" onClick={()=>setActive('album')}>添加第一张照片</button></div>}
+   </button>)}</div>}</>:<div className="home-empty-photos"><Camera size={26}/><p>还没有照片</p><Button variant="secondary" type="button" onClick={()=>setActive('album')}>添加第一张照片</Button></div>}
   </section>
   <section className="home-measurements" aria-label="成长曲线"><div className="section-title home-section-title"><h2>成长记录</h2><button type="button" className="text-btn" onClick={()=>setActive('growth')}>查看记录 <ChevronRight size={16}/></button></div><GrowthChart items={growthHistory} limited={historyLimited}/></section>
   <section className="home-events" aria-label="成长时间轴"><div className="section-title home-section-title"><h2>最近的日子</h2><button type="button" className="text-btn" onClick={()=>setActive('moments')}>查看全部 <ChevronRight size={16}/></button></div>
