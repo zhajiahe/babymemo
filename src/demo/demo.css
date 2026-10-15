@@ -1,0 +1,79 @@
+/* The public demo uses the same layout, visual tokens and growth chart as BabyMemo.
+   Only explanatory labels, sample stories and the read-only photo viewer live here. */
+.demo-app .demo-note {
+ display:flex;align-items:center;justify-content:space-between;gap:10px 18px;flex-wrap:wrap;
+ padding:10px 14px;margin:-2px 0 26px;border:1px solid var(--bm-border);
+ border-radius:10px;background:var(--bm-surface);color:var(--bm-muted);font-size:12px;line-height:1.6;
+}
+.demo-app .demo-note strong{color:var(--bm-brand);font-weight:700}
+.demo-app .demo-note a,.demo-setting-note a{color:var(--bm-brand);font-weight:650}
+.demo-app .demo-note a:hover,.demo-setting-note a:hover{text-decoration:underline}
+.demo-sidebar-foot{padding:0 17px;font-size:11px;color:var(--bm-muted)}
+.demo-app .home-quick-add{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;padding:9px 12px;background:var(--bm-brand-soft);color:var(--bm-brand);border:0;border-radius:9px;font-size:13px;font-weight:650}
+.demo-story-highlight{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:7px;margin-top:15px;padding:20px 22px;text-align:left;border:1px solid var(--bm-border);border-radius:13px;background:var(--bm-surface);color:var(--bm-ink)}
+.demo-story-highlight .demo-story-date{font-size:12px;color:var(--bm-muted)}
+.demo-story-highlight strong{font-size:20px;font-weight:650}
+.demo-story-highlight>span:nth-last-child(2){font-size:14px;line-height:1.75;color:var(--bm-muted)}
+.demo-story-highlight .demo-story-open{display:inline-flex;align-items:center;gap:3px;margin-top:6px;color:var(--bm-brand);font-size:13px;font-weight:650}
+.demo-story-highlight:hover .demo-story-open{text-decoration:underline}
+.demo-app .home-photo-cover img,.demo-app .home-photo-thumb img,.demo-app .photo-frame img{background:#eaf1f7}
+.demo-app .home-photo-cover img{aspect-ratio:4/3;object-fit:cover}
+.demo-app .home-thumb-video{display:grid;place-items:center}
+.demo-app .album-content-toolbar{display:flex;align-items:center;justify-content:space-between;gap:15px}
+.demo-readonly{font-size:12px;color:var(--bm-muted)}
+.demo-app .photo-story{box-shadow:none}
+.demo-app .photo-frame{position:relative}
+.demo-app .photo-frame .video-play-badge{position:absolute;right:12px;bottom:12px}
+.demo-app .photo-item .photo-preview{height:100%}
+.demo-app .photo-item .photo-frame{aspect-ratio:1;height:100%}
+.demo-app .photo-item img{width:100%;height:100%;object-fit:cover}
+.demo-app .photo-story .photo-frame img{height:100%}
+.demo-growth,.demo-settings{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);align-items:start;gap:20px}
+.demo-growth .growth-chart{margin:0}
+.demo-growth .card h2,.demo-settings .card h2{font-size:18px;margin:0 0 10px}
+.demo-history-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;min-height:54px;padding:13px 0;border-top:1px solid var(--bm-border);font-size:13px;color:var(--bm-ink)}
+.demo-history-row time{color:var(--bm-muted);margin-right:auto;min-width:96px}
+.demo-history-row span{white-space:nowrap}
+.demo-history-row strong{font-weight:600}
+.demo-moments{max-width:730px}
+.demo-moments-intro{color:var(--bm-muted);font-size:14px;margin:0 0 19px;line-height:1.8}
+.demo-moment{padding:24px;margin:0 0 14px}
+.demo-moment time{font-size:12px;color:var(--bm-muted)}
+.demo-moment h2{font-size:20px;font-weight:650;margin:8px 0 12px}
+.demo-moment p{margin:0;font-size:15px;line-height:1.9}
+.demo-setting-note>svg{color:var(--bm-brand);margin:0 0 14px}
+.demo-setting-note p{font-size:14px;line-height:1.85;color:var(--bm-muted)}
+.demo-app button:focus-visible,.demo-app a:focus-visible{outline:3px solid var(--bm-focus);outline-offset:3px}
+.demo-app .home-photo-thumb{cursor:pointer}
+/* Only display a simulated viewer: no edit, download, upload or destructive actions. */
+.demo-viewer-backdrop{position:fixed;z-index:180;inset:0;overflow:auto;padding:28px 16px;background:rgba(18,29,43,.8);display:grid;place-items:center}
+.demo-viewer{background:var(--bm-surface);border-radius:14px;width:min(740px,100%);max-height:calc(100dvh - 56px);overflow:auto;box-shadow:0 24px 80px rgba(0,0,0,.27)}
+.demo-viewer-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px 8px 22px;min-height:56px;font-size:13px;font-weight:600;color:var(--bm-ink)}
+.demo-viewer-heading button{width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:var(--bm-muted)}
+.demo-viewer-heading button:hover{background:var(--bm-brand-soft)}
+.demo-viewer-photo{position:relative;background:#eaf1f7;min-height:190px;display:grid;place-items:center;overflow:hidden}
+.demo-viewer-photo img{display:block;width:100%;max-height:50dvh;object-fit:contain}
+.demo-video-mark{position:absolute;bottom:12px;right:12px;display:flex;align-items:center;gap:6px;color:white;background:rgba(20,34,51,.7);padding:8px 11px;border-radius:8px;font-size:12px}
+.demo-viewer .media-story-panel{padding:18px 24px}
+.demo-viewer-controls{display:flex;justify-content:space-between;border-top:1px solid var(--bm-border);padding:10px 16px}
+.demo-viewer-controls button{display:flex;align-items:center;gap:5px;min-height:44px;padding:8px 12px;border:0;border-radius:8px;background:transparent;color:var(--bm-brand);font-size:13px;font-weight:650}
+.demo-viewer-controls button:hover{background:var(--bm-brand-soft)}
+@media(max-width:800px){
+ .demo-app .demo-note{margin:-4px 0 20px;padding:10px 12px}
+ .demo-app .demo-note a{white-space:nowrap}
+ .demo-story-highlight{padding:18px 16px;margin-top:12px}
+ .demo-story-highlight strong{font-size:18px}
+ .demo-growth,.demo-settings{display:flex;flex-direction:column;gap:14px}
+ .demo-growth>.card,.demo-settings>.card{width:100%}
+ .demo-app .photo-item .photo-frame{aspect-ratio:1}
+ .demo-viewer-backdrop{padding:8px}
+ .demo-viewer{max-height:calc(100dvh - 16px);border-radius:12px}
+ .demo-viewer-photo img{max-height:46dvh}
+ .demo-viewer .media-story-panel{padding:14px 16px}
+}
+@media(max-width:380px){
+ .demo-app .home-quick-add{padding:8px;font-size:12px}
+ .demo-app .demo-note{font-size:11px}
+ .demo-history-row time{min-width:90px}
+}
+@media(prefers-reduced-motion:reduce){.demo-app *{scroll-behavior:auto!important}}
