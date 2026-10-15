@@ -11,7 +11,7 @@ import {qwenRequest,DEFAULT_QWEN_MODEL} from '../src/qwen-workers-ai.mjs';
 import {openRouterCompletion} from '../src/openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from '../src/openrouter-model.mjs';
 import {diagnosticEvent,safeBenchPreview,benchmarkFailureKind,isFatalBenchmarkError,benchmarkMarkdownReport} from './model-benchmark-logging.mjs';
-import {MODEL_BENCH_CASES,BENCHMARK_DATE,BENCHMARK_ID,benchmarkMessages,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
+import {MODEL_BENCH_CASES,BENCHMARK_DATE,BENCHMARK_ID,benchmarkMessages,syntheticObservation,validateBenchmarkTool,scoreModelCase,classifyBenchmarkIssues,aggregateBenchmark} from './model-benchmark-cases.mjs';
 
 if(process.env.MODEL_BENCH_CONFIRM!=='YES')throw Error('MANUAL_CONFIRMATION_REQUIRED');
 const provider=process.env.MODEL_BENCH_PROVIDER||'both';
@@ -131,10 +131,12 @@ async function evaluate(modelProvider,item,iteration){
  if(modelProvider==='openrouter'&&effectiveReasoning==='off'&&!reasoningFallbackUsed&&usage.reasoningTokens!==null&&usage.reasoningTokens>0)score.issues.push('REASONING_TOKENS_NONZERO');
  if(item.id!=='negated-save'&&calls.length&&(!modelFinal||modelFinal.trim()===''))score.issues.push('NO_NATURAL_MODEL_FINAL');
  score.passed=score.issues.length===0;
+ Object.assign(score,classifyBenchmarkIssues(score.issues));
  const errorCode=error?String(error).replace(/[^A-Z0-9_]/gi,'').slice(0,42):null;
  const taskResult={caseId:item.id,name:item.name,iteration,passed:score.passed,issues:score.issues,
   tools:calls.map(x=>x.name),toolCalls:calls.map(x=>({name:x.name,args:x.args})),modelRequests,
   latencyMs:Date.now()-started,usage,reasoningFallbackUsed,requestedProvider,servedProvider,
+  dimensions:score.dimensions,safetyCritical:score.safetyCritical,
   finalReplyPresent:!!modelFinal?.trim(),
   finalReplyPreview:safeBenchPreview(modelFinal||reply,320),errorCode};
  log('scenario_complete',{...caseContext,passed:taskResult.passed,modelRequests,latencyMs:taskResult.latencyMs,

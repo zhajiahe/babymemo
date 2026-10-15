@@ -39,12 +39,17 @@ export function benchmarkMarkdownReport(models,setup){
   const val=v=>v===null||v===undefined?'未报告':String(v);
   out.push('|'+model.model+'|'+(model.reasoningRequested??'未知')+'|'+(model.preferredProvider??'自动')+'|'+(model.status??'OK')+'|'+s.passed+'/'+s.cases+'|'+s.modelRequests+'|'+val(u.inputTokens)+'|'+val(u.outputTokens)+'|'+val(u.neurons)+'|'+val(u.reportedUSD)+'|');
  }
+ out.push('','### 维度分数','','|模型|操作正确|安全通过|回答合格|高风险错误|','|---|---:|---:|---:|---:|');
+ for(const model of models){
+  const q=model.summary.quality||{},asText=v=>v===null||v===undefined?'未统计':String(v);
+  out.push('|'+model.model+'|'+asText(q.operation)+'|'+asText(q.safety)+'|'+asText(q.answer)+'|'+asText(q.safetyCritical)+'|');
+ }
  out.push('','### 逐场景结果','','|模型|场景|结果|工具轨迹|模型请求|耗时 ms|输入/输出 tokens|推理 tokens|Neurons|报告 USD|最低思考回退|错误|',
  '|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|');
  for(const model of models)for(const x of model.results){
   const escape=value=>String(value??'').replace(/\|/g,'\\|').replace(/[\r\n]/g,' ');
   const u=x.usage||{},val=v=>v===null||v===undefined?'—':String(v);
-  out.push('|'+escape(model.model)+'|'+escape(x.name)+'|'+(x.passed?'通过':'失败')+'|'+escape(x.tools?.join(' → ')||'无')+'|'+x.modelRequests+'|'+x.latencyMs+'|'+val(u.inputTokens)+'/'+val(u.outputTokens)+'|'+val(u.reasoningTokens)+'|'+val(u.neurons)+'|'+val(u.reportedUSD)+'|'+(x.reasoningFallbackUsed?'是':'否')+'|'+escape(x.errorCode||x.issues?.join(', ')||'—')+'|');
+  out.push('|'+escape(model.model)+'|'+escape(x.name)+'|'+(x.passed?'通过':x.safetyCritical?'安全错误':'失败')+'|'+escape(x.tools?.join(' → ')||'无')+'|'+x.modelRequests+'|'+x.latencyMs+'|'+val(u.inputTokens)+'/'+val(u.outputTokens)+'|'+val(u.reasoningTokens)+'|'+val(u.neurons)+'|'+val(u.reportedUSD)+'|'+(x.reasoningFallbackUsed?'是':'否')+'|'+escape(x.errorCode||x.issues?.join(', ')||'—')+'|');
  }
  out.push('','模型完整工具参数、最终回复摘录、逐请求 token 数据在 JSON artifact 和 Actions 日志中。失败/身份认证不能当成模型答错。','');
  if(models.some(x=>x.status?.startsWith('BLOCKED')))out.push('**阻塞：部分模型没有成功推理。** 请检查专用 Workers AI Token 的权限（Account → Workers AI → Read）、余额和网络，修复后重新运行。','');

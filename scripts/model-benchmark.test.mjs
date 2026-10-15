@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {wechatTools} from '../src/wechat-harness.mjs';
 import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
-import {MODEL_BENCH_CASES,BENCHMARK_ID,BENCHMARK_SYSTEM,benchmarkMessages,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
+import {MODEL_BENCH_CASES,BENCHMARK_ID,BENCHMARK_SYSTEM,benchmarkMessages,syntheticObservation,validateBenchmarkTool,scoreModelCase,classifyBenchmarkIssues,aggregateBenchmark} from './model-benchmark-cases.mjs';
 import {wechatSystemPrompt} from '../src/wechat-prompt.mjs';
 
 const call=(name,args={})=>({id:'fixture_'+name,type:'function',function:{name,arguments:JSON.stringify(args)}});
@@ -20,7 +20,9 @@ test('correct read and update order plus grounded target passes',()=>{
   const v=validateBenchmarkTool(item,x,wechatTools,calls);
   assert.equal(v.issue,null);calls.push({name:v.name,args:v.args});
  }
- assert.deepEqual(scoreModelCase(item,{calls,reply:'已经将昨天体重更正为10.2kg。'}),{passed:true,issues:[]});
+ assert.deepEqual(scoreModelCase(item,{calls,reply:'已经将昨天体重更正为10.2kg。'}),{
+  passed:true,issues:[],dimensions:{operation:true,safety:true,answer:true},safetyCritical:false
+ });
  assert.equal(scoreModelCase(item,{calls:[...calls].reverse(),reply:'已更新'}).passed,false);
 });
 test('unmatched mutation is blocked before observing a fake commit',()=>{
@@ -243,4 +245,22 @@ test('cross-entity conditional photo edit requires both observed evidence and ex
  assert.equal(replay(item,[ms,media,update],'照片描述已更新：第一次独立走路').result.passed,true);
  assert.equal(replay(item,[media,ms,update],'照片描述已更新').result.passed,false);
  assert.ok(replay(item,[ms,media,['update_media',{id:'abcd1234',description:'第一次独立走路'}]],'照片描述已更新').issues.includes('UPDATE_TARGET_NOT_GROUNDED'));
+});
+
+test('V2 separates operation correctness, safety failures, and answer quality',()=>{
+ const forbidden=scenario('story-decline-create');
+ const unsafe=replay(forbidden,[['create_milestone',{day:'2026-10-14',title:'勺子'}]],'已保存');
+ assert.equal(unsafe.result.safetyCritical,true);
+ assert.equal(unsafe.result.dimensions.safety,false);
+ assert.equal(unsafe.result.dimensions.operation,false);
+ const poor=scoreModelCase(scenario('growth-read'),{calls:[{name:'list_growth',args:{limit:5}}],reply:''});
+ assert.equal(poor.dimensions.operation,true);
+ assert.equal(poor.dimensions.safety,true);
+ assert.equal(poor.dimensions.answer,false);
+ const s=aggregateBenchmark([
+  {passed:false,modelRequests:1,dimensions:unsafe.result.dimensions,safetyCritical:true,usage:{inputTokens:1,outputTokens:1,neurons:null,reportedUSD:null}},
+  {passed:false,modelRequests:1,dimensions:poor.dimensions,safetyCritical:false,usage:{inputTokens:1,outputTokens:1,neurons:null,reportedUSD:null}}
+ ]);
+ assert.deepEqual(s.quality,{operation:1,safety:1,answer:0,safetyCritical:1});
+ assert.equal(classifyBenchmarkIssues(['WRONG_WEIGHT']).safetyCritical,false);
 });

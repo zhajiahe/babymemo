@@ -14,7 +14,7 @@ Workers AI Neurons、Durable Objects duration、OpenRouter 美元余额是**三�
 
 1. `mode=offline`：本地确定性合成场景，不调用真实模型。
 2. `mode=live` 且 `confirm_live=true`：选择 `provider=openrouter` / `workers-ai` / `both`。OpenRouter 通过 `model_ids` 指定 1–6 个模型（留空使用 `model_preset`）；`repetitions` 选择 1 或 3。
-3. 每个真实模型在独立 Matrix Job 中执行 **V2 相同 30 条虚构家庭任务**（含照片后的独立文字、多轮确认、切换宝宝与失败回执）。评分同时检查工具、参数、拒绝误写及回答事实。题目使用生产微信系统提示词，但历史消息和工具结果均为合成数据，**不访问真实微信、D1 或 R2**；真实媒体时序、上传并发和重放由独立 Worker E2E 验证。
+3. 每个真实模型在独立 Matrix Job 中执行 **V2 相同 30 条虚构家庭任务**（含照片后的独立文字、多轮确认、切换宝宝与失败回执）。分别统计操作正确、安全通过、回答合格与高风险错误；危险写入不被总体通过率掩盖。评分仍以程序化校验为主，不代表对自然语言事实的全面证明。题目使用生产微信系统提示词，但历史消息和工具结果均为合成数据，**不访问真实微信、D1 或 R2**；真实媒体时序、上传并发和重放由独立 Worker E2E 验证。
 4. `max_usd` 和 `max_neurons` 是**每个 Job 的软阈值**，不是硬封顶；实际费用以提供商账单或有报告的 `usage.cost` 为准，缺失费用数据不得写成零。
 5. Run Summary、Job Logs 和 JSON Artifacts 是成绩、用量、失败原因与逐题轨迹的**唯一结果存放处**；比较 Artifact 名为 `baby-model-benchmark-comparison`，默认保留 7 天。失败的认证/权限请求不是模型答错。
 
