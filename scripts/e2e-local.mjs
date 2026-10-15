@@ -104,6 +104,15 @@ async function step(title,operation){
 }
 async function e2e() {
   console.log('E2E target: disposable local Wrangler Worker (never production)');
+  await step('public demo serves the built React product preview, without signing in',async()=>{
+    const response=await fetch(base+'/demo.html');
+    assert.equal(response.status,200);
+    const html=await response.text();
+    assert.match(html,/<title>产品体验/);
+    assert.match(html,/assets\/demo-[^"]+\.js/,'Vite must compile a standalone React demo entry');
+    const main=await fetch(base+'/');
+    assert.equal(main.status,200,'Demo must not replace the private app');
+  });
   await step('health and fresh setup status',async()=>{
     const health=await json('/api/health');assert.equal(health.status,200);assert.equal(health.data.ok,true);
     const init=await json('/api/bootstrap/status');assert.equal(init.status,200);
@@ -641,6 +650,36 @@ async function browserE2e(){
     const context=await browser.newContext({viewport:{width:1280,height:860},...(useWebKit?{isMobile:true,hasTouch:true,deviceScaleFactor:2}:{})});
     const page=await context.newPage();
     page.on('pageerror',error=>errors.push(error.message));
+    await step((useWebKit?'WebKit':'Chromium')+': public interactive preview is read-only and mobile friendly',async()=>{
+      const preview=await context.newPage();
+      const requests=[];
+      preview.on('pageerror',error=>errors.push('demo: '+error.message));
+      await preview.route('**/api/**',route=>{requests.push(route.request().url());return route.abort();});
+      // UI checks must not depend on a third-party image service being reachable in CI.
+      await preview.route('https://images.unsplash.com/**',route=>route.abort());
+      try{
+        await preview.goto(base+'/demo.html',{waitUntil:'domcontentloaded'});
+        await preview.getByRole('heading',{name:'小星星'}).waitFor({timeout:20000});
+        await preview.locator('.home-photo-cover').waitFor();
+        await preview.getByText('追着泡泡跑的下午').waitFor();
+        await preview.screenshot({path:join(evidence,'demo-desktop.png'),fullPage:true});
+        await preview.getByRole('button',{name:/查看相册/}).click();
+        await preview.locator('.photo-story').first().waitFor();
+        assert.ok(await preview.locator('.photo-story').count()>1);
+        await preview.getByRole('button',{name:'照片墙'}).click();
+        await preview.locator('.photo-item').first().waitFor();
+        await preview.locator('.photo-item .photo-preview').first().click();
+        await preview.getByRole('dialog',{name:'照片故事'}).waitFor();
+        await preview.getByRole('button',{name:'下一张'}).click();
+        await preview.getByRole('button',{name:'关闭照片详情'}).click();
+        await preview.setViewportSize({width:375,height:812});
+        await preview.locator('.mobile-nav').getByRole('button',{name:'成长'}).click();
+        await preview.getByRole('heading',{name:'成长记录'}).waitFor();
+        await preview.locator('.growth-svg').waitFor();
+        await preview.screenshot({path:join(evidence,'demo-mobile.png'),fullPage:true});
+        assert.deepEqual(requests,[],'Preview must never call the private family API');
+      }finally{await preview.close();}
+    });
     if(useWebKit){
       // Safari/WebKit does not store Secure cookies on plain HTTP loopback.
       // Test-only response adaptation: production Worker keeps HttpOnly; Secure.

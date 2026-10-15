@@ -24,7 +24,7 @@ function Gate({onReady}:{onReady:()=>void}){
   try{await post(mode==='setup'?'/api/bootstrap':'/api/login',mode==='setup'?form:{name:form.ownerName,password:form.password});onReady();}
   catch(e){setError(e instanceof Error?e.message:'操作失败');}finally{setBusy(false);}
  }
- return <div className="gate"><div className="gate-intro"><Logo/><h1>一家人的成长，<br/>都记在这里。</h1><p>照片、成长记录和那些第一次。<br/>留下一份只属于家人的日记。</p></div>
+ return <div className="gate"><div className="gate-intro"><Logo/><h1>一家人的成长，<br/>都记在这里。</h1><p>照片、成长记录和那些第一次。<br/>留下一份只属于家人的日记。</p><a className="demo-gate-link" href="/demo.html">先看看 BabyMemo 长什么样 <ChevronRight size={17}/></a></div>
  <div className="gate-panel"><div className="gate-card"><div className="eyebrow">{mode==='setup'?'首次设置':'家庭登录'}</div><h2>{mode==='setup'?'创建家庭空间':'登录 BabyMemo'}</h2><p className="muted">{mode==='setup'?'完成以下必填信息后，才会开放记录功能。':'使用你初始化时设置的家庭账号登录。'}</p>
  {mode==='loading'?<div className="skeleton">正在检查服务状态…</div>:mode==='unavailable'?<div className="stack"><div className="error" role="alert">{error}</div><button className="secondary" onClick={()=>location.reload()}><RefreshCw size={15}/>重新检查</button></div>:<form onSubmit={submit} className="stack">
  {mode==='setup'&&<><div className="setup-check">{[['会话密钥',ready.sessionConfigured],['加密密钥',ready.encryptionConfigured]].map(([label,ok])=><span key={String(label)} className={ok?'good':'bad'}>{ok?<Check size={13}/>:<WifiOff size={13}/>} {label}</span>)}</div><p className="setup-security-note">首次访问未初始化实例的人可以创建管理员。请部署后立即完成初始化；如需限制访问，请提前为站点启用 Cloudflare Access。</p></>}

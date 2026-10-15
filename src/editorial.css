@@ -36,6 +36,9 @@ h1,h2,h3 { letter-spacing:normal; }
 .gate-intro { background:#EAF4FC; }
 .gate-intro h1 { color:var(--bm-ink); letter-spacing:normal; font-size:clamp(36px,3.6vw,54px); line-height:1.25; }
 .gate-intro p { color:var(--bm-muted); }
+.demo-gate-link { display:inline-flex;align-items:center;gap:4px;align-self:flex-start;min-height:44px;padding:9px 0;margin-top:13px;font-size:14px;font-weight:650;color:var(--bm-brand); }
+.demo-gate-link:hover { text-decoration:underline; }
+.demo-gate-link:focus-visible { outline:3px solid var(--bm-focus);outline-offset:3px;border-radius:4px; }
 .gate-panel { background:var(--bm-page); }
 .gate-card { border:1px solid var(--bm-border); border-radius:17px; box-shadow:none; }
 .gate .eyebrow { letter-spacing:0; }

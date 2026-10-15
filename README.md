@@ -10,7 +10,9 @@
 - **微信记录**：通过自然语言查询和整理记录，也可以发送照片和视频。
 - **离线与导出**：暂存离线操作，恢复网络后同步；下载完整家庭档案。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zhajiahe/babymemo) · [查看 Demo](public/demo.html)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zhajiahe/babymemo)
+
+**直接看产品：** 在已部署的站点打开 `/demo.html`，无需登录即可浏览与正式产品使用同一视觉样式的交互预览：首页、照片故事、成长曲线和时间线。演示仅使用虚构数据及公开示例照片，不连接家庭 API；示例照片由 Unsplash 加载。
 
 ## 安装与使用
 
