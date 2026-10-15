@@ -61,10 +61,11 @@ export function GrowthChart({items,limited}:{items:RecordItem[];limited?:boolean
    <svg role="img" aria-label={metricName+'趋势，'+points.length+' 个测量点，点击数据点查看详细数值'} viewBox="0 0 720 235" className="growth-svg">
     <line x1={left} y1={bottom} x2={right} y2={bottom} stroke="var(--bm-chart-grid)"/>
     {[0,1,2,3].map(step=>{const value=min+(max-min)*step/3;const yy=y(value);return <g key={step}><line x1={left} x2={right} y1={yy} y2={yy} stroke="var(--bm-chart-grid)" strokeDasharray="3 5"/><text x={left-10} y={yy+4} textAnchor="end" fontSize={12} fill="var(--bm-chart-axis)">{value.toFixed(1)}</text></g>})}
-    {points.length>1&&<polyline points={poly} fill="none" stroke="var(--bm-chart-line)" strokeWidth={3} strokeLinejoin="round" strokeLinecap="round"/>}
+    {points.length>1&&<><polygon points={left+','+bottom+' '+poly+' '+right+','+bottom} fill="var(--bm-chart-area)" stroke="none"/><polyline points={poly} fill="none" stroke="var(--bm-chart-line)" strokeWidth={3.5} strokeLinejoin="round" strokeLinecap="round"/></>}
     {points.map((p,i)=><g key={p.id} role="button" tabIndex={0} aria-label={p.day+'：'+Number(p[metric])+' '+unit} onClick={()=>setSelectedId(p.id)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setSelectedId(p.id)}}}>
-     <circle cx={x(i)} cy={y(Number(p[metric]))} r={15} fill="transparent"/>
-     <circle cx={x(i)} cy={y(Number(p[metric]))} r={selected?.id===p.id?6:4} fill="var(--bm-chart-dot)" stroke="#fff" strokeWidth={2}/>
+     <circle cx={x(i)} cy={y(Number(p[metric]))} r={22} fill="transparent"/>
+     {selected?.id===p.id&&<circle cx={x(i)} cy={y(Number(p[metric]))} r={11} fill="var(--bm-chart-area)" stroke="var(--bm-chart-dot)" strokeWidth={1.5}/>}
+     <circle cx={x(i)} cy={y(Number(p[metric]))} r={selected?.id===p.id?6:4.5} fill="var(--bm-chart-dot)" stroke="var(--bm-surface)" strokeWidth={2}/>
      <title>{p.day+'：'+Number(p[metric])+' '+unit}</title>
     </g>)}
     <text x={left} y={226} fill="var(--bm-chart-axis)" fontSize={11}>{points[0].day}</text><text x={right} y={226} fill="var(--bm-chart-axis)" fontSize={11} textAnchor="end">{points.at(-1)?.day}</text>

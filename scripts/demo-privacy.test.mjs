@@ -72,5 +72,15 @@ test('screenshot-led home layout puts the real story ahead of thumbnails without
  assert.match(editorial,/\.home-photo-cover \{ aspect-ratio:16\/9; \}/);
  assert.match(demoCss,/demo-note-project\{display:none\}/,'keep mobile introductory note compact');
 });
+test('album story is side-by-side on desktop, stacked on mobile, never truncated',()=>{
+ const css=read('src/editorial.css'),demoCss=read('src/demo/demo.css');
+ assert.match(css,/\.photo-stories \{ display:grid; grid-template-columns:minmax\(0,1fr\)/);
+ assert.match(css,/\.photo-story \{ display:grid; grid-template-columns:/);
+ assert.match(css,/\.photo-story \{ display:block; \}/);
+ assert.match(css,/\.photo-story \.photo-frame \{ height:auto; min-height:0; aspect-ratio:16\/10; \}/);
+ assert.match(css,/\.photo-story-text \{ color:/);
+ assert.doesNotMatch(css,/\.photo-story-text[^}]*-webkit-line-clamp/);
+ assert.match(demoCss,/demo-viewer-controls \.secondary:not\(:disabled\)/);
+});
 test('video play mark is visible on home and album thumbnails',()=>{const home=read('src/App.tsx'),album=read('src/features/album/Album.tsx');assert.match(home,/home-video-badge.*<Play/);assert.match(home,/home-thumb-video.*<Play/);assert.match(album,/video-play-badge.*<Play/);});
 test('typed bootstrap response and resumable upload descriptor',()=>{assert.doesNotMatch(read('src/App.tsx'),/api<any>\('\/api\/bootstrap\/status'/);assert.doesNotMatch(read('src/features/album/Album.tsx'),/resumable:Record<string,any>/);});

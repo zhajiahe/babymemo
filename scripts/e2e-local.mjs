@@ -695,6 +695,28 @@ async function browserE2e(){
         await preview.getByRole('button',{name:/查看相册/}).click();
         await preview.locator('.photo-story').first().waitFor();
         assert.ok(await preview.locator('.photo-story').count()>1);
+        // Screenshot-led design: a readable desktop diary row and a shorter mobile photo.
+        const storyLayout=async width=>{
+          await preview.setViewportSize({width,height:844});
+          return preview.locator('.photo-story').first().evaluate(article=>{
+            const photo=article.querySelector('.photo-preview')?.getBoundingClientRect();
+            const story=article.querySelector('.photo-story-copy')?.getBoundingClientRect();
+            const frame=article.querySelector('.photo-frame')?.getBoundingClientRect();
+            return {photo:{x:photo?.x,y:photo?.y,height:photo?.height,right:photo?.right},story:{x:story?.x,y:story?.y},frame:{height:frame?.height,width:frame?.width},overflow:document.documentElement.scrollWidth>innerWidth+1};
+          });
+        };
+        const desktopStory=await storyLayout(1280);
+        assert.ok(desktopStory.story.x>=desktopStory.photo.right-2,'Desktop photo story should read beside the photo: '+JSON.stringify(desktopStory));
+        assert.ok(Math.abs(desktopStory.story.y-desktopStory.photo.y)<4,'Desktop photo and story must align at top');
+        await preview.screenshot({path:join(evidence,'album-story-desktop-1280.png'),fullPage:false});
+        for(const width of [320,390,768]){
+          const m=await storyLayout(width);
+          assert.equal(m.overflow,false,'Mobile story horizontal overflow '+width);
+          assert.ok(m.story.y>=m.photo.y+m.photo.height-2,'Mobile story must be below image '+width);
+          assert.ok(m.frame.height<=m.frame.width*.7+3,'Mobile photo must not push story below the fold '+width+': '+JSON.stringify(m));
+          if(width===390)await preview.screenshot({path:join(evidence,'album-story-mobile-390.png'),fullPage:false});
+        }
+        await preview.setViewportSize({width:1280,height:812});
         const mode=preview.getByRole('group',{name:'相册浏览方式'});
         assert.equal(await mode.getByRole('button',{name:'故事'}).getAttribute('aria-pressed'),'true');
         await preview.getByRole('button',{name:'照片墙'}).click();
@@ -719,6 +741,14 @@ async function browserE2e(){
         await preview.locator('.mobile-nav').getByRole('button',{name:'成长'}).click();
         await preview.getByRole('heading',{name:'成长记录'}).waitFor();
         await preview.locator('.growth-svg').waitFor();
+        const trend=await preview.locator('.growth-chart').evaluate(el=>{
+          const latest=el.querySelector('.growth-latest')?.getBoundingClientRect();
+          const svg=el.querySelector('.growth-svg')?.getBoundingClientRect();
+          return {latestBottom:latest?.bottom,chartTop:svg?.top,chartRight:svg?.right,width:innerWidth};
+        });
+        assert.ok(trend.chartTop>=trend.latestBottom-1,'Growth metric and chart must not overlap');
+        assert.ok(trend.chartRight<=trend.width+1,'Growth chart must fit the iPhone viewport');
+        await preview.screenshot({path:join(evidence,'growth-mobile-refined-375.png'),fullPage:false});
         await preview.screenshot({path:join(evidence,'demo-mobile.png'),fullPage:true});
         assert.deepEqual(requests,[],'Preview must never call the private family API');
       }finally{await preview.close();}
