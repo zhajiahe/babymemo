@@ -1,4 +1,4 @@
-import {r2VideoCaptureDay} from './video-date.mjs';
+import {r2VideoCaptureDay} from './video-date';
 import type {Env} from './types';
 import {r2PhotoCaptureDay,validCaptureDay} from './media-date.mjs';
 import {mediaTiming} from './media-timing.mjs';
