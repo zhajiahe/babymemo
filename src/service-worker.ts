@@ -1,12 +1,13 @@
 /// <reference lib="webworker" />
 import {deviceRead,deviceList,deviceWrite,PRIVATE_MEDIA_CACHE} from './offline-store.mjs';
+import {PRIVATE_THUMBNAIL_CACHE,MAX_AUTO_THUMBNAILS,cacheableThumbnail,thumbnailVersion} from './private-media-cache.mjs';
 const sw=self as unknown as ServiceWorkerGlobalScope;
 declare const __SHELL_ASSETS__:string[];
 const SHELL_CACHE='__SHELL_CACHE__',SHELL_ASSETS=__SHELL_ASSETS__;
 const downloads=new Map<string,{stream:ReadableStream<Uint8Array>;timer:ReturnType<typeof setTimeout>}>();
 sw.addEventListener('install',event=>event.waitUntil(caches.open(SHELL_CACHE).then(cache=>cache.addAll(SHELL_ASSETS)).then(()=>sw.skipWaiting())));
 sw.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('babymemo-shell-')&&k!==SHELL_CACHE).map(k=>caches.delete(k)))).then(()=>sw.clients.claim())));
-sw.addEventListener('message',event=>{if(event.data?.type==='LOCK')event.waitUntil(deviceWrite('resources',{id:'__session',value:{unlocked:false}}).then(()=>caches.delete(PRIVATE_MEDIA_CACHE)))});
+sw.addEventListener('message',event=>{if(event.data?.type==='LOCK')event.waitUntil((async()=>{await deviceWrite('resources',{id:'__session',value:{unlocked:false}});await Promise.all([caches.delete(PRIVATE_MEDIA_CACHE),caches.delete(PRIVATE_THUMBNAIL_CACHE)])})())});
 sw.addEventListener('message',event=>{
  if(event.data?.type!=='EXPORT_DOWNLOAD'||!event.ports[0]||!event.source||!/^[-a-f0-9]{36}$/.test(event.data.token))return;
  const port=event.ports[0],token=event.data.token;let resolvePull:(()=>void)|null=null;
@@ -22,18 +23,52 @@ async function rangeResponse(request:Request,response:Response):Promise<Response
  if(start>end||start>=blob.size)return new Response(null,{status:416,headers:{'Content-Range':'bytes */'+blob.size}});
  return new Response(blob.slice(start,end+1),{status:206,headers:{'Content-Type':response.headers.get('Content-Type')||blob.type,'Content-Length':String(end-start+1),'Content-Range':'bytes '+start+'-'+end+'/'+blob.size,'Accept-Ranges':'bytes','Cache-Control':'private, no-store'}});
 }
+// Only versioned, server-confirmed JPEG derivatives enter this bounded cache.
+// Originals are cached only by an explicit "offline save" action. A private
+// session check gates every hit, including when the device has no connection.
+async function storeThumbnail(request:Request,response:Response):Promise<void>{
+ const session=await deviceRead('resources','__session');
+ if(!session?.value.unlocked)return;
+ const cache=await caches.open(PRIVATE_THUMBNAIL_CACHE),path=new URL(request.url).pathname;
+ // A new revision supersedes the previous cover for the same media.
+ for(const key of await cache.keys())if(new URL(key.url).pathname===path&&key.url!==request.url)await cache.delete(key);
+ await cache.put(request,response);
+ const keys=await cache.keys();
+ for(const key of keys.slice(0,Math.max(0,keys.length-MAX_AUTO_THUMBNAILS)))await cache.delete(key);
+}
+async function thumbnailFallback(path:string):Promise<Response|undefined>{
+ const cache=await caches.open(PRIVATE_THUMBNAIL_CACHE);
+ const candidates=(await cache.keys()).filter(key=>new URL(key.url).pathname===path);
+ return candidates.length?await cache.match(candidates[candidates.length-1]):undefined;
+}
 async function privateMedia(event:FetchEvent):Promise<Response>{
  const request=event.request,url=new URL(request.url),path=url.pathname;
- const deviceSession=await deviceRead('resources','__session');if(deviceSession?.value.unlocked===false)return new Response(null,{status:401});
+ const deviceSession=await deviceRead('resources','__session');
+ if(deviceSession?.value.unlocked===false)return new Response(null,{status:401});
+ const version=thumbnailVersion(request.url);
+ if(version&&deviceSession?.value.unlocked===true){
+  const cached=await (await caches.open(PRIVATE_THUMBNAIL_CACHE)).match(request);
+  if(cached)return cached;
+ }
  try{
-  const response=await fetch(request);
-  if(response.status===401){await deviceWrite('resources',{id:'__session',value:{unlocked:false}});await caches.delete(PRIVATE_MEDIA_CACHE)}
-  if(response.status===200&&!url.searchParams.has('download')&&Number(response.headers.get('Content-Length')||Infinity)<=25*1024*1024){
-   const copy=response.clone();event.waitUntil(deviceRead('resources','__session').then(async session=>{if(session?.value.unlocked)await (await caches.open(PRIVATE_MEDIA_CACHE)).put(path,copy)}).catch(()=>{}));
+  // Always recheck credentials on a cache miss, and bypass legacy browser
+  // HTTP entries that could return 304 for a private, previously viewed image.
+  const response=await fetch(request,{cache:'no-store'});
+  if(response.status===401){
+   await deviceWrite('resources',{id:'__session',value:{unlocked:false}});
+   await Promise.all([caches.delete(PRIVATE_MEDIA_CACHE),caches.delete(PRIVATE_THUMBNAIL_CACHE)]);
+   return response;
   }
+  if(deviceSession?.value.unlocked===true&&cacheableThumbnail(request.url,response))
+   event.waitUntil(storeThumbnail(request,response.clone()).catch(()=>{}));
   return response;
  }catch{
   const session=await deviceRead('resources','__session');if(!session?.value.unlocked)return new Response(null,{status:401});
+  if(path.endsWith('/thumbnail')){
+   const last=await thumbnailFallback(path);
+   if(last)return last;
+  }
+  // Explicit offline saves from previous versions must continue to work.
   const cache=await caches.open(PRIVATE_MEDIA_CACHE);let cached=await cache.match(path);
   if(!cached&&path.endsWith('/thumbnail'))cached=await cache.match(path.replace('/thumbnail','/content'));
   if(cached)return rangeResponse(request,cached);

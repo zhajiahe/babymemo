@@ -40,6 +40,6 @@ test('preview reads the story first, with explicit editor and existing save safe
  assert.match(viewer,/localStorage\.removeItem\('babymemo-draft-media-'/);
  assert.match(viewer,/setEditing\(false\)/);
  assert.match(viewer,/onSave\(\{day,description,requestId,expectedUpdatedAt:version\}\)/);
- assert.match(viewer,/onThumbnailSaved\(id\)/);
+ assert.match(viewer,/onThumbnailSaved\(id,saved\.updated_at\)/);
  assert.match(css,/\.media-viewer-edit\[hidden\] \{ display:none!important/);
 });

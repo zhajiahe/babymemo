@@ -2,6 +2,7 @@ import {RecordFilterBar,emptyFilters,filterQuery,type RecordFilters} from './com
 import {OfflineStatus} from './components/OfflineStatus';
 import {clearDevice,offlineJobs} from './offline';
 import {resumeThumbnailRepair,clearThumbnailRepair} from './thumbnail-repair';
+import {mediaThumbnailUrl} from './private-media-cache.mjs';
 import {api,post,ApiFailure,today,type State,type Tab,type RecordItem} from './lib/client';
 import {RecordView,GrowthChart} from './features/growth/RecordView';
 import {ageLabel} from './lib/age.mjs';
@@ -121,11 +122,12 @@ export default function App(){
  useEffect(()=>{if(mode==='app'&&state)resumeThumbnailRepair(state.babies.map(item=>item.id))},[mode,state]);
  useEffect(()=>{
   const ready=(event:Event)=>{
-   const id=(event as CustomEvent<{id:string}>).detail?.id;
+   const {id,updatedAt}=(event as CustomEvent<{id:string;updatedAt?:string}>).detail||{};
    if(!id)return;
-   setMedia(items=>items.map(item=>item.id===id?{...item,thumbnail_ready:1}:item));
+   const delta={thumbnail_ready:1,...(updatedAt?{updated_at:updatedAt}:{})};
+   setMedia(items=>items.map(item=>item.id===id?{...item,...delta}:item));
    setMilestones(items=>items.map(item=>item.media?.some(m=>m.id===id)
-     ?{...item,media:item.media.map(m=>m.id===id?{...m,thumbnail_ready:1}:m)}:item));
+     ?{...item,media:item.media.map(m=>m.id===id?{...m,...delta}:m)}:item));
   };
   window.addEventListener('babymemo:thumbnail-repaired',ready);
   return()=>window.removeEventListener('babymemo:thumbnail-repaired',ready);
@@ -188,10 +190,10 @@ export default function App(){
   <section className="home-memories" aria-label="最近照片">
    <div className="section-title home-section-title"><h2>最近的照片</h2><button type="button" className="text-btn" onClick={()=>setActive('album')}>查看相册 <ChevronRight size={16}/></button></div>
    {media.length>0?<><button type="button" className="home-photo-cover" onClick={()=>setActive('album')} aria-label="打开家庭相册查看最近照片">
-    {media[0].upload_state&&media[0].upload_state!=='ready'?<span className="home-video-placeholder"><Camera size={27}/>{media[0].upload_state==='processing'?'正在保存照片…':'照片保存失败'}</span>:(media[0].mime.startsWith('image/')||media[0].thumbnail_ready)?<><img src={'/api/media/'+encodeURIComponent(media[0].id)+'/thumbnail'} alt="" decoding="async"/>{media[0].mime.startsWith('video/')&&<span className="home-video-badge"><Play size={15} fill="currentColor"/> 视频</span>}</>:<span className="home-video-placeholder"><Camera size={27}/>最近的视频</span>}
+    {media[0].upload_state&&media[0].upload_state!=='ready'?<span className="home-video-placeholder"><Camera size={27}/>{media[0].upload_state==='processing'?'正在保存照片…':'照片保存失败'}</span>:(media[0].mime.startsWith('image/')||media[0].thumbnail_ready)?<><img src={mediaThumbnailUrl(media[0])} alt="" decoding="async"/>{media[0].mime.startsWith('video/')&&<span className="home-video-badge"><Play size={15} fill="currentColor"/> 视频</span>}</>:<span className="home-video-placeholder"><Camera size={27}/>最近的视频</span>}
    </button>
    {media.length>1&&<div className="home-photo-strip">{media.slice(1,5).map(item=><button key={item.id} type="button" className="home-photo-thumb" onClick={()=>setActive('album')} aria-label={'查看 '+item.day+' 的媒体'}>
-    {item.upload_state&&item.upload_state!=='ready'?<Camera size={22} aria-label={item.upload_state==='processing'?'正在保存':'保存失败'}/>:item.mime.startsWith('image/')||item.thumbnail_ready?<><img src={'/api/media/'+encodeURIComponent(item.id)+'/thumbnail'} loading="lazy" alt=""/>{item.mime.startsWith('video/')&&<span className="home-thumb-video" aria-hidden="true"><Play size={13} fill="currentColor"/></span>}</>:<>{item.mime.startsWith("video/")?<Play size={20} aria-hidden="true"/>:<Camera size={22}/>}</>}
+    {item.upload_state&&item.upload_state!=='ready'?<Camera size={22} aria-label={item.upload_state==='processing'?'正在保存':'保存失败'}/>:item.mime.startsWith('image/')||item.thumbnail_ready?<><img src={mediaThumbnailUrl(item)} loading="lazy" alt=""/>{item.mime.startsWith('video/')&&<span className="home-thumb-video" aria-hidden="true"><Play size={13} fill="currentColor"/></span>}</>:<>{item.mime.startsWith("video/")?<Play size={20} aria-hidden="true"/>:<Camera size={22}/>}</>}
    </button>)}</div>}</>:<div className="home-empty-photos"><Camera size={26}/><p>还没有照片</p><Button variant="secondary" type="button" onClick={()=>setActive('album')}>添加第一张照片</Button></div>}
   </section>
   <section className="home-measurements" aria-label="成长曲线"><div className="section-title home-section-title"><h2>成长记录</h2><button type="button" className="text-btn" onClick={()=>setActive('growth')}>查看记录 <ChevronRight size={16}/></button></div><GrowthChart items={growthHistory} limited={historyLimited}/></section>

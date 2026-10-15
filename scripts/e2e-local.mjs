@@ -413,6 +413,8 @@ async function e2e() {
     const fallback=await request('/api/media/'+mediaId+'/thumbnail');
     assert.equal(fallback.status,200);
     assert.deepEqual(new Uint8Array(await fallback.arrayBuffer()),original);
+    assert.equal(fallback.headers.get('cache-control'),'private, no-store');
+    assert.equal(fallback.headers.get('x-thumbnail-derivative'),'0');
     const invalid=await json('/api/media/'+mediaId+'/thumbnail',{method:'PUT',
       body:Uint8Array.from([1,2,3,4]),headers:{'Content-Type':'image/png'}});
     assert.equal(invalid.status,415);
@@ -420,9 +422,13 @@ async function e2e() {
     const uploaded=await json('/api/media/'+mediaId+'/thumbnail',{method:'PUT',body:thumb,
       headers:{'Content-Type':'image/jpeg'}});
     assert.equal(uploaded.status,200,JSON.stringify(uploaded.data));
-    const derivative=await request('/api/media/'+mediaId+'/thumbnail');
+    assert.ok(uploaded.data.updated_at,'updating a cover must change its cache revision');
+    const derivative=await request('/api/media/'+mediaId+'/thumbnail?v='+encodeURIComponent(uploaded.data.updated_at));
     assert.equal(derivative.status,200);
     assert.equal(derivative.headers.get('content-type'),'image/jpeg');
+    assert.equal(derivative.headers.get('cache-control'),'private, no-store');
+    assert.equal(derivative.headers.get('x-thumbnail-version'),uploaded.data.updated_at);
+    assert.equal(derivative.headers.get('x-thumbnail-derivative'),'1');
     assert.deepEqual(new Uint8Array(await derivative.arrayBuffer()),thumb);
     const completedBackfill=await json('/api/media/thumbnail-backfill?babyId='+babyId);
     assert.equal(completedBackfill.data.items.some(x=>x.id===mediaId),false);
