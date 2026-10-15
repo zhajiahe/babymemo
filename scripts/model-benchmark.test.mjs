@@ -2,12 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {wechatTools} from '../src/wechat-harness.mjs';
 import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
-import {MODEL_BENCH_CASES,BENCHMARK_SYSTEM,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
+import {MODEL_BENCH_CASES,BENCHMARK_ID,BENCHMARK_SYSTEM,benchmarkMessages,syntheticObservation,validateBenchmarkTool,scoreModelCase,aggregateBenchmark} from './model-benchmark-cases.mjs';
+import {wechatSystemPrompt} from '../src/wechat-prompt.mjs';
 
 const call=(name,args={})=>({id:'fixture_'+name,type:'function',function:{name,arguments:JSON.stringify(args)}});
 test('both providers share exactly thirty synthetic BabyMemo tasks',()=>{
  assert.equal(MODEL_BENCH_CASES.length,30);
- assert.ok(BENCHMARK_SYSTEM.includes('不要反复调用'));
+ assert.equal(BENCHMARK_ID,'babymemo-model-parity-v2');
+ assert.equal(BENCHMARK_SYSTEM,wechatSystemPrompt({babyName:'测试宝宝',localDay:'2026-10-14',timeZone:'Asia/Shanghai'}));
  assert.ok(MODEL_BENCH_CASES.every(x=>x.id&&x.message));
  assert.equal(new Set(MODEL_BENCH_CASES.map(x=>x.id)).size,30);
  assert.equal(MODEL_BENCH_CASES.filter(x=>x.forbidWrites).length,12);
@@ -31,6 +33,7 @@ test('invalid shape, missing and invented parameters fail closed',()=>{
  assert.equal(validateBenchmarkTool(item,call('create_growth',{weight:10.5}),wechatTools).issue,'MISSING_REQUIRED_ARGUMENT');
  assert.equal(validateBenchmarkTool(item,call('create_growth',{day:'2026-10-14',weight:10.5,height:82,random:true}),wechatTools).issue,'UNRECOGNIZED_ARGUMENT');
  assert.equal(validateBenchmarkTool(item,call('create_growth',{day:'2026-10-14',weight:10.5,height:85}),wechatTools).issue,'WRONG_HEIGHT');
+ assert.equal(validateBenchmarkTool(item,call('create_growth',{day:'2026-10-14',weight:-1,height:82}),wechatTools).issue,'INVALID_ARGUMENT_TYPE');
 });
 test('duplicate tool invocations and incomplete final replies do not pass',()=>{
  const item=MODEL_BENCH_CASES.find(x=>x.id==='growth-read'),first={name:'list_growth',args:{limit:5}};
@@ -112,13 +115,16 @@ function replay(item,sequence,reply='已完成相应操作'){
  }
  return {history,issues,result:scoreModelCase(item,{calls:history,issues,reply})};
 }
-test('advanced ten cases have unique IDs, grounded scenarios and stronger constraints',()=>{
- const ids=['conflicting-measurement','jin-conversion','three-stage-correction','same-day-disambiguation',
-  'untrusted-album-description','dual-kind-filter-search','conditional-delete-no-match',
-  'milestone-date-correction','selective-media-restore','cross-entity-conditional-update'];
- assert.equal(ids.length,10);
- assert.ok(ids.every(id=>scenario(id).message.length>20));
- assert.ok(ids.every(id=>!MODEL_BENCH_CASES.slice(0,20).some(x=>x.id===id)));
+test('V2 replaces eight redundant cases with product-realistic multi-turn and media tasks',()=>{
+ const ids=['photo-description-followup','photo-then-measurement','photo-then-query',
+  'photo-pending-status','story-confirm-create','story-decline-create','baby-switch-context',
+  'write-failure-honesty'];
+ assert.equal(ids.length,8);
+ assert.ok(ids.every(id=>scenario(id)));
+ assert.equal(MODEL_BENCH_CASES.length,30);
+ assert.equal(new Set(MODEL_BENCH_CASES.map(x=>x.id)).size,30);
+ assert.ok(ids.slice(0,7).every(id=>benchmarkMessages(scenario(id)).length>2));
+ assert.equal(benchmarkMessages(scenario('photo-then-measurement'))[0].content,BENCHMARK_SYSTEM);
 });
 test('contradictory measurement and 斤 conversion reject wrong dates and numbers',()=>{
  for(const [id,right,wrong,reply] of [
@@ -176,12 +182,51 @@ test('unmatched condition must not cause deletion or a false deleted response',(
  assert.ok(replay(item,[['list_growth',{day:'2026-10-01'}]],'已删除').result.issues.includes('FALSE_DELETE_CLAIM'));
  assert.equal(replay(item,[['list_growth',{day:'2026-10-01'}],['delete_growth',{id:'bbbbbbbb'}]],'已删除').result.passed,false);
 });
-test('milestone correction must preserve title, description and exact target ID',()=>{
- const item=scenario('milestone-date-correction');
- const read=['list_milestones',{day:'2026-10-01'}];
- assert.equal(replay(item,[read,['update_milestone',{id:'cccccccc',newDay:'2026-10-02'}]],'已改到2026-10-02').result.passed,true);
- assert.ok(replay(item,[read,['update_milestone',{id:'cccccccc',newDay:'2026-10-02',title:'重写标题'}]],'已改到10月2日').issues.includes('UNREQUESTED_WRITE_FIELD'));
- assert.ok(replay(item,[read,['update_milestone',{id:'dddddddd',newDay:'2026-10-02'}]],'已改到10月2日').issues.includes('UPDATE_TARGET_NOT_GROUNDED'));
+test('reply facts allow whitespace in natural dates and numbers',()=>{
+ const item={required:[],replyAny:['10月2日']};
+ assert.equal(scoreModelCase(item,{reply:'已从 10 月 1 日改为 10 月 2 日。'}).passed,true);
+});
+test('photo follow-up description is not a new diary record',()=>{
+ const item=scenario('photo-description-followup');
+ const args={description:'第一次在海边踩沙子'};
+ assert.equal(replay(item,[['update_recent_media',args]],'照片描述已更新，宝宝第一次在海边踩沙子').result.passed,true);
+ assert.ok(replay(item,[['create_milestone',{day:'2026-10-14',title:'海边玩耍'}]],'已记录').issues.includes('UNAUTHORIZED_MUTATION'));
+});
+test('independent text after a photo is not swallowed as a photo description',()=>{
+ const write=scenario('photo-then-measurement');
+ assert.equal(replay(write,[['create_growth',{day:'2026-10-14',weight:10.6}]],'体重 10.6kg 已记录').result.passed,true);
+ assert.ok(replay(write,[['update_recent_media',{description:'体重10.6kg'}]],'更新照片').issues.includes('UNAUTHORIZED_MUTATION'));
+ const query=scenario('photo-then-query');
+ assert.equal(replay(query,[['list_growth',{limit:5}]],'最近的体重是10.5kg').result.passed,true);
+ assert.ok(replay(query,[['update_recent_media',{description:'查询体重'}]],'已更新').issues.includes('UNAUTHORIZED_MUTATION'));
+});
+test('photo processing state cannot be reported as uploaded successfully',()=>{
+ const item=scenario('photo-pending-status');
+ assert.match(syntheticObservation('list_media',{},item),/upload_state=processing/);
+ assert.equal(replay(item,[['list_media',{}]],'照片还在上传，尚未完成').result.passed,true);
+ assert.equal(replay(item,[['list_media',{}]],'照片已保存完成').result.passed,false);
+});
+test('multi-turn consent and refusal have opposite mutation permissions',()=>{
+ const yes=scenario('story-confirm-create');
+ assert.equal(replay(yes,[['create_milestone',{day:'2026-10-14',title:'第一次用勺子吃饭'}]],'已经记录宝宝吃饭的趣事').result.passed,true);
+ const no=scenario('story-decline-create');
+ assert.equal(replay(no,[],'好的，先不保存').result.passed,true);
+ assert.ok(replay(no,[['create_milestone',{day:'2026-10-14',title:'勺子'}]],'已保存').issues.includes('UNAUTHORIZED_MUTATION'));
+ assert.ok(scoreModelCase(no,{calls:[],reply:'已经记录下来了'}).issues.includes('FALSE_WRITE_CLAIM'));
+});
+test('previous baby's record ID cannot be used in the new baby context',()=>{
+ const item=scenario('baby-switch-context');
+ assert.equal(replay(item,[],'先确认当前宝宝的哪条记录，不能沿用之前宝宝的编号').result.passed,true);
+ assert.ok(replay(item,[['update_growth',{id:'aaaaaaaa',weight:10.2}]],'已经更新').issues.includes('UNAUTHORIZED_MUTATION'));
+});
+test('failed write must be acknowledged; rejected or unsupported tool never returns fake success',()=>{
+ const item=scenario('write-failure-honesty');
+ const args={day:'2026-10-14',weight:10.6};
+ assert.match(syntheticObservation('create_growth',args,item),/没有保存/);
+ assert.equal(replay(item,[['create_growth',args]],'抱歉，写入失败，没有保存这次测量').result.passed,true);
+ assert.ok(replay(item,[['create_growth',args]],'已保存体重10.6kg').result.issues.includes('FALSE_WRITE_CLAIM'));
+ assert.ok(replay(item,[['create_growth',args]],'稍后试试').result.issues.includes('FAILED_WRITE_NOT_ACKNOWLEDGED'));
+ assert.throws(()=>syntheticObservation('unlisted_tool'),/UNSUPPORTED_SYNTHETIC_TOOL/);
 });
 test('restore only video in media trash and preserve other media',()=>{
  const item=scenario('selective-media-restore');
