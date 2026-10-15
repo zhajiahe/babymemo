@@ -1,10 +1,10 @@
-import {cloneElement,isValidElement,useId,type ReactNode} from 'react';
+import {cloneElement,isValidElement,useId,type ReactNode,type ButtonHTMLAttributes} from 'react';
 
 
 /**
- * Shared BabyMemo primitives; visual identity lives in editorial.css.
+ * Shared BabyMemo primitives; tokens and interactive states live in design-system.css.
  * Keep business-specific forms, APIs, navigation state and data access in App.
- * Visual contracts live in src/styles.css and docs/design-system.md.
+ * Visual contracts live in src/design-system.css and docs/design-system.md.
  */
 
 export function Logo() {
@@ -32,8 +32,32 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   return <label className="field"><span id={labelId}>{label}</span>{control}</label>;
 }
 
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'primary' | 'secondary' | 'quiet';
+};
+
+export function Button({variant='secondary',className='',type='button',children,...props}:ButtonProps) {
+  return <button type={type} className={['bm-button',variant==='quiet'?'bm-button--quiet':variant,className].filter(Boolean).join(' ')} {...props}>{children}</button>;
+}
+
+type SegmentOption<T extends string> = {value:T;label:string;icon?:ReactNode};
+export function SegmentedControl<T extends string>({label,value,options,onChange,className=''}:{
+  label:string;
+  value:T;
+  options:readonly SegmentOption<T>[];
+  onChange:(next:T)=>void;
+  className?:string;
+}) {
+  return <div role="group" aria-label={label} className={['bm-segmented',className].filter(Boolean).join(' ')}>
+    {options.map(option=><button key={option.value} type="button" aria-pressed={value===option.value} onClick={()=>onChange(option.value)}>
+      {option.icon&&<span className="bm-segmented-icon" aria-hidden="true">{option.icon}</span>}
+      <span>{option.label}</span>
+    </button>)}
+  </div>;
+}
+
 export function Primary({ children, disabled = false }: { children: ReactNode; disabled?: boolean }) {
-  return <button className="primary" type="submit" disabled={disabled}>{children}</button>;
+  return <Button variant="primary" type="submit" disabled={disabled}>{children}</Button>;
 }
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {

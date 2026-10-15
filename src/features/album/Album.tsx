@@ -1,7 +1,7 @@
 import {RecordFilterBar,type RecordFilters} from '../../components/RecordFilters';
 import {queueMedia} from '../../offline';
 import {useEffect,useRef,useState} from 'react';
-import {Card,Pager} from '../../components/ui';
+import {Card,Pager,SegmentedControl} from '../../components/ui';
 import {MediaViewer,type MediaItem} from '../../components/MediaViewer';
 import {createAlbumThumbnail,createVideoThumbnail,createRemoteVideoThumbnail,fingerprintFile} from '../../media-upload';
 import {pickMatchingUpload,remainingPartNumbers} from '../../upload-plan.mjs';
@@ -240,10 +240,8 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
   <div className="album-toolbar-actions">
    <button type="button" className="primary album-add-btn" aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(v=>!v)}><Plus size={17}/>{showUploader?'收起上传':'添加照片或视频'}</button></div>
  </div>
- <div className="album-view-switch" role="group" aria-label="相册浏览方式">
-  <button type="button" aria-pressed={albumView==='stories'} onClick={()=>setAlbumView('stories')}><BookOpenText size={17} aria-hidden="true"/>故事</button>
-  <button type="button" aria-pressed={albumView==='grid'} onClick={()=>setAlbumView('grid')}><Images size={17} aria-hidden="true"/>照片墙</button>
- </div>
+ <SegmentedControl className="album-view-switch" label="相册浏览方式" value={albumView} onChange={setAlbumView}
+  options={[{value:'stories' as const,label:'故事',icon:<BookOpenText size={17}/>},{value:'grid' as const,label:'照片墙',icon:<Images size={17}/>}]} />
  {showUploader&&<Card className="upload-card"><div id="album-upload-panel" className="album-upload-panel"><CloudUpload size={30}/><h3>上传照片或视频</h3><p className="muted">可一次选择多张照片或视频。网络中断后重新选择原文件即可续传。</p>
   <div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用拍摄日期</label><label>默认日期 <input type="date" value={uploadDay} max={today(baby.time_zone)} onChange={e=>setUploadDay(e.target.value)}/></label></div>
   <p className="muted small">照片自带拍摄日期时会按原日期归档；缺少日期时使用默认日期。关闭自动日期即可手动指定。</p>
