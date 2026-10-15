@@ -1,154 +1,23 @@
-# BabyMemo Agent 部署 Runbook
+# Agent 部署 Runbook
 
-本文供 Codex、Claude Code、Pi 等能运行终端的 Coding Agent 使用。目标是按可核查、可重复、尽量不破坏数据的方式完成 **BabyMemo → Cloudflare** 的验证和部署。GitHub Actions 路径见 [github-action-deploy.md](./github-action-deploy.md)。
+Agent 默认**只检查、不对云端写入**。`main` CI 成功后的自动发布是已有流程；除此之外，创建资源、迁移生产 D1、发布 Worker、变更 Secrets、恢复数据或自定义域名必须获得部署者明确授权。通用步骤见 [Actions 部署](github-action-deploy.md)，红线见 [AGENTS](../AGENTS.md)。
 
-> **首要原则：Agent 默认只检查、不主动触发发布。** 已获得一次性产品决策授权，将 `main` 的 CI 全绿与 Cloudflare 自动发布关联。Agent 可以读取仓库、检查配置与运行本地构建；除此自动路径外，仍须得到部署者明确授权才可手工创建资源、迁移远端数据库、发布 Worker、修改 Secrets 或绑定自定义域名。本文不会授权 Agent 触碰旧 MyBaby 生产环境。
+## 无远端写入的检查
 
-## 0. 部署约束
+1. 查看最新 `main`、开放 PR、当前分支和差异；核对 `wrangler.jsonc`、[工作流](../.github/workflows/deploy.yml)、[package.json](../package.json) 与 [迁移目录](../migrations)。
+2. 运行 `npm run verify` 和相关本地 `npm run test:e2e`；不得用 `npm run deploy` 做检查。
+3. 只在得到**读取 Cloudflare 账号**授权后，运行 `npm run provision:remote -- --check` 或 `npm run deploy:dry-run`。前者可能把远端 D1 ID 写入本地配置，必须检查 diff，不能意外提交。
 
-- 目标技术栈固定：Node.js 22+、React/Vite、Hono/Cloudflare Workers、D1 `DB`、R2 `MEDIA`、Durable Object `BOT`（类 `WechatSession`）。
-- 微信工具模型默认通过 Cloudflare Workers AI，OpenRouter 为可选提供方；管理员可在 GitHub Actions Secret `OPENROUTER_API_KEY` 中配置部署管理的 Key，或在 BabyMemo 网页加密保存 Key。部署 Secret 优先，网页仍能调整模型 ID；微信使用 iLink，**不需要** VPS / OpenClaw。
-- 先看 [`wrangler.jsonc`](../wrangler.jsonc)、[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)、[`package.json`](../package.json)、[`migrations/`](../migrations) 和本文件，**以当前代码为准**。
-- 不准把密码、`SESSION_SECRET`、`DATA_KEY`、OpenRouter Key、微信授权 Token、Cookie 或日志中的敏感原文复制到聊天、PR、Issue、Git 仓库或命令行参数。
-- 不得生成虚假的“部署成功”“扫码成功”“数据迁移成功”报告；任何一项未实测要写成**未验证**。
-- 本仓库已获部署者授权启用「完整 CI 通过后自动发布 `main`」；Agent 不得绕过 CI 直接创建未经检查的生产发布。不得删除或重建现有 D1/R2，不得轮换现存的 `SESSION_SECRET` / `DATA_KEY`。GitHub 仍提供手动 Dry Run 和授权后的手动发布入口。
-- 开始部署前核对最新 `main`、工作分支和 PR 状态；若已有其他 PR 合并，先整合代码并审查部署脚本冲突，禁止强推或跳过验证。
-- 若部署者仅要求代码优化与文档，不调用任何可能操作生产 Cloudflare 资源的命令。
+## 获准后的发布
 
-## 1. 本地仓库与质量检查（无远端写入）
+先确认账号、备份、权限和正在发布的 SHA。优先通过 GitHub Actions 明确选择正式运行；需要手动终端发布时，顺序为：
 
-```bash
-git status --short
-git branch --show-current
-node --version
-npm install --no-audit --no-fund
-node --check scripts/provision-cloudflare.mjs
-node --check scripts/smoke-check.mjs
-npm run verify
-```
+`npm run provision:remote -- --check` → `npm run verify` → `node scripts/reconcile-birth-time.mjs` → `npx wrangler d1 migrations apply DB --remote` → `npx wrangler deploy --keep-vars` → `npm run smoke:check`。
 
-`npm run verify` 目前依次执行 `npm run check`、`npm run test:unit` 与 `npm run build`，不等于端到端功能验收。保持 `node_modules/`、`dist/`、`.wrangler/` 和包含明文密钥的 `.dev.vars` 不进入 Git。
+首次缺资源需要**额外授权**后才可执行 `npm run provision:remote`。核心 Worker Secrets 由部署者在安全终端或已授权 Actions 中配置；绝不能回显或从聊天获取真实值。旧环境的 `DATA_KEY` 不可轮换，旧 MyBaby 永不作为部署目标。
 
-如果部署者允许读取 Cloudflare 资源，先检查当前账号：
+## 验收与报告
 
-```bash
-npx wrangler whoami
-npm run provision:remote -- --check
-npm run deploy:dry-run
-```
+健康检查通过后，仍需由部署者独立验证 HTTPS 首页初始化、登录、宝宝隔离、媒体读写、真实 iPhone / 微信协议。`/api/bootstrap/status` 只表明 Secret 是否配置，并不验证其原值。失败时保留日志、前向修复；严禁删除数据库或将 Worker 版本回退误当成 D1 回滚。
 
-`provision:remote -- --check` 会访问 Cloudflare **只读检查远端资源**；若能找到同名 D1，也可能将其 `database_id` 写入**本地** `wrangler.jsonc`。因此执行前先确认工作区变更，执行后用 `git diff -- wrangler.jsonc` 审查，不要未经许可提交目标账号 ID。
-
-如果云账号中尚没有 D1/R2，`--check` 失败是正常的。不能私自切换到会创建资源的模式。
-
-## 2. Cloudflare 资源预检
-
-实际部署前需确认：
-
-| 绑定 / 路径 | 预期 |
-| --- | --- |
-| Worker 名称 | `babymemo` |
-| D1 binding | `DB`，数据库名称 `babymemo` |
-| R2 binding | `MEDIA`，bucket 名称 `babymemo-media` |
-| Durable Object | `BOT` → `WechatSession`，`migrations` 中的 `v1` 为其注册 |
-| 前端静态资源 | `assets.directory=./dist`，`/api/*` 优先走 Worker |
-| API 路由 | `/api/health`、`/api/bootstrap/status` 等使用 Hono |
-
-如果现有 D1 的 ID 与配置不符，脚本会拒绝继续。应停止并确认账号/目标环境，不得清空数据或随意修改 ID。部署在现有生产项目时先确认 D1/R2 备份与应用可恢复策略。
-
-**得到明确的首次创建授权后**，执行以下幂等资源准备：
-
-```bash
-npm run provision:remote
-```
-
-这只负责 D1/R2；无须额外创建 Queue、Vectorize、Neon、VPS。脚本可能写回本地 `wrangler.jsonc` 的 `database_id`；务必核对环境。
-
-## 3. 认证和密钥
-
-正式运行必须有两个互不相同的 Worker Secret：
-
-| Secret | 生成要求 | 操作警告 |
-| --- | --- | --- |
-| `SESSION_SECRET` | 随机值，至少 32 字符 | 改动会导致现有 Session 失效 |
-| `DATA_KEY` | **64 位 hex 字符**（32 字节） | 改动会使既有加密 OpenRouter/微信凭据不可解密 |
-
-密钥应由部署者在自己的终端或密码管理器生成、保存。只在被授权的终端以 Wrangler **交互式输入**写入 Worker：
-
-```bash
-npx wrangler secret put SESSION_SECRET
-npx wrangler secret put DATA_KEY
-```
-
-首次发布前 Worker 可能尚不存在：此时**先完成 Worker 发布**，再执行以上命令。已有实例升级时复用原值，**不要自行重新生成**。密钥也可以事先写入 GitHub Secrets，之后让 Actions 在正式发布期间同步。Agent 不得要求用户在聊天中粘贴任何密钥。
-
-可使用 `npx wrangler secret list` 核对 Secret **名称**，但无法安全读回 Secret 原值。`/api/bootstrap/status` 仅返回配置状态布尔值，不能证明明文是什么。
-
-## 4. 获准后正式发布（有远端写入）
-
-再次确认：目标 Cloudflare 账号、当前分支、数据备份、变更审核、生产授权。Agent 只运行下列有明确步骤的顺序：
-
-```bash
-# 1. 配置和数据库资源必须已存在；首次部署则先获准 provision。
-npm run provision:remote -- --check
-
-# 2. 本地构建并确认静态资源正常。
-npm run verify
-
-# 3. 先执行数据库 migration，再发布 Worker。
-node scripts/reconcile-birth-time.mjs
-npx wrangler d1 migrations apply DB --remote
-npx wrangler deploy --keep-vars
-
-# 4. 首次部署后，由部署者安全地配置两个 Worker Secret（见上节）。
-# 5. 最后检查服务。
-npm run smoke:check
-```
-
-`npm run deploy` 已调整为“构建 → 检查/创建 D1、R2 → 核验与必要时修复 0012 迁移历史 → 远端增量迁移 → 发布 Worker”，这是一个**真正会修改云端**的命令，不可作为只读检查。需要使用 `OPENROUTER_API_KEY` 的管理员，请优先通过 GitHub Actions Secret 与发布工作流原子上传；运行普通 Wrangler 命令不会自动从 GitHub 读取该 Secret。
-
-`smoke:check` 会使用 `BABYMEMO_PUBLIC_URL`（如果配置）作为目标站点；否则通过 `CLOUDFLARE_API_TOKEN` 与 `CLOUDFLARE_ACCOUNT_ID` 查询当前账号的 workers.dev 子域。手动运行时可在**自己的终端**只为本次检查设置一个公开地址：
-
-```bash
-export BABYMEMO_PUBLIC_URL="https://baby.example.com"
-npm run smoke:check
-```
-
-若只有 SSH/终端而没有 GitHub Secrets，部署者需在 Agent 运行检查前安全地完成 Worker Secret 配置。第一次部署后 `smoke:check` 失败可能仅表示 Secret 尚未配置；不要因此删除数据库。
-
-## 5. 浏览器初始化与验收
-
-首次安装由部署者亲自在 **HTTPS 首页 `/`** 的初始化界面完成，无需额外密钥。**公开空实例存在被抢先注册风险**，建议部署后立即完成初始化，或先通过 Cloudflare Access 限制访问；**不是** `/setup`。填写家庭管理员名称、至少 6 位的家庭密码、宝宝姓名、生日、性别、时区和可选过敏信息。
-
-Agent 可以进行不携带秘密的只读 HTTP 检查：
-
-```bash
-curl -i https://baby.example.com/api/health
-curl -i https://baby.example.com/api/bootstrap/status
-curl -i https://baby.example.com/api/state
-```
-
-预期：`/api/health` 为 200 且 `ok=true`，`bootstrap/status` 中 `sessionConfigured`、`encryptionConfigured` 为 `true`；未登录时 `/api/state` 返回 `401 LOGIN_REQUIRED`。之后初始化、登录和私有数据 CRUD 必须通过部署者的浏览器人工验收。不要为了自动验收将家庭密码写入 curl、Shell History 或日志。
-
-验收记录建议至少覆盖：家庭初始化、退出与重新登录、已有记录保留、宝宝切换、成长记录/里程碑 CRUD、图片上传/读取/删除、iPhone Safari 大图片与 MOV 上传、多分片网络失败、默认 Workers AI 模型测试或可选 OpenRouter 模型测试、微信扫码/启停及 Durable Object 轮询状态。报告必须明确区分“脚本构建通过”“公开健康检查通过”和“真人/真实设备端到端验收通过”。
-
-## 6. 故障处理与禁止性恢复操作
-
-| 现象 | 处理 |
-| --- | --- |
-| `npm run provision:remote -- --check` 提示 Missing D1/R2 | 资源尚未创建；只在授权后使用不带 `--check` 的命令 |
-| `wrangler` 提示账号不符或权限不足 | 运行 `npx wrangler whoami`，核对 Token 权限及 Cloudflare Account ID |
-| `database_id` 冲突 | 停止部署，对照 Cloudflare Dashboard 确认真实数据库；禁止覆盖或删除 |
-| `/api/health` 返回 503 | Worker 无法连接 D1 或表结构未准备好；检查绑定和迁移日志 |
-| `/api/bootstrap/status` 返回密钥未配置 | 仅检查 Worker Secret 名称及工作流环境映射，不要求明文回读 |
-| 登录失败但健康检查正常 | 检查初始化是否完成、管理员名称/密码、Cookie 作用域、同源 POST `Origin` |
-| 切换到自定义域名后 `403 ORIGIN_REJECTED` | 浏览器 POST 请求的 `Origin` 必须和当前请求 origin 一致；不要直接取消同源校验 |
-| R2 上传失败 | 检查 `MEDIA` 绑定、对象权限、分片大小与网络状况；MOV 转码目前不支持 |
-| 微信一直未收到消息 | 检查网页内 iLink 绑定、`wechat_enabled` 状态、Bot 轮询错误及当前选择的 Workers AI / OpenRouter 模型诊断 |
-| 发布后行为与预期不符 | 保留日志、优先前向修复。D1 迁移不会因为回滚 Worker 自动撤销；禁止直接清库 |
-
-## 7. 交付报告
-
-Agent 每次应向部署者交付：当前 Git commit/branch、是否修改工作树、Cloudflare 目标环境（不含凭据）、`npm run verify` 结果、Wrangler Dry Run 结果、D1/R2 资源核对、实际发布/密钥同步是否执行、`/api/health` 与 `/api/bootstrap/status` 结果，以及所有**尚未验证**的浏览器/手机/微信步骤。不要用 Cloudflare 发布成功来替代业务验收。
-
-旧 **MyBaby → BabyMemo** 的 Neon、R2、Vercel 数据迁移、数据校验与切换不是这份 Runbook 的任务，必须单独设计只读导出、媒体复制、完整性校验和最终切换方案。
+报告必须区分 **代码提交 / CI / main 合并 / 线上发布 / 真机验收**，逐项写明证据和未做部分。

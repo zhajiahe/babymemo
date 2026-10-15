@@ -1,50 +1,25 @@
-# BabyMemo 数据备份与恢复
+# 数据备份与恢复
 
-本流程专供所有者操作。**本 PR 不运行任何线上备份或恢复。**
-记录 JSON不包含媒体原件；设置页另有完整家庭ZIP导出，包含用户资料、头像、原件与关联关系。ZIP不包含部署凭据和管理员登录哈希，不能直接替代本文件的操作者灾备。详见 [网页管理与离线使用](web-management-offline.md)。
+设置页的家庭 ZIP/JSON 导出是**用户资料导出**，不包含管理员登录哈希、部署 Secrets；不等于能直接恢复运行环境。见 [离线和导出](web-management-offline.md)。操作者灾备需单独备份 D1 与私有 R2。
 
-## 受保护的完整备份
-
-先在具有 Cloudflare 访问权限的安全设备配置 Wrangler，并从已批准的环境运行：
+## 在安全终端执行
 
 ```sh
-npm install
-node scripts/family-backup.mjs export .backup-private/backup-2026-10-12
-node scripts/family-backup.mjs verify .backup-private/backup-2026-10-12
+node scripts/family-backup.mjs export .backup-private/backup
+node scripts/family-backup.mjs verify .backup-private/backup
+node scripts/family-backup.mjs stage-local .backup-private/backup
 ```
 
-备份输出数据库 SQL、所引用的 R2 原文件、缩略图和 SHA-256 清单。
-备份目录必须位于仓库下的 `.backup-private/`，Git 忽略此目录。
-数据库备份还包含**加密的 OpenRouter/微信令牌、家庭资料和登录哈希**，应加密离线保存且勿上传 GitHub、公开云盘或 CI Artifact。
-`DATA_KEY` 不包含在数据库备份中；所有者须安全地单独保管原来的 `DATA_KEY`，否则加密配置无法恢复。
+`export` 含 SQL、被引用的原始媒体/缩略图及 SHA-256 清单；`stage-local` 仅在隔离本地 D1/R2 中演练。备份可能包含加密微信/模型凭据、家庭数据及登录哈希，必须离线加密保存；**`DATA_KEY` 不在备份中，需独立安全保管**。`.backup-private/` 已被 Git 忽略，不能上传 GitHub 或 CI Artifact。
 
-## 隔离环境验证
+## 恢复到全新环境（需明确授权）
+
+人工确认目标是**全新的空 D1 和空 R2**，并且名称不同于线上正式资源：
 
 ```sh
-node scripts/family-backup.mjs stage-local .backup-private/backup-2026-10-12
+node scripts/family-backup.mjs restore-new-remote .backup-private/backup NEW_D1 NEW_R2 RESTORE_TO_NEW_ENVIRONMENT
 ```
 
-该命令会在备份目录中创建临时的本地 D1 + R2 环境，不触碰生产环境。
-完成后应启动隔离 Worker，验证照片/视频 Range、宝宝切换、登录和历史记录。
-导入成功不代表验证了真实 iOS Safari 解码能力。
+工具会检查目标 D1 为空及媒体清单，但**不能证明目标 R2 桶为空**；操作者必须核对。恢复后验证行数、SHA、登录、媒体字节/Range、宝宝归属与微信重新绑定需求；配置原有 `DATA_KEY` 和独立新 `SESSION_SECRET`。
 
-## 恢复至全新的 Cloudflare 环境（明确授权）
-
-先**人工创建并确认**全新的空 D1 和空 R2 bucket，其名称必须不同于生产的 `babymemo` 和 `babymemo-media`。
-再运行：
-
-```sh
-node scripts/family-backup.mjs restore-new-remote .backup-private/backup-2026-10-12 NEW_D1 NEW_R2 RESTORE_TO_NEW_ENVIRONMENT
-```
-
-程序会拒绝原生产资源名称，拒绝非空 D1，先复制经过校验的媒体，再导入数据库。工具**不能验证 R2 目标桶完全为空**，必须人工保证；不要用现有共享桶。
-如果 R2 中途失败，停止流程，检查目标环境，不可改指向生产环境重试。
-恢复完成后，需配置原有加密 DATA_KEY、新 SESSION_SECRET，并检查账号密码、媒体、成长数据、微信授权是否需重新绑定。
-
-## 限制与安全边界
-
-- D1 导出与 R2 对象获取并非跨服务事务级快照。生产有人写入时，应安排暂时停止写入的备份窗口或二次校验。
-- 仅备份当前 D1 中有引用的已完成媒体对象。未完成 multipart 由 14 天清理任务维护，不包含其中。
-- 本脚本不上传到外部备份供应商，也不自动定时执行。可由所有者在受保护的 CI/主机上定期运行并使用端到端加密存储。
-- 新环境恢复还需对比行数、文件数、SHA-256，模拟从零恢复后才可宣称容灾验收。
-- 请始终保留旧 MyBaby 的源数据，直至其独立迁移 PR 完成确认。
+**局限**：D1 导出与 R2 拷贝不是原子快照，写入中的实例需要暂停写入窗口或额外一致性校验。不可恢复到当前生产同名资源，不可因失败删除原资源。整个过程不自动定时执行。
