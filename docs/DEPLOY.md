@@ -29,4 +29,4 @@
 
 验证 `/api/health`、`/api/bootstrap/status`，再人工检查登录、宝宝隔离、相册/视频和微信状态；浏览器编解码兼容性需要真机测试。遇到迁移冲突、登录错误或微信无回复，查看 [Actions 故障排查](github-action-deploy.md) 与 [QA 边界](qa-regression-matrix.md)，不要重建数据库。
 
-生产灾备见 [备份手册](BACKUP.md)，旧 MyBaby 数据迁移见 [迁移计划](MIGRATION.md)。
+生产灾备见 [备份手册](BACKUP.md)。

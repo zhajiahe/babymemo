@@ -14,7 +14,7 @@ Agent 默认**只检查、不对云端写入**。`main` CI 成功后的自动发
 
 `npm run provision:remote -- --check` → `npm run verify` → `node scripts/reconcile-birth-time.mjs` → `npx wrangler d1 migrations apply DB --remote` → `npx wrangler deploy --keep-vars` → `npm run smoke:check`。
 
-首次缺资源需要**额外授权**后才可执行 `npm run provision:remote`。核心 Worker Secrets 由部署者在安全终端或已授权 Actions 中配置；绝不能回显或从聊天获取真实值。旧环境的 `DATA_KEY` 不可轮换，旧 MyBaby 永不作为部署目标。
+首次缺资源需要**额外授权**后才可执行 `npm run provision:remote`。核心 Worker Secrets 由部署者在安全终端或已授权 Actions 中配置；绝不能回显或从聊天获取真实值。已有实例的 `DATA_KEY` 不可轮换，也不得将其他项目的资源当作部署目标。
 
 ## 验收与报告
 

@@ -34,10 +34,10 @@
 | 现象 | 检查 |
 | --- | --- |
 | 缺少 D1/R2 | 是否首次安装、`provision` 选项和账号权限 |
-| D1 ID 或迁移冲突 | 校验实际库、已有迁移；`scripts/reconcile-birth-time.mjs` 仅在结构兼容时修复 0012 历史，不能乱改 schema |
+| D1 ID 或迁移冲突 | 核对账号、数据库与迁移历史；由部署脚本验证结构，不要手工清库或强行修改 schema |
 | Worker API 502/503/504 或 429 | `scripts/deploy-worker-with-retry.sh` 仅重试发布阶段并核对 SHA；核对 [Cloudflare Status](https://www.cloudflarestatus.com/) 与 Actions 日志 |
 | 缺 Secret / 登录 403 | 核对 Worker Secrets、HTTPS Cookie/Origin，不关闭 CSRF，也不为排错轮换 `DATA_KEY` |
 | 微信不回复 | 检查绑定启用状态、iLink 轮询、Workers AI/可选 OpenRouter 配额和模型错误 |
 | Smoke Check 无法访问 | 确认 HTTPS 域名已生效，或暂时改用可达的 workers.dev 地址 |
 
-手动付费/真实模型工作流与发布工作流**相互独立**；使用方式见 [模型测试](ai-model-benchmark-and-quotas.md)。历史故障经过和执行证据直接查看 [Actions](https://github.com/zhajiahe/babymemo/actions)。
+手动付费/真实模型工作流与发布工作流**相互独立**；使用方式见 [模型测试](ai-model-benchmark-and-quotas.md)。执行状态与日志查看 [Actions](https://github.com/zhajiahe/babymemo/actions)。
