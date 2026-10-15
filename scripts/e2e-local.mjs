@@ -1095,7 +1095,9 @@ try {
   });
 } catch (error) {
   console.error('E2E FAILED: '+(error instanceof Error?error.stack:error));
-  if (!started) console.error('Wrangler output:\n'+serverLog);
+  // Always surface local runtime failures, including crashes after the health probe.
+  if(error instanceof Error&&error.cause)console.error('Underlying cause: '+String(error.cause));
+  console.error('Wrangler output:\n'+serverLog);
   process.exitCode=1;
 } finally {
   if(worker && worker.exitCode===null)worker.kill('SIGTERM');
