@@ -1,11 +1,10 @@
 import {PILOT_LISTEN_TIMEOUT_MS,PILOT_MAX_RESPONSE_CHARS,isPilotConnectionId,
  trustedWechatBase,type PilotCompletion} from './wechat-pilot';
+import type {Env} from './types';
 
-interface PilotEnv {BOT:DurableObjectNamespace;PILOT_CONNECTION_ID?:string}
 type Claim={leaseId:string;base:string;token:string;cursor:string};
 
-// This worker is deployed separately from babymemo. It has *only* a DO binding,
-// no D1 database or master encryption key, and no publicly routable fetch handler.
+// Runs inside the existing BabyMemo scheduled Worker, with no second deployment.
 async function poll(claim:Claim):Promise<PilotCompletion>{
  const ctrl=new AbortController();
  const timer=setTimeout(()=>ctrl.abort(),PILOT_LISTEN_TIMEOUT_MS);
@@ -32,23 +31,27 @@ async function poll(claim:Claim):Promise<PilotCompletion>{
   return ctrl.signal.aborted?{kind:'idle-timeout'}:{kind:'error',code:'WECHAT_NETWORK_ERROR'};
  }finally{clearTimeout(timer)}
 }
-export default {
- async scheduled(_controller:ScheduledController,env:PilotEnv):Promise<void>{
-  const connectionId=env.PILOT_CONNECTION_ID;
-  // Fail closed until the operator explicitly provisions one pilot connection.
-  if(!isPilotConnectionId(connectionId))return;
-  const stub=env.BOT.get(env.BOT.idFromName('wechat:'+connectionId));
-  const claimed=await stub.fetch('https://bot.internal/pilot/claim',{
-   method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({connectionId})
-  });
-  if(!claimed.ok)return; // paused, stale session, busy or legacy poll in progress
-  const claim=await claimed.json() as Claim;
-  const result=await poll(claim);
-  const finished=await stub.fetch('https://bot.internal/pilot/complete',{
-   method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({connectionId,leaseId:claim.leaseId,result})
-  });
-  if(!finished.ok)console.warn(JSON.stringify({event:'WECHAT_PILOT_COMMIT_REJECTED',status:finished.status}));
+async function pollOne(env:Pick<Env,'BOT'>,connectionId:string):Promise<void>{
+ const stub=env.BOT.get(env.BOT.idFromName(connectionId==='legacy'?'family':'wechat:'+connectionId));
+ const claimed=await stub.fetch('https://bot.internal/pilot/claim',{
+  method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({connectionId})
+ });
+ if(!claimed.ok)return;
+ const claim=await claimed.json() as Claim;
+ const result=await poll(claim);
+ const completed=await stub.fetch('https://bot.internal/pilot/complete',{
+  method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({connectionId,leaseId:claim.leaseId,result})
+ });
+ if(!completed.ok)console.warn(JSON.stringify({event:'WECHAT_CRON_DELIVERY_REJECTED',status:completed.status}));
+}
+export async function runWechatCronPolling(env:Pick<Env,'BOT'|'DB'>):Promise<void>{
+ // The legacy DO Alarm remains operational for accounts that Cron cannot serve.
+ const enabled=await env.DB.prepare('SELECT id FROM wechat_connections WHERE enabled=1 ORDER BY id LIMIT 50')
+   .all<{id:string}>();
+ const ids=enabled.results.map(row=>row.id).filter(isPilotConnectionId);
+ const settled=await Promise.allSettled(ids.map(id=>pollOne(env,id)));
+ for(const result of settled){
+  if(result.status==='rejected')console.error(JSON.stringify({event:'WECHAT_CRON_POLL_FAILED'}));
  }
-};
+}
