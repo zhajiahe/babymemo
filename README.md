@@ -1,5 +1,11 @@
 # BabyMemo
 
+> 一家人的成长，都记在这里。
+
+![BabyMemo 产品首页界面预览（虚构示例内容）](docs/assets/product-preview.svg)
+
+**一眼看见产品**：上图依照当前 BabyMemo 桌面首页布局绘制，展示照片故事、成长曲线与时间线；所有人物和记录都是虚构示例。部署后打开站点的 `/demo.html`，可直接操作只读 Demo（无需登录）。
+
 私密的家庭成长记录应用。家人可以在网页或微信中记录宝宝的照片、视频、成长数据与生活瞬间。
 
 ## 功能
@@ -11,8 +17,6 @@
 - **离线与导出**：暂存离线操作，恢复网络后同步；下载完整家庭档案。
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zhajiahe/babymemo)
-
-**直接看产品：** 在已部署的站点打开 `/demo.html`，无需登录即可浏览与正式产品使用同一视觉样式的交互预览：首页、照片故事、成长曲线和时间线。演示仅使用虚构数据及公开示例照片，不连接家庭 API；示例照片由 Unsplash 加载。
 
 ## 安装与使用
 
