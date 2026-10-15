@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Download, Save, X, Trash2 } from 'lucide-rea
 import {saveMediaOffline} from '../offline';
 import {createAlbumThumbnail,createVideoFrameThumbnail} from '../media-upload';
 import {api} from '../lib/client';
+import {mediaThumbnailUrl} from '../private-media-cache.mjs';
 import {Button,IconButton,StatusMessage} from './ui';
 
 export type MediaItem = {
@@ -21,19 +22,21 @@ type MediaEdit = { day: string;description: string;requestId?:string;expectedUpd
 type MediaReply = {updated_at?:string;id?:string;queued?:boolean};
 function mediaDraft(item:MediaItem){try{return JSON.parse(localStorage.getItem('babymemo-draft-media-'+item.id)||'null')||{}}catch{return {}}}
 
-export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, onDelete, onThumbnailSaved }: {
+export function MediaViewer({ item, index, count, neighbors=[], onNavigate, onClose, onSave, onDelete, onThumbnailSaved }: {
   item: MediaItem;
   index: number;
   count: number;
+  neighbors?: MediaItem[];
   onNavigate: (direction: number) => void;
   onClose: () => void;
   onSave: (value: MediaEdit) => Promise<MediaReply>;
   onDelete: () => void;
-  onThumbnailSaved: (id:string) => void;
+  onThumbnailSaved: (id:string,updatedAt?:string) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const videoRef=useRef<HTMLVideoElement>(null);
   const touchStart = useRef<{x:number;y:number}|null>(null);
+  const preloadedThumbnails=useRef<HTMLImageElement[]>([]);
   const [day, setDay] = useState(()=>mediaDraft(item).day||item.day);
   const [description,setDescription]=useState<string>(()=>mediaDraft(item).description??item.description??'');
   const [version,setVersion]=useState(()=>mediaDraft(item).version??item.updated_at??'');
@@ -80,10 +83,11 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
     try{
       const thumb=await make();
       if(!thumb)throw Error('无法生成封面；可改用一张 JPG 或 PNG 图片');
-      await api('/api/media/'+encodeURIComponent(id)+'/thumbnail',{
+      const saved=await api<{updated_at?:string}>('/api/media/'+encodeURIComponent(id)+'/thumbnail',{
         method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}
       });
-      onThumbnailSaved(id);
+      if(saved.updated_at)setVersion(saved.updated_at);
+      onThumbnailSaved(id,saved.updated_at);
       setCoverMessage('视频封面已更新');
     }catch(cause){
       setCoverMessage(cause instanceof Error?cause.message:'设置封面失败，请重试');
@@ -93,6 +97,20 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
 
   const src = '/api/media/' + encodeURIComponent(item.id) + '/content';
   const video = item.mime.startsWith('video/');
+  const neighborVersions=neighbors.map(mediaThumbnailUrl).join('|');
+  // Only lightweight adjacent previews, after the selected original has loaded.
+  // Never speculate on large originals or video streams over mobile data.
+  useEffect(()=>{
+    const connection=(navigator as Navigator & {connection?:{saveData?:boolean}}).connection;
+    if(video||currentImageStatus!=='ready'||!navigator.onLine||connection?.saveData)return;
+    preloadedThumbnails.current=neighbors.filter(neighbor=>neighbor.id!==item.id).slice(0,2).map(neighbor=>{
+      const preview=new Image();
+      preview.decoding='async';
+      preview.src=mediaThumbnailUrl(neighbor);
+      return preview;
+    });
+    return ()=>{preloadedThumbnails.current=[]};
+  },[item.id,video,currentImageStatus,neighborVersions]);
   // Only deliberate horizontal photo gestures page; never intercept video or vertical scrolling.
   function startSwipe(event:TouchEvent<HTMLDivElement>){
     touchStart.current=!video&&!saving&&event.touches.length===1
@@ -129,11 +147,12 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
         </header>
         <div className="media-viewer-stage" role="group" tabIndex={video?undefined:0} aria-label={video?'视频预览':'照片预览，左右滑动或方向键切换'} aria-keyshortcuts={video?undefined:'ArrowLeft ArrowRight'} onTouchStart={startSwipe} onTouchEnd={finishSwipe} onTouchCancel={()=>{touchStart.current=null}}>
           {video
-            ? <video ref={videoRef} key={item.id} src={src} controls playsInline preload="metadata" aria-label={'成长视频'} />
+            ? <video ref={videoRef} key={item.id} src={src} controls playsInline preload="metadata" poster={mediaThumbnailUrl(item)} aria-label={'成长视频'} />
             : <>
-              {currentImageStatus==='loading'&&<span className="media-loading" role="status">照片加载中…</span>}
+              {currentImageStatus!=='ready'&&<div className="media-poster-preview" aria-hidden="true" style={{backgroundImage:'url("'+mediaThumbnailUrl(item)+'")'}}/>}
+              {currentImageStatus==='loading'&&<span className="media-loading" role="status">高清照片加载中…</span>}
               <img key={item.id} src={src} alt="成长照片" draggable={false} className={currentImageStatus==='error'?'media-image-error':undefined} onLoad={()=>setImageStatus({id:item.id,status:'ready'})} onError={()=>setImageStatus({id:item.id,status:'error'})}/>
-              {currentImageStatus==='error'&&<span className="media-loading" role="alert">照片暂时无法显示，请检查网络后重试</span>}
+              {currentImageStatus==='error'&&<span className="media-loading" role="alert">高清照片暂时无法加载，当前显示预览图</span>}
               {currentImageStatus==='ready'&&count>1&&<span className="media-swipe-hint" aria-hidden="true">左右滑动切换</span>}
             </>}
         </div>
