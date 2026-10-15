@@ -36,8 +36,8 @@ const FILE_MIMES:Record<string,string>={
 export function fileAttachmentInfo(item:WechatMediaItem):{kind:'image'|'video';mime:string;fileName:string}|null{
  if(item?.type!==4||!item.file_item||typeof item.file_item.file_name!=='string'||!item.file_item.media)return null;
  const name=item.file_item.file_name.trim();
- if(!name||name.length>255||/[\\/\\\\\\x00-\\x1f\\x7f]/.test(name))return null;
- const extension=/\\.([a-z0-9]+)$/i.exec(name)?.[1]?.toLowerCase();
+ if(!name||name.length>255||/[\/\\\x00-\x1f\x7f]/.test(name))return null;
+ const extension=/\.([a-z0-9]+)$/i.exec(name)?.[1]?.toLowerCase();
  const mime=extension?FILE_MIMES[extension]:undefined;
  if(!mime)return null;
  return {kind:mime.startsWith('video/')?'video':'image',mime,fileName:name.slice(0,120)};
