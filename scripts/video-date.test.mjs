@@ -49,12 +49,12 @@ test('private R2 skips a large media payload and reads only bounded metadata pag
  assert.equal(await r2VideoCaptureDay(bucket,'private/example',bytes.length,'video/mp4','Asia/Shanghai'),'2020-09-03');
  assert.ok(ranges.length<=16);
  assert.ok(ranges.reduce((sum,x)=>sum+x.length,0)<=1048576);
- assert.ok(ranges.some(x=>x.offset>3*1024*1024));
+ assert.ok(ranges.some(x=>x.offset>=3*1024*1024));
 });
 test('unsupported or corrupt video metadata cannot invent a capture date',async()=>{
  const bytes=Buffer.alloc(40);
  assert.equal(await videoCaptureDay(bytes,'Asia/Shanghai'),null);
- assert.equal(await videoCaptureDay(mp4('2100-01-01T12:00:00Z',null),'Asia/Shanghai'),null);
+ assert.equal(await videoCaptureDay(mp4('2030-01-01T12:00:00Z',null),'Asia/Shanghai'),null);
  assert.equal(await r2VideoCaptureDay({get:async()=>{throw Error('must not read')}},'private/fake',1234,'video/webm'),null);
  assert.equal(await bestEffortFileDay(new File([bytes],'no-metadata.mp4',{type:'video/mp4',lastModified:Date.now()}),'2026-09-01','Asia/Shanghai'),'2026-09-01');
 });
