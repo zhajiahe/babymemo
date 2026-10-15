@@ -12,6 +12,7 @@ export function wechatStatusView(status:WechatStatusInput|null|undefined,now=Dat
  if(!status.enabled)return {tone:'muted',label:'已暂停',detail:'暂停期间不处理新消息；已接收的保存任务会保留，启用后继续。'};
  const last=Date.parse(status.lastPoll||status.startedAt||'');
  if(Number.isFinite(last)&&now-last>120000)return {tone:'warning',label:'连接暂时中断',detail:'最近未能收到微信轮询结果，请刷新状态或暂停后重新启用。'};
+ if(status.lastError==='WECHAT_STALE_TOKEN')return {tone:'warning',label:'微信会话冷却中',detail:'微信服务返回过期会话标识，已暂停请求一小时以避免反复失败。随后自动尝试恢复。'};
  if(status.lastError)return {tone:'warning',label:'连接重试中',detail:'微信连接暂时异常，系统会自动重试。'};
  if(status.media?.pending){
   if(status.media.notifying)return {tone:status.media.retrying?'warning':'active',label:status.media.retrying?'结果通知重试中':'正在通知处理结果',detail:'照片或视频的处理结果正在发送，文字记录仍可继续。'};

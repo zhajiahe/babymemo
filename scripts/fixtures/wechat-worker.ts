@@ -53,6 +53,7 @@ export default {async fetch(request:Request,env:any){
    const auth=init?.headers?.Authorization;
    const second=auth==='Bearer synthetic-token-2';
    if(input.pollBatches){const index=pollIndex++;return Response.json({ret:0,msgs:input.pollBatches[index]||[],get_updates_buf:'cursor-'+(index+1)});}
+   pollIndex++;
    return Response.json({ret:0,msgs:second?(input.messagesB||[]):(input.messagesA||inbound),get_updates_buf:second?'cursor-two':'cursor-one'});
   }
   if(u.includes('/ilink/bot/sendmessage')){const body=JSON.parse(init.body);sent.push(body);if(body.msg.client_id.startsWith('media-')){finalSendAttempts++;if(input.failFinalSendOnce&&finalSendAttempts===1)return new Response('',{status:503})}if(input.failSendOnce&&sent.length===1)return new Response('',{status:503});return Response.json({ret:0})}
@@ -103,6 +104,44 @@ export default {async fetch(request:Request,env:any){
    const sentBefore=sent.length;await contexts[1].session.alarm();
    status.pausedAccountSentNothing=sentBefore===sent.length;
    reply='MULTI_OK';
+  }
+  else if(input.mode==='pilot'){
+   const connectionId='f3b034c0-b50a-4cf1-9e2e-72ce96b6fb3a';
+   await env.DB.prepare('INSERT OR REPLACE INTO wechat_connections(id,label,bot_id,user_id,token_cipher,base_url,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,1,?,?)')
+    .bind(connectionId,'试运行账号','synthetic-bot','synthetic-user',await encryptSecret(env,'synthetic-token'),'https://ilinkai.weixin.qq.com',new Date().toISOString(),new Date().toISOString()).run();
+   const stub=env.BOT.get(env.BOT.idFromName('wechat:'+connectionId));
+   const req=(path:string,body:unknown)=>stub.fetch('https://bot.internal'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+   await req('/start',{connectionId});
+   const ctx=contexts.get('wechat:'+connectionId)!;
+   const claimResponse=await req('/pilot/claim',{connectionId});
+   const claim=await claimResponse.json() as any;
+   const secondClaim=await req('/pilot/claim',{connectionId});
+   const cursorAfterClaim=ctx.store.get('cursor')||null;
+   await ctx.session.alarm(); // Active lease prevents the legacy Alarm from fetching.
+   const legacyDuringLease=pollIndex;
+   const result=input.stale
+     ?{kind:'response',raw:JSON.stringify({ret:-14})}
+     :{kind:'response',raw:JSON.stringify({ret:0,msgs:inbound,get_updates_buf:'pilot-cursor'})};
+   const completion={connectionId,leaseId:claim.leaseId,result};
+   const completed=await req('/pilot/complete',completion);
+   const completedBody=await completed.json();
+   const replay=await req('/pilot/complete',completion);
+   const afterComplete=ctx.store.get('cursor')||null;
+   let fallbackCalls=0;
+   if(input.stale){
+    await ctx.session.alarm();
+    fallbackCalls=pollIndex;
+   }else{
+    ctx.store.set('pilotPollLease',{id:'expired',connectionId,expiresAt:at-1000});
+    await ctx.session.alarm();
+    fallbackCalls=pollIndex; // Old Alarm resumes, but identical message ID stays idempotent.
+   }
+   status={claimStatus:claimResponse.status,tokenValid:claim.token==='synthetic-token',
+    rejectedConcurrentClaim:secondClaim.status,cursorAfterClaim,legacyDuringLease,
+    completed:completed.status,outcome:completedBody.outcome,rejectedReplay:replay.status,
+    cursorAfterComplete:afterComplete,fallbackCalls,staleUntil:ctx.store.get('staleTokenPauseUntil')||null,
+    lastError:ctx.store.get('lastError')||null};
+   reply=sent.at(-1)?.msg?.item_list?.[0]?.text_item?.text||'';
   }
   else if(input.mode==='alarm'){
    await setSetting(env,'wechat_enabled','true');await setSetting(env,'wechat_bot_id','synthetic-bot');await setSetting(env,'wechat_user_id','synthetic-user');await setSetting(env,'wechat_token',await encryptSecret(env,'synthetic-token'));

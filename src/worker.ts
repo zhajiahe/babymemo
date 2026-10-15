@@ -18,6 +18,7 @@ import {familySnapshot,completeFamilyExport,familyExportManifest} from './family
 import {previousMutation,commitMutation} from './web-mutations';
 import {purgeDeletedMedia,retentionCutoff} from './media-retention.mjs';
 export { WechatSession } from './wechat';
+import {runWechatCronPolling} from './wechat-cron-pilot';
 
 const app = new Hono<ApplicationEnv>();
 const fail = (c: any, status:number, error:string) => c.json({error},status);
@@ -667,7 +668,11 @@ app.onError((e,c)=>{
 });
 export default {
   fetch: app.fetch.bind(app),
-  async scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext){
+  async scheduled(event:ScheduledController,env:Env,ctx:ExecutionContext){
+    if(event.cron==='* * * * *'){
+      ctx.waitUntil(runWechatCronPolling(env));
+      return;
+    }
     ctx.waitUntil(env.DB.prepare("DELETE FROM wechat_messages WHERE state='done' AND created_at<?").bind(new Date(Date.now()-90*86400000).toISOString()).run()
       .catch(()=>console.error(JSON.stringify({level:'error',event:'BOT_DEDUP_RETENTION_FAILED'}))));
     ctx.waitUntil(env.DB.prepare('DELETE FROM wechat_agent_rounds WHERE created_at<?').bind(new Date(Date.now()-90*86400000).toISOString()).run()
