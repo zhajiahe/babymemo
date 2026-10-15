@@ -25,7 +25,9 @@ test('story-first view can switch to compact photo wall',()=>{
 });
 test('story text wraps naturally on iPhone without silent clipping',()=>{
  assert.match(css,/\.photo-story-text \{[^}]*white-space:pre-wrap; overflow-wrap:anywhere/);
- assert.match(css,/\.photo-stories \{ display:grid; grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+ assert.match(css,/\.photo-stories \{ display:grid; grid-template-columns:minmax\(0,1fr\)/);
+ assert.match(css,/\.photo-story \{ display:grid; grid-template-columns:/);
+ assert.match(css,/\.photo-story \{ display:block; \}/);
  assert.match(css,/@media\(max-width:800px\) \{\s*\.photo-stories \{ grid-template-columns:minmax\(0,1fr\)/);
  assert.doesNotMatch(css,/\.photo-story-text[^}]*-webkit-line-clamp/);
  assert.match(tokens,/\.bm-segmented button \{[^}]*min-height: var\(--bm-touch-min\)/);
