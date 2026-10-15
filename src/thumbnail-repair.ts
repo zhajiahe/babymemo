@@ -74,11 +74,11 @@ async function repair(item:Candidate){
   ?await createRemoteVideoThumbnail(item.id)
   :await createStoredThumbnail(item.id,item.mime);
  if(!blob)throw Error('THUMBNAIL_UNSUPPORTED');
- await api('/api/media/'+encodeURIComponent(item.id)+'/thumbnail',{
+ const result=await api<{updated_at?:string}>('/api/media/'+encodeURIComponent(item.id)+'/thumbnail',{
   method:'PUT',headers:{'Content-Type':'image/jpeg'},body:blob
  });
  // Update visible album/milestone thumbnails without refetching every page.
- window.dispatchEvent(new CustomEvent('babymemo:thumbnail-repaired',{detail:{id:item.id}}));
+ window.dispatchEvent(new CustomEvent('babymemo:thumbnail-repaired',{detail:{id:item.id,updatedAt:result.updated_at}}));
 }
 async function execute(token:number){
  try{
