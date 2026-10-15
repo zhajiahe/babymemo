@@ -60,7 +60,13 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   await context.setOffline(false);await page.getByRole('button',{name:'查看待同步内容',exact:true}).click();await page.locator('.offline-jobs').getByText('记录已被其他设备修改。请重新载入后核对并编辑。',{exact:true}).waitFor();
   const authoritative=await context.request.get(base+'/api/records/growth/'+target.id,{headers:requestHeaders});assert.equal((await authoritative.json()).notes,'server-conflict-wins');
   page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'保留草稿并移出队列',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.offline-status'));
-  await nav('首页');await nav('成长');assert.equal(await page.getByLabel('备注',{exact:true}).inputValue(),'offline-conflict-preserved');
+  await nav('首页');await nav('成长');
+  await page.getByRole('button',{name:'继续编辑'}).click();
+  const draftDialog=page.getByRole('dialog',{name:'编辑成长记录'});
+  await draftDialog.waitFor();
+  assert.equal(await draftDialog.getByLabel('备注',{exact:true}).inputValue(),'offline-conflict-preserved','offline conflict draft should survive modal dismissal and navigation');
+  await draftDialog.getByRole('button',{name:'取消编辑'}).click();
+  await draftDialog.waitFor({state:'hidden'});
  });
  await step('Chromium: photo date drafts survive reopening and require review after a concurrent edit',async()=>{
   await nav('相册');await page.locator('.photo-preview').first().click();
