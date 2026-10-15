@@ -38,6 +38,24 @@ test('home and album prioritize photos and visibly identify videos',()=>{
  assert.match(album,/thumbnail_ready/);
 });
 
+test('shared native modal gives album upload, baby create, and record edit correct task semantics',()=>{
+ const ui=source('src/components/ui.tsx'),settings=source('src/features/settings/Settings.tsx'),growth=source('src/features/growth/RecordView.tsx');
+ assert.match(ui,/export function ModalDialog/);
+ assert.match(ui,/dialog\.showModal\(\)/);
+ assert.match(ui,/onCancel=\{event=>\{event\.preventDefault\(\);if\(!busy\)onClose\(\)\}\}/);
+ assert.match(ui,/aria-labelledby=\{titleId\}/);
+ assert.match(album,/<ModalDialog open=\{showUploader\}/);
+ assert.match(album,/busy=\{uploading\}/);
+ assert.match(album,/if\(!failedFiles&&!results\.some/);
+ assert.match(settings,/<ModalDialog open=\{showNewBaby\}/);
+ assert.match(settings,/busy=\{creatingBaby\}/);
+ assert.match(growth,/<ModalDialog open=\{!!editing&&editorOpen\}/);
+ assert.match(growth,/setEditorOpen\(true\)/);
+ assert.match(growth,/setEditorOpen\(false\)/);
+ assert.match(growth,/继续编辑/);
+ assert.match(css,/\.bm-modal::backdrop/);
+ assert.match(css,/safe-area-inset-bottom/);
+});
 test('growth chart supports tapping and keyboard selection',()=>{
  assert.match(chart,/setSelectedId\(p.id\)/);
  assert.match(chart,/role="button" tabIndex=\{0\}/);

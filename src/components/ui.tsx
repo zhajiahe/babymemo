@@ -1,4 +1,5 @@
-import {cloneElement,isValidElement,useId,type ReactNode,type ButtonHTMLAttributes} from 'react';
+import {cloneElement,isValidElement,useEffect,useId,useRef,type ReactNode,type ButtonHTMLAttributes} from 'react';
+import {X} from 'lucide-react';
 
 
 /**
@@ -45,6 +46,27 @@ export function IconButton({className='',type='button',children,...props}:Button
 }
 export function StatusMessage({children,tone='info'}:{children:ReactNode;tone?:'info'|'success'|'error'}) {
   return <span className={'bm-status bm-status--'+tone} role={tone==='error'?'alert':'status'} aria-live={tone==='error'?'assertive':'polite'}>{children}</span>;
+}
+
+/** Native focus-trapping dialog for self-contained tasks, never an inline drawer. */
+export function ModalDialog({open,onClose,title,children,busy=false,className=''}:{
+ open:boolean;onClose:()=>void;title:string;children:ReactNode;busy?:boolean;className?:string;
+}) {
+ const ref=useRef<HTMLDialogElement>(null),titleId=useId();
+ useEffect(()=>{
+  const dialog=ref.current;
+  if(open&&dialog&&!dialog.open)dialog.showModal();
+  return()=>{if(dialog?.open)dialog.close()};
+ },[open]);
+ if(!open)return null;
+ return <dialog ref={ref} className={['bm-modal',className].filter(Boolean).join(' ')} aria-labelledby={titleId}
+  onCancel={event=>{event.preventDefault();if(!busy)onClose()}}
+  onClick={event=>{if(event.target===ref.current&&!busy)onClose()}}>
+  <div className="bm-modal-layout">
+   <header className="bm-modal-header"><h2 id={titleId}>{title}</h2><IconButton aria-label={'关闭'+title} disabled={busy} onClick={onClose}><X size={21}/></IconButton></header>
+   <div className="bm-modal-content">{children}</div>
+  </div>
+ </dialog>;
 }
 
 type SegmentOption<T extends string> = {value:T;label:string;icon?:ReactNode};
