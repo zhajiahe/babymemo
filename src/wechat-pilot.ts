@@ -1,4 +1,4 @@
-/** Opt-in Cron long-poll pilot. The existing per-account DO Alarm is always the fallback. */
+/** Cron long-poll in existing Worker, with DO Alarm fallback. */
 export const PILOT_LISTEN_TIMEOUT_MS=35_000;
 export const PILOT_LEASE_MS=120_000;
 export const PILOT_WATCHDOG_MS=100_000;
@@ -12,7 +12,7 @@ export type PilotCompletion=
  |{kind:'error';code:string};
 
 export function isPilotConnectionId(value:unknown):value is string {
- return typeof value==='string'&&/^[a-f0-9-]{36}$/i.test(value);
+ return value==='legacy'||(typeof value==='string'&&/^[a-f0-9-]{36}$/i.test(value));
 }
 export function isActivePilotLease(value:PilotLease|null|undefined,now=Date.now()):value is PilotLease {
  return !!value&&Number.isFinite(value.expiresAt)&&value.expiresAt>now&&typeof value.id==='string';
