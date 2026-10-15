@@ -844,11 +844,19 @@ async function browserE2e(){
       await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
       await page.getByRole('heading',{name:'设置'}).waitFor();
       await page.getByRole('button',{name:'新增宝宝'}).click();
-      const create=page.locator('.baby-create-form');
+      const babyDialog=page.getByRole('dialog',{name:'新增宝宝'});
+      await babyDialog.waitFor();
+      const create=babyDialog.locator('.baby-create-form');
+      await create.getByLabel('宝宝名字').fill('未完成的宝宝草稿');
+      await page.keyboard.press('Escape');
+      await babyDialog.waitFor({state:'hidden'});
+      await page.getByRole('button',{name:'新增宝宝'}).click();
+      assert.equal(await create.getByLabel('宝宝名字').inputValue(),'未完成的宝宝草稿','closing baby modal preserves in-memory draft');
       await create.getByLabel('宝宝名字').fill('Browser New Baby');
       await create.getByLabel('出生日期').fill('2025-06-06');
       await create.getByLabel('性别').selectOption('girl');
       await create.getByRole('button',{name:/创建并切换到新宝宝/}).click();
+      await babyDialog.waitFor({state:'hidden'});
       await page.getByRole('heading',{name:'Browser New Baby'}).waitFor({timeout:15000}).catch(async error=>{console.error('Synthetic new-baby failure view: '+(await page.locator('body').innerText()).slice(0,4000));await page.screenshot({path:join(evidence,'new-baby-failure.png'),fullPage:true});throw error});
       assert.equal(await page.locator('.page-heading select[aria-label="选择宝宝"]').count(),0);
       await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
@@ -861,6 +869,35 @@ async function browserE2e(){
       assert.equal(await picker.locator('option:checked').textContent(),'Browser New Baby');
       await picker.selectOption({label:'Test Baby'});
       assert.equal(await picker.locator('option:checked').textContent(),'Test Baby');
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': edit modal keeps an unsaved growth draft on Escape',async()=>{
+      await page.locator('.sidebar .nav-link').filter({hasText:'成长'}).click();
+      await page.getByRole('heading',{name:'成长记录'}).waitFor();
+      if(await page.locator('.timeline-item').count()===0){
+        await page.locator('.record-editor-side input[type="number"]').first().fill('9.87');
+        await page.locator('.record-editor-side').getByRole('button',{name:/保存记录/}).click();
+        await page.locator('.timeline-item').first().waitFor();
+      }
+      await page.locator('.timeline-item').first().getByRole('button',{name:'编辑记录'}).click();
+      const editDialog=page.getByRole('dialog',{name:'编辑成长记录'});
+      await editDialog.waitFor();
+      await editDialog.getByLabel('备注').fill('待恢复的编辑草稿');
+      await page.keyboard.press('Escape');
+      await editDialog.waitFor({state:'hidden'});
+      await page.getByRole('button',{name:'继续编辑'}).click();
+      await editDialog.waitFor();
+      assert.equal(await editDialog.getByLabel('备注').inputValue(),'待恢复的编辑草稿');
+      for(const width of [320,390,768]){
+        await page.setViewportSize({width,height:812});
+        const b=await editDialog.evaluate(el=>{const r=el.getBoundingClientRect();return{left:r.left,right:r.right,height:r.height,viewport:innerWidth}});
+        assert.ok(b.left>=-1&&b.right<=b.viewport+1,'growth editor fits screen '+width+': '+JSON.stringify(b));
+        assert.ok(b.height<=812+1,'growth editor fits viewport '+width);
+        if(width===390)await page.screenshot({path:join(evidence,'growth-record-edit-modal-390.png'),fullPage:false});
+      }
+      await page.setViewportSize({width:1280,height:860});
+      await editDialog.getByRole('button',{name:'取消编辑'}).click();
+      await editDialog.waitFor({state:'hidden'});
+      assert.equal(await page.getByRole('button',{name:'继续编辑'}).count(),0);
     });
     await step((useWebKit?'WebKit':'Chromium')+': gallery is photo-first; maintenance is out of product',async()=>{
       // Generate a browser-native PNG so WebKit and Chromium decode the same valid fixture.
@@ -892,10 +929,13 @@ async function browserE2e(){
       // A tiny valid PNG; user photos and R2 production storage are untouched.
       const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ln0AAAAASUVORK5CYII=','base64');
       await page.getByRole('button',{name:'添加照片或视频'}).click();
-      await page.getByLabel('描述（可选，本次选择的照片或视频共用）').fill('浏览器上传的描述');
+      const uploadDialog=page.getByRole('dialog',{name:'添加照片或视频'});
+      await uploadDialog.waitFor();
+      await uploadDialog.getByLabel('描述（可选，本次选择的照片或视频共用）').fill('浏览器上传的描述');
       await page.locator('input[type="file"]').setInputFiles({
         name:'browser-e2e.png',mimeType:'image/png',buffer:png
       });
+      await uploadDialog.waitFor({state:'hidden',timeout:30000});
       await page.locator('.photo-story-text').filter({hasText:'浏览器上传的描述'}).first().waitFor({state:'visible',timeout:30000});
       await page.getByRole('button',{name:'照片墙'}).click();
       assert.equal(await page.locator('.photo-stories').count(),0);
