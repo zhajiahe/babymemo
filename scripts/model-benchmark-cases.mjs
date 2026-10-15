@@ -183,8 +183,8 @@ export function scoreModelCase(caseItem,{calls=[],issues=[],reply='',error=null}
   }
  }
  const text=String(reply).trim();
- const normalized=text.replace(/[\\s\\u00a0\\u3000]+/g,'');
- const includesFact=needle=>normalized.includes(String(needle).replace(/[\\s\\u00a0\\u3000]+/g,''));
+ const normalized=text.replace(/\s+/g,'');
+ const includesFact=needle=>normalized.includes(String(needle).replace(/\s+/g,''));
  if(!text)errors.push('MISSING_FINAL_REPLY');
  if(/^(?:已查到相关资料，但暂时没能整理|本次操作达到模型决策轮数上限|本次操作达到工具调用上限|后续模型调用失败)/.test(text))
   errors.push('INCOMPLETE_OR_FALLBACK_REPLY');
