@@ -1,7 +1,7 @@
 import {RecordFilterBar,type RecordFilters} from '../../components/RecordFilters';
 import {queueMedia} from '../../offline';
 import {useEffect,useRef,useState} from 'react';
-import {Button,Card,Pager,SegmentedControl} from '../../components/ui';
+import {Button,Card,Pager,SegmentedControl,ModalDialog} from '../../components/ui';
 import {MediaViewer,type MediaItem} from '../../components/MediaViewer';
 import {createAlbumThumbnail,createVideoThumbnail,createRemoteVideoThumbnail,fingerprintFile} from '../../media-upload';
 import {pickMatchingUpload,remainingPartNumbers} from '../../upload-plan.mjs';
@@ -215,6 +215,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
    if(failedFiles||results.some(x=>x.status==='rejected'))notify('有 '+(failedFiles+results.filter(x=>x.status==='rejected').length)+' 个文件未完成，可重新选择文件重试');
    if(navigator.onLine)await refreshPending();
    changed();
+   if(!failedFiles&&!results.some(x=>x.status==='rejected'))setShowUploader(false);
   }catch(error){
    notify(error instanceof Error?error.message:'无法检查未完成上传，请检查网络后重试');
   }finally{setUploading(false);setProgress('')}
@@ -239,18 +240,18 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  <div className="album-toolbar album-content-toolbar"><div className="album-toolbar-heading"><h2>照片与视频</h2></div></div>
  <div className="album-controls" role="group" aria-label="相册操作">
   <RecordFilterBar value={filters} onChange={onFilters} media/>
-  <Button type="button" variant="primary" className="album-add-btn" aria-label={showUploader?'收起上传':'添加照片或视频'} aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(v=>!v)}>
+  <Button type="button" variant="primary" className="album-add-btn" aria-label={showUploader?'收起上传':'添加照片或视频'} aria-expanded={showUploader} aria-controls="album-upload-panel" onClick={()=>setShowUploader(true)}>
    <Plus size={17} aria-hidden="true"/><span className="album-add-full">{showUploader?'收起上传':'添加照片或视频'}</span><span className="album-add-compact" aria-hidden="true">{showUploader?'收起':'添加'}</span>
   </Button>
   <SegmentedControl className="album-view-switch" label="相册浏览方式" value={albumView} onChange={setAlbumView}
    options={[{value:'stories' as const,label:'故事',icon:<BookOpenText size={17}/>},{value:'grid' as const,label:'照片墙',icon:<Images size={17}/>}]} />
  </div>
- {showUploader&&<Card className="upload-card"><div id="album-upload-panel" className="album-upload-panel"><CloudUpload size={30}/><h3>上传照片或视频</h3><p className="muted">可一次选择多张照片或视频。网络中断后重新选择原文件即可续传。</p>
+ <ModalDialog open={showUploader} onClose={()=>setShowUploader(false)} busy={uploading} title="添加照片或视频" className="bm-upload-modal"><Card className="upload-card"><div id="album-upload-panel" className="album-upload-panel"><CloudUpload size={30}/><p className="muted">可一次选择多张照片或视频。网络中断后重新选择原文件即可续传。</p>
   <div className="album-upload-options"><label><input type="checkbox" checked={autoDate} onChange={e=>setAutoDate(e.target.checked)}/> 优先使用拍摄日期</label><label>默认日期 <input type="date" value={uploadDay} max={today(baby.time_zone)} onChange={e=>setUploadDay(e.target.value)}/></label></div>
   <p className="muted small">照片自带拍摄日期时会按原日期归档；缺少日期时使用默认日期。关闭自动日期即可手动指定。</p>
   <label className="field album-upload-description"><span>描述（可选，本次选择的照片或视频共用）</span><textarea rows={2} maxLength={1000} value={uploadDescription} onChange={e=>setUploadDescription(e.target.value)} placeholder="例如：第一次去海边，笑得特别开心" /></label>
   <label className="upload-action">{uploading?'正在上传…':'选择照片或视频'}<input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm,.mov" disabled={uploading} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void upload(files);}}/></label>
-  {progress&&<p className="small" role="status">{progress}</p>}</div></Card>}
+  {progress&&<p className="small" role="status">{progress}</p>}</div></Card></ModalDialog>
  {media.length?Array.from(new Set(media.map(item=>item.day.slice(0,7)))).map(month=>
   <section className={albumView==='stories'?'photo-month photo-month-stories':'photo-month'} key={month}>
    <h3>{month.replace('-', ' 年 ')} 月</h3>
