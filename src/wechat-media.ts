@@ -1,3 +1,4 @@
+import {r2VideoCaptureDay} from './video-date.ts';
 import type {Env} from './types';
 import {r2PhotoCaptureDay,validCaptureDay} from './media-date.mjs';
 import {mediaTiming} from './media-timing.mjs';
@@ -73,7 +74,9 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   if(typeof mime!=='string'||!mime.startsWith(kind+'/'))throw Error('WECHAT_MEDIA_MIME_MISMATCH');
   // Read the privately stored original, including HEIC EXIF extents near EOF.
   // Range reads are bounded; retries reuse R2 and never rewrite the original.
-  const captured=kind==='image'?await r2PhotoCaptureDay(env.MEDIA,objectKey,size,mime,baby.time_zone||'Asia/Shanghai'):null;
+  const captured=kind==='image'
+   ?await r2PhotoCaptureDay(env.MEDIA,objectKey,size,mime,baby.time_zone||'Asia/Shanghai')
+   :await r2VideoCaptureDay(env.MEDIA,objectKey,size,mime,baby.time_zone||'Asia/Shanghai');
   const day=validCaptureDay(captured,baby.time_zone||'Asia/Shanghai')||localDay(raw,baby);
   const caption=(raw.item_list??[]).filter(x=>x?.type===1&&typeof x.text_item?.text==='string')
     .map(x=>x.text_item.text).join(' ').trim().slice(0,1000);

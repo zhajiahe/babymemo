@@ -1,3 +1,4 @@
+import {videoCaptureDay} from './video-date.ts';
 let parserPromise:Promise<any>|undefined;
 function metadataParser(){
  if(!parserPromise)parserPromise=import('exifr').then(({default:exifr})=>{
@@ -114,6 +115,8 @@ export async function r2PhotoCaptureDay(bucket:R2Bucket,key:string,size:number,m
 export async function bestEffortFileDay(file:File,fallback:string,timeZone:string='Asia/Shanghai'){
  const isPhoto=file.type.startsWith('image/')||/\.(?:heic|heif|jpe?g|png|webp|gif|tiff?)$/i.test(file.name);
  if(isPhoto)return await photoCaptureDay(file,timeZone)||fallback;
+ const isVideo=file.type.startsWith('video/')||/\.(?:mov|mp4)$/i.test(file.name);
+ if(isVideo)return await videoCaptureDay(file,timeZone)||fallback;
  if(file.lastModified>0){const day=validCaptureDay(new Date(file.lastModified).toLocaleDateString('sv-SE',{timeZone}),timeZone);if(day)return day}
  return fallback;
 }

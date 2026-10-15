@@ -3,7 +3,7 @@ import {queueMedia} from '../../offline';
 import {useEffect,useRef,useState} from 'react';
 import {Card,Pager} from '../../components/ui';
 import {MediaViewer,type MediaItem} from '../../components/MediaViewer';
-import {createAlbumThumbnail,createVideoThumbnail,fingerprintFile} from '../../media-upload';
+import {createAlbumThumbnail,createVideoThumbnail,createRemoteVideoThumbnail,fingerprintFile} from '../../media-upload';
 import {pickMatchingUpload,remainingPartNumbers} from '../../upload-plan.mjs';
 import {mapBounded,transferConcurrency,canDirectUpload} from '../../media-transfer.mjs';
 import {bestEffortFileDay} from '../../media-date.mjs';
@@ -14,6 +14,32 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
  const [uploading,setUploading]=useState(false),[progress,setProgress]=useState('');
  const [showUploader,setShowUploader]=useState(false);
  const thumbnailTail=useRef<Promise<void>>(Promise.resolve());
+ // WeChat uploads have no browser File for client-side poster generation. When
+ // the album is opened, try a few missing video covers from the private Range
+ // endpoint. Browser decoding is best effort; no server-side transcoding claim.
+ const autoCoverAttempted=useRef(new Set<string>());
+ useEffect(()=>{
+  let stopped=false;
+  const candidates=media.filter(item=>item.mime.startsWith('video/')&&
+   (!item.upload_state||item.upload_state==='ready')&&!item.thumbnail_ready).slice(0,4);
+  void (async()=>{
+   for(const item of candidates){
+    if(stopped||!navigator.onLine)break;
+    if(autoCoverAttempted.current.has(item.id))continue;
+    autoCoverAttempted.current.add(item.id);
+    try{
+     const jpeg=await createRemoteVideoThumbnail(item.id);
+     if(!jpeg||stopped)continue;
+     await api('/api/media/'+encodeURIComponent(item.id)+'/thumbnail',{
+      method:'PUT',body:jpeg,headers:{'Content-Type':'image/jpeg'}
+     });
+     if(stopped)break;
+     mediaEdited(item.id,{thumbnail_ready:1});
+    }catch{/* Unsupported/expired videos remain available for manual poster selection. */}
+   }
+  })();
+  return()=>{stopped=true};
+ },[baby.id,media]);
  const [uploadDay,setUploadDay]=useState(today(baby.time_zone)),[autoDate,setAutoDate]=useState(true);
  const [uploadDescription,setUploadDescription]=useState('');
  const [selected,setSelected]=useState<MediaItem|null>(null);
