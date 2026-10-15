@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCipheriv} from 'node:crypto';
 import {decodeWeChatAesKey,wechatCdnUrl,downloadWeChatImage,persistWeChatPhotos,photoRecordId,WechatPhotoError,wechatMediaErrorCode,storeEncryptedMedia} from '../src/wechat-media.mjs';
+import {exifJpeg} from './fixtures/media-exif.mjs';
 
 const jpeg=Uint8Array.from([255,216,255,224,0,16,74,70,73,70,0,1,255,217]);
 const key=Buffer.from('000102030405060708090a0b0c0d0e0f','hex');
@@ -38,7 +39,8 @@ function mockEnv({failIndexOnce=false}={}){
    }},
    MEDIA:{
      async head(key){const x=objects.get(key);return x?{size:x.bytes.length,httpMetadata:{contentType:x.mime}}:null},
-     async put(key,bytes,opts){objects.set(key,{bytes:new Uint8Array(bytes),mime:opts?.httpMetadata?.contentType});return {etag:'fake'}}
+     async put(key,bytes,opts){objects.set(key,{bytes:new Uint8Array(bytes),mime:opts?.httpMetadata?.contentType});return {etag:'fake'}},
+     async get(key,{range}={}){const value=objects.get(key);if(!value)return null;const bytes=range?value.bytes.slice(range.offset,range.offset+range.length):value.bytes;return {arrayBuffer:async()=>bytes.buffer}}
    }
  };
 }
@@ -83,6 +85,25 @@ test('encrypted image decrypts, MIME is sniffed, and only JPEG bytes are persist
  const again=await persistWeChatPhotos(env,raw,baby,'bot:message1',{fetchImpl:async()=>{throw Error('should not redownload')}});
  assert.match(again,/重复导入|此前已处理|无须重复/);
  assert.equal(env.rows.size,1);assert.equal(env.objects.size,1);
+});
+
+test('WeChat photos use embedded camera date when original EXIF survives transfer',async()=>{
+ const bytes=exifJpeg(),enc=createCipheriv('aes-128-ecb',key,null);
+ const encrypted=Buffer.concat([enc.update(bytes),enc.final()]);
+ const env=mockEnv();
+ const reply=await persistWeChatPhotos(env,raw,baby,'bot:exif-photo',{
+  fetchImpl:async()=>new Response(encrypted)
+ });
+ assert.equal([...env.rows.values()][0].day,'2020-09-03');
+ assert.doesNotMatch(reply,/未读取到原始拍摄日期/);
+});
+test('compressed WeChat photo without EXIF is saved but reported as using send date',async()=>{
+ const env=mockEnv();
+ const reply=await persistWeChatPhotos(env,raw,baby,'bot:missing-exif',{fetchImpl:cdnFetch});
+ const fallback=new Date(Number(raw.create_time_ms)).toLocaleDateString('sv-SE',{timeZone:baby.time_zone});
+ assert.equal([...env.rows.values()][0].day,fallback);
+ assert.match(reply,/1 项未读取到原始拍摄日期，暂按微信发送日期归档/);
+ assert.match(reply,/网页相册中修改/);
 });
 test('lost D1 commit is recovered from private R2 on retry without fetching CDN again',async()=>{
  const env=mockEnv({failIndexOnce:true});
