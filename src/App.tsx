@@ -192,6 +192,12 @@ export default function App(){
    {media.length>0?<><button type="button" className="home-photo-cover" onClick={()=>setActive('album')} aria-label="打开家庭相册查看最近照片">
     {media[0].upload_state&&media[0].upload_state!=='ready'?<span className="home-video-placeholder"><Camera size={27}/>{media[0].upload_state==='processing'?'正在保存照片…':'照片保存失败'}</span>:(media[0].mime.startsWith('image/')||media[0].thumbnail_ready)?<><img src={mediaThumbnailUrl(media[0])} alt="" decoding="async"/>{media[0].mime.startsWith('video/')&&<span className="home-video-badge"><Play size={15} fill="currentColor"/> 视频</span>}</>:<span className="home-video-placeholder"><Camera size={27}/>最近的视频</span>}
    </button>
+   {!!media[0].description?.trim()&&<button type="button" className="home-story-highlight" onClick={()=>setActive('album')} aria-label={'在相册阅读 '+media[0].day+' 的照片故事'}>
+    <span className="home-story-date"><time dateTime={media[0].day}>{media[0].day}</time> · 这天的故事</span>
+    <strong>照片背后的故事</strong>
+    <span className="home-story-excerpt">{media[0].description}</span>
+    <span className="home-story-open">在相册阅读 <ChevronRight size={16}/></span>
+   </button>}
    {media.length>1&&<div className="home-photo-strip">{media.slice(1,5).map(item=><button key={item.id} type="button" className="home-photo-thumb" onClick={()=>setActive('album')} aria-label={'查看 '+item.day+' 的媒体'}>
     {item.upload_state&&item.upload_state!=='ready'?<Camera size={22} aria-label={item.upload_state==='processing'?'正在保存':'保存失败'}/>:item.mime.startsWith('image/')||item.thumbnail_ready?<><img src={mediaThumbnailUrl(item)} loading="lazy" alt=""/>{item.mime.startsWith('video/')&&<span className="home-thumb-video" aria-hidden="true"><Play size={13} fill="currentColor"/></span>}</>:<>{item.mime.startsWith("video/")?<Play size={20} aria-hidden="true"/>:<Camera size={22}/>}</>}
    </button>)}</div>}</>:<div className="home-empty-photos"><Camera size={26}/><p>还没有照片</p><Button variant="secondary" type="button" onClick={()=>setActive('album')}>添加第一张照片</Button></div>}
