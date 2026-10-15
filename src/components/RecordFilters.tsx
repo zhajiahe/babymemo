@@ -1,6 +1,6 @@
 import {useEffect,useState,type FormEvent} from 'react';
 import {ChevronDown,SlidersHorizontal} from 'lucide-react';
-import {Field} from './ui';
+import {Field,Button} from './ui';
 
 export type RecordFilters={q:string;startDay:string;endDay:string;type:string};
 export const emptyFilters:RecordFilters={q:'',startDay:'',endDay:'',type:''};
@@ -23,7 +23,7 @@ export function RecordFilterBar({value,onChange,media=false}:{value:RecordFilter
     <Field label="结束日期"><input type="date" value={draft.endDay} min={draft.startDay||undefined} onChange={e=>setDraft({...draft,endDay:e.target.value})}/></Field>
     {media&&<Field label="媒体类型"><select value={draft.type} onChange={e=>setDraft({...draft,type:e.target.value})}><option value="">照片与视频</option><option value="image">照片</option><option value="video">视频</option></select></Field>}
    </div>
-   <div className="record-filter-actions"><button className="secondary" type="submit">查询</button><button className="text-btn" type="button" onClick={()=>{setDraft(emptyFilters);onChange(emptyFilters);setExpanded(false)}}>清除筛选</button></div>
+   <div className="record-filter-actions"><Button variant="secondary" type="submit">查询</Button><button className="text-btn" type="button" onClick={()=>{setDraft(emptyFilters);onChange(emptyFilters);setExpanded(false)}}>清除筛选</button></div>
   </form>}
  </section>;
 }

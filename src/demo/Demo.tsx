@@ -1,9 +1,9 @@
-import {useEffect,useState,type ReactNode} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {
-  Baby, BookHeart, Camera, ChevronLeft, ChevronRight, Heart,
+  Baby, BookHeart, BookOpenText, Camera, ChevronLeft, ChevronRight, Heart,
   Images, Play, Plus, Settings2, ShieldCheck, TrendingUp, X
 } from 'lucide-react';
-import {Logo} from '../components/ui';
+import {Logo,Button,SegmentedControl} from '../components/ui';
 import {GrowthChart} from '../features/growth/RecordView';
 import type {RecordItem} from '../lib/client';
 
@@ -59,26 +59,28 @@ function DemoPhoto({photo,lazy=false}:{photo:Photo;lazy?:boolean}){
  return <img src={photo.src} alt={photo.alt} loading={lazy?'lazy':'eager'} decoding="async" referrerPolicy="no-referrer"/>;
 }
 function PhotoViewer({index,onClose,onNavigate}:{index:number;onClose:()=>void;onNavigate:(n:number)=>void}){
- const item=photos[index];
- useEffect(()=>{
-  const original=document.body.style.overflow;
-  document.body.style.overflow='hidden';
-  const onKey=(event:KeyboardEvent)=>{
-   if(event.key==='Escape')onClose();
-   if(event.key==='ArrowLeft')onNavigate((index+photos.length-1)%photos.length);
-   if(event.key==='ArrowRight')onNavigate((index+1)%photos.length);
-  };
-  document.addEventListener('keydown',onKey);
-  return()=>{document.body.style.overflow=original;document.removeEventListener('keydown',onKey)};
- },[index,onClose,onNavigate]);
- return <div className="demo-viewer-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
-  <section className="demo-viewer" role="dialog" aria-modal="true" aria-label="照片故事">
-   <div className="demo-viewer-heading"><span>照片故事 · {index+1} / {photos.length}</span><button type="button" onClick={onClose} aria-label="关闭照片详情"><X size={22}/></button></div>
-   <div className="demo-viewer-photo"><DemoPhoto photo={item}/>{item.video&&<span className="demo-video-mark"><Play size={15} fill="currentColor"/> 视频封面示例</span>}</div>
-   <div className="media-story-panel"><div className="media-story-head"><div><span className="media-story-kicker">这一天的故事</span><time dateTime={item.day}>{item.day}</time></div></div><p className="media-story-body">{item.description}</p></div>
-   <div className="demo-viewer-controls"><button type="button" onClick={()=>onNavigate((index+photos.length-1)%photos.length)}><ChevronLeft size={18}/>上一张</button><button type="button" onClick={()=>onNavigate((index+1)%photos.length)}>下一张<ChevronRight size={18}/></button></div>
-  </section>
- </div>;
+ const item=photos[index],dialogRef=useRef<HTMLDialogElement>(null);
+ // Native dialog matches the private viewer's Escape, focus trap and focus restoration.
+ useEffect(()=>{const dialog=dialogRef.current;if(dialog&&!dialog.open)dialog.showModal();return()=>{if(dialog?.open)dialog.close()}},[]);
+ return <dialog ref={dialogRef} className="media-dialog demo-viewer" aria-label="照片故事" onClose={onClose}
+  onClick={event=>{if(event.target===dialogRef.current)dialogRef.current?.close()}}
+  onKeyDown={event=>{const step=event.key==='ArrowLeft'?-1:event.key==='ArrowRight'?1:0;if(step&&index+step>=0&&index+step<photos.length){event.preventDefault();onNavigate(index+step)}}}>
+  <div className="media-viewer">
+   <header className="media-viewer-header">
+    <div><strong>{item.day}</strong><span className="muted" aria-live="polite">第 {index+1} / {photos.length} 项 · 只读演示</span></div>
+    <button type="button" className="icon-btn" onClick={()=>dialogRef.current?.close()} aria-label="关闭照片详情"><X size={20}/></button>
+   </header>
+   <div className="media-viewer-stage demo-viewer-photo"><DemoPhoto photo={item}/>{item.video&&<span className="demo-video-mark"><Play size={15} fill="currentColor"/> 视频封面示例</span>}</div>
+   <section className="media-story-panel" aria-label="照片背后的故事">
+    <div className="media-story-head"><div><span className="media-story-kicker">这天的故事</span><time dateTime={item.day}>{item.day}</time></div></div>
+    <p className="media-story-body">{item.description}</p>
+   </section>
+   <div className="media-viewer-toolbar demo-viewer-controls">
+    <Button variant="secondary" disabled={index===0} onClick={()=>onNavigate(index-1)}><ChevronLeft size={18}/>上一张</Button>
+    <Button variant="secondary" disabled={index===photos.length-1} onClick={()=>onNavigate(index+1)}>下一张<ChevronRight size={18}/></Button>
+   </div>
+  </div>
+ </dialog>;
 }
 
 export default function Demo(){
@@ -121,7 +123,7 @@ export default function Demo(){
     </div>}
     {active==='album'&&<>
      <div className="album-toolbar album-content-toolbar"><div className="album-toolbar-heading"><h2>照片与视频</h2></div><span className="demo-readonly">示例内容 · 只读</span></div>
-     <div className="album-view-switch" role="group" aria-label="相册浏览方式"><button type="button" aria-pressed={albumMode==='stories'} onClick={()=>setAlbumMode('stories')}><BookHeart size={17}/>故事</button><button type="button" aria-pressed={albumMode==='grid'} onClick={()=>setAlbumMode('grid')}><Images size={17}/>照片墙</button></div>
+     <SegmentedControl className="album-view-switch" label="相册浏览方式" value={albumMode} onChange={setAlbumMode} options={[{value:'stories' as const,label:'故事',icon:<BookOpenText size={17}/>},{value:'grid' as const,label:'照片墙',icon:<Images size={17}/>}]} />
      <section className={albumMode==='stories'?'photo-month photo-month-stories':'photo-month'}><h3>2026 年 10 月</h3>
       <div className={albumMode==='stories'?'photo-stories':'photo-grid'}>{photos.filter(p=>p.day.startsWith('2026-10')).map(photo=><article key={photo.id} className={albumMode==='stories'?'photo-story':'photo-item'}>
        <button type="button" className="photo-preview" onClick={()=>setSelected(photos.indexOf(photo))} aria-label={'打开 '+photo.day+' 的照片故事'}>

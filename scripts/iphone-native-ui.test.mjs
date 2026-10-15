@@ -59,5 +59,5 @@ test('photo swipes require horizontal intent, honor bounds and skip videos',()=>
 test('touch feedback retains keyboard and reduced-motion support',()=>{
  assert.match(css,/touch-action:manipulation/);
  assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);
- assert.match(read('src/styles.css'),/:focus-visible\{outline:3px solid var\(--bm-focus\)/);
+ assert.match(read('src/design-system.css'),/:focus-visible[\s\S]*outline: 3px solid var\(--bm-focus-ring\)/);
 });
