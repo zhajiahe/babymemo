@@ -80,6 +80,7 @@ h1,h2,h3 { letter-spacing:normal; }
 .record-filters { display:block; margin:12px 0 0; }
 .record-filter-shell { margin:8px 0 17px; min-width:0; }
 .record-filter-toggle { display:inline-flex; align-items:center; gap:9px; min-height:44px; padding:0 12px; color:var(--bm-muted); background:var(--bm-surface); border:1px solid var(--bm-border); border-radius:10px; font-size:14px; font-weight:600; }
+.record-filter-compact { display:none; }
 .record-filter-toggle .rotated { transform:rotate(180deg); }
 .record-filter-active { font-size:12px; color:var(--bm-brand); }
 .record-filter-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
@@ -166,7 +167,14 @@ h1,h2,h3 { letter-spacing:normal; }
 /* Unframed, compact images; controls are in media details. */
 .album-content-toolbar { margin:0 0 12px; }
 .album-toolbar-actions { gap:12px; }
-
+/* Filter, upload and view mode occupy one row. The filter form spans the next row. */
+.album-controls { display:grid; grid-template-columns:max-content max-content minmax(0,max-content); align-items:center; justify-content:start; gap:8px; margin-bottom:16px; min-width:0; }
+.album-controls .record-filter-shell { display:contents; }
+.album-controls .record-filter-toggle { grid-column:1; grid-row:1; }
+.album-controls .album-add-btn { grid-column:2; grid-row:1; }
+.album-controls .album-view-switch { grid-column:3; grid-row:1; margin:0; min-width:0; }
+.album-controls .record-filters { grid-column:1 / -1; grid-row:2; width:100%; min-width:0; margin:4px 0 0; }
+.album-add-compact { display:none; }
 .album-add-btn { font-size:14px; }
 .photo-month { margin:17px 0 29px; }
 .photo-month h3 { font-size:15px; font-weight:630; margin:0 0 10px; }
@@ -362,4 +370,29 @@ h1,h2,h3 { letter-spacing:normal; }
 .media-viewer-stage .media-loading {
  inset:auto 0 0; min-height:48px; padding:12px;
  background:linear-gradient(transparent,rgba(0,0,0,.6));
+}
+
+/* iPhone album toolbar: three working controls, one horizontal line at 320–800px. */
+@media(max-width:800px) {
+ .album-content-toolbar { display:none; }
+ .album-controls { width:100%; grid-template-columns:max-content max-content minmax(0,1fr); gap:6px; align-items:center; margin:0 0 15px; }
+ .album-controls .record-filter-toggle { min-width:0; min-height:52px; gap:5px; padding:0 8px; white-space:nowrap; font-size:12px; }
+ .album-controls .record-filter-toggle svg { flex-shrink:0; width:15px; height:15px; }
+ .album-controls .record-filter-full { display:none; }
+ .album-controls .record-filter-compact { display:inline; }
+ .album-controls .record-filter-active { width:6px; height:6px; border-radius:50%; background:var(--bm-brand); font-size:0; overflow:hidden; flex-shrink:0; }
+ .album-controls .album-add-btn { min-height:52px; padding:0 9px; gap:5px; white-space:nowrap; font-size:13px; }
+ .album-controls .album-add-btn svg { flex-shrink:0; width:16px; height:16px; }
+ .album-controls .album-add-full { display:none; }
+ .album-controls .album-add-compact { display:inline; }
+ .album-controls .album-view-switch { display:flex; width:100%; }
+ .album-controls .album-view-switch button { flex:1 1 0; min-width:0; padding:8px 4px; font-size:12px; gap:0; }
+ .album-controls .album-view-switch .bm-segmented-icon { display:none; }
+ .album-controls .record-filters { margin-top:5px; }
+}
+@media(max-width:360px) {
+ .album-controls { gap:4px; }
+ .album-controls .record-filter-toggle { gap:4px; padding:0 6px; }
+ .album-controls .album-add-btn { padding:0 7px; }
+ .album-controls .album-view-switch button { padding-inline:3px; }
 }
