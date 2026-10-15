@@ -21,7 +21,7 @@ test('mobile filters collapse and date inputs fit one constrained column',()=>{
 
 test('home and album prioritize photos and visibly identify videos',()=>{
  assert.match(app,/className="home-quick-add"/);
- assert.match(css,/\.home-photo-cover \{ aspect-ratio:16\/10; \}/);
+ assert.match(css,/\.home-photo-cover \{ aspect-ratio:16\/9; \}/);
  assert.match(app,/home-video-badge/);
  assert.match(album,/video-play-badge/);
  assert.match(album,/thumbnail_ready/);
