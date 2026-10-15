@@ -56,14 +56,14 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
  const items=mediaItems(raw);
  if(!items.length)return null;
  if(items.length>MAX_ITEMS)bad('单条消息最多保存 4 项媒体，请分批发送');
- const result:{id:string;kind:'image'|'video';already:boolean}[]=[];
+ const result:{id:string;kind:'image'|'video';already:boolean;dateSource:'capture'|'wechat'|null}[]=[];
  async function persistItem(i:number){
   const itemStartedAt=performance.now();
   const kind:'video'|'image'=items[i].type===5?'video':'image';
   const sourceId=messageId+':'+kind+':'+i,id=photoRecordId(sourceId);
   const existing=await env.DB.prepare('SELECT id,baby_id,deleted_at,upload_state FROM media WHERE source_message_id=?').bind(sourceId).first<{id:string;baby_id:string;deleted_at?:string|null;upload_state:string}>();
   if(existing&&(existing.baby_id!==baby.id||existing.deleted_at))throw Error('WECHAT_MEDIA_RESERVATION_CONFLICT');
-  if(existing&&(!existing.upload_state||existing.upload_state==='ready'))return {id:existing.id,kind,already:true};
+  if(existing&&(!existing.upload_state||existing.upload_state==='ready'))return {id:existing.id,kind,already:true,dateSource:null};
   const objectKey='private/'+baby.id+'/'+id;
   const old=await env.MEDIA.head(objectKey);
   let size=old?.size||0,mime:string|null|undefined=old?.httpMetadata?.contentType;
@@ -77,7 +77,8 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   const captured=kind==='image'
    ?await r2PhotoCaptureDay(env.MEDIA,objectKey,size,mime,baby.time_zone||'Asia/Shanghai')
    :await r2VideoCaptureDay(env.MEDIA,objectKey,size,mime,baby.time_zone||'Asia/Shanghai');
-  const day=validCaptureDay(captured,baby.time_zone||'Asia/Shanghai')||localDay(raw,baby);
+  const captureDay=validCaptureDay(captured,baby.time_zone||'Asia/Shanghai');
+  const day=captureDay||localDay(raw,baby);
   const caption=(raw.item_list??[]).filter(x=>x?.type===1&&typeof x.text_item?.text==='string')
     .map(x=>x.text_item.text).join(' ').trim().slice(0,1000);
   const title=caption.slice(0,120)||(kind==='video'?'微信视频 ':'微信照片 ')+day;
@@ -111,7 +112,7 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   if(!indexed)throw Error('WECHAT_MEDIA_INDEX_FAILED');
   mediaTiming({channel:'wechat',stage:'index',size,startedAt:indexStartedAt});
   mediaTiming({channel:'wechat',stage:'total',size,startedAt:itemStartedAt});
-  return {id:indexed.id,kind,already:false};
+  return {id:indexed.id,kind,already:false,dateSource:captureDay?'capture':'wechat'};
  }
  // At most two parallel decrypt+R2 streams; preserve source order and await all
  // in-flight uploads before surfacing a failure to the idempotent retry path.
@@ -124,6 +125,10 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
  const fresh=result.filter(x=>!x.already),dupes=result.length-fresh.length;
  if(!fresh.length)return '这些照片或视频已经保存过，无需重复导入。';
  const images=fresh.filter(x=>x.kind==='image').length,videos=fresh.filter(x=>x.kind==='video').length;
- return '已保存 '+baby.name+' 的'+(images?' '+images+' 张照片':'')+(videos?' '+videos+' 段视频':'')+'到私密家庭相册。'+(dupes?'（'+dupes+' 项重复消息已跳过）':'')+'\n可在网页家庭相册查看原件。';
+ const missingDate=fresh.filter(x=>x.dateSource==='wechat').length;
+ // WeChat's compressed main image may not contain EXIF. A received day must
+ // never be presented to the family as a verified camera capture date.
+ const dateNotice=missingDate?'\n提示：其中 '+missingDate+' 项未读取到原始拍摄日期，暂按微信发送日期归档。如果拍摄于其他日期，可以在微信说明拍摄日期，或在网页相册中修改。':'';
+ return '已保存 '+baby.name+' 的'+(images?' '+images+' 张照片':'')+(videos?' '+videos+' 段视频':'')+'到私密家庭相册。'+(dupes?'（'+dupes+' 项重复消息已跳过）':'')+'\n可在网页家庭相册查看原件。'+dateNotice;
 }
 export const persistWeChatPhotos=persistWeChatMedia;
