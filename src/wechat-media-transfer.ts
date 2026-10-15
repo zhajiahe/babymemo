@@ -7,7 +7,7 @@ async function cdnFetch(item:WechatMediaItem,{fetchImpl=fetch,maxBytes=MAX_WECHA
  const {media,key,kind}=mediaReference(item);
  const aesKey=decodeWeChatAesKey(key),url=wechatCdnUrl(media);
  const expected=item.type===4?item.file_item?.len:kind==='video'?item.video_item?.video_size:item.image_item?.mid_size;
- if(item.type===4&&expected!==undefined&&(!/^(?:0|[1-9]\\d*)$/.test(String(expected))||!Number.isSafeInteger(Number(expected))||Number(expected)<1))
+ if(item.type===4&&expected!==undefined&&(!/^(?:0|[1-9]\d*)$/.test(String(expected))||!Number.isSafeInteger(Number(expected))||Number(expected)<1))
   bad('微信文件大小无效');
  if(expected!==undefined&&Number(expected)>maxBytes+(item.type===4?0:16))bad('微信图片或视频超过 50 MB 限制');
  let response;
