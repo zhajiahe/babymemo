@@ -5,6 +5,7 @@ import test from 'node:test';
 const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const shared = readFileSync(new URL('../src/components/ui.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+const tokens = readFileSync(new URL('../src/design-system.css', import.meta.url), 'utf8');
 
 test('common UI primitives are exported and imported only once', () => {
   assert.match(app, /from '\.\/components\/ui'/);
@@ -17,7 +18,8 @@ test('common UI primitives are exported and imported only once', () => {
 test('shared controls preserve basic accessibility semantics', () => {
   assert.match(shared, /className="notice" role="status"/);
   assert.match(shared, /aria-label="关闭提示"/);
-  assert.match(shared, /className="primary" type="submit" disabled=\{disabled\}/);
+  assert.match(shared, /<Button variant="primary" type="submit" disabled=\{disabled\}>/);
+  assert.match(shared, /type=\{type\} className=/);
   assert.match(shared, /<nav className="pager" aria-label="分页导航">/);
   assert.match(shared, /type="button" disabled=\{page <= 0\}/);
   assert.match(shared, /type="button" disabled=\{!hasMore\}/);
@@ -26,7 +28,7 @@ test('shared controls preserve basic accessibility semantics', () => {
 
 test('core component backgrounds reference semantic design tokens', () => {
   for (const token of ['surface-alt','surface-soft','input-bg','border-soft']) {
-    assert.match(css, new RegExp('--bm-'+token+':#[a-fA-F0-9]{6}'), 'token '+token);
+    assert.match(tokens, new RegExp('--bm-'+token+'\\s*:\\s*#[a-fA-F0-9]{6}'), 'token '+token);
   }
   for (const selector of ['.sidebar{','.card{','.topbar{','.secondary{','.wechat-row{']) {
     const start = css.indexOf(selector);

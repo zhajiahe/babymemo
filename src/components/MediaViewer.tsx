@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Download, Save, X, Trash2 } from 'lucide-rea
 import {saveMediaOffline} from '../offline';
 import {createAlbumThumbnail,createVideoFrameThumbnail} from '../media-upload';
 import {api} from '../lib/client';
+import {Button} from './ui';
 
 export type MediaItem = {
   id: string;
@@ -139,9 +140,9 @@ export function MediaViewer({ item, index, count, onNavigate, onClose, onSave, o
         <section className="media-story-panel" aria-label="照片背后的故事">
            <div className="media-story-head">
              <div><span className="media-story-kicker">这天的故事</span><time dateTime={item.day}>{item.day}</time></div>
-             <button type="button" className="secondary media-story-edit-button" disabled={saving} aria-expanded={editing} aria-controls="media-story-edit" onClick={()=>setEditing(value=>!value)}>
+             <Button variant="secondary" className="media-story-edit-button" disabled={saving} aria-expanded={editing} aria-controls="media-story-edit" onClick={()=>setEditing(value=>!value)}>
                {editing?'收起编辑':item.description?.trim()?'编辑故事':'写下故事'}
-             </button>
+             </Button>
            </div>
            {item.description?.trim()
              ?<p className="media-story-body">{item.description.trim()}</p>

@@ -1,0 +1,130 @@
+/* BabyMemo Design System 2.0
+ * One source of truth for tokens and shared interaction primitives.
+ * Import BEFORE styles.css and editorial.css; page-specific compositions stay there.
+ * Inspired by Apps SDK UI's consistency, not dependent on its Tailwind runtime.
+ */
+:root {
+  color-scheme: light;
+  --bm-page: #F8F8F6;
+  --bm-surface: #FFFFFF;
+  --bm-surface-alt: #F8F8F6;
+  --bm-surface-soft: #F1F5F8;
+  --bm-story-surface: #FFFEFC;
+  --bm-photo-bg: #E9EFF3;
+  --bm-input-bg: #FFFFFF;
+  --bm-ink: #263647;
+  --bm-muted: #586B7B;
+  --bm-brand: #245F91;
+  --bm-brand-hover: #194C76;
+  --bm-brand-soft: #E9F2F9;
+  --bm-on-brand: #FFFFFF;
+  --bm-border: #E1E6E9;
+  --bm-border-soft: #E9EDF0;
+  --bm-outline: var(--bm-border);
+  --bm-focus: #245F91;
+  --bm-focus-ring: #245F91;
+  --bm-success: #246C4D;
+  --bm-error: #9B423E;
+
+  --bm-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif;
+  --bm-font-story: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif;
+  --bm-text-xs: 12px;
+  --bm-text-sm: 14px;
+  --bm-text-md: 16px;
+  --bm-text-story: 17px;
+  --bm-leading-story: 1.9;
+
+  --bm-space-1: 4px;
+  --bm-space-2: 8px;
+  --bm-space-3: 12px;
+  --bm-space-4: 16px;
+  --bm-space-5: 20px;
+  --bm-space-6: 24px;
+  --bm-space-8: 32px;
+  --bm-radius-sm: 8px;
+  --bm-radius-md: 12px;
+  --bm-radius-lg: 18px;
+  --bm-radius-xl: 24px;
+  --bm-touch-min: 44px;
+  --bm-shadow-card: 0 2px 16px rgba(29, 48, 63, .035);
+  --bm-shadow-raised: 0 12px 40px rgba(29, 48, 63, .10);
+  --bm-card-shadow: var(--bm-shadow-card);
+  --bm-duration-fast: 140ms;
+  --bm-duration-normal: 200ms;
+  --bm-ease-out: cubic-bezier(.2, .8, .2, 1);
+}
+
+/* Keyboard, pointer, disabled and reduced-motion behavior is global. */
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--bm-focus-ring);
+  outline-offset: 2px;
+}
+:where(button, input, select, textarea):disabled { cursor: not-allowed; }
+:where(.primary, .secondary, .light-btn, .upload-action, .bm-button) {
+  min-height: var(--bm-touch-min);
+  border-radius: var(--bm-radius-sm);
+  transition: background-color var(--bm-duration-fast) var(--bm-ease-out),
+              border-color var(--bm-duration-fast) var(--bm-ease-out),
+              color var(--bm-duration-fast) var(--bm-ease-out);
+}
+.bm-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--bm-space-2);
+  padding: 10px 14px;
+  font-size: var(--bm-text-sm);
+  font-weight: 650;
+  text-align: center;
+  text-decoration: none;
+}
+.bm-button--quiet { border: 1px solid transparent; background: transparent; color: var(--bm-brand); }
+.bm-button--quiet:hover:not(:disabled) { background: var(--bm-brand-soft); }
+
+/* Pressed buttons represent display modes, not a form radio state. */
+.bm-segmented {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  gap: var(--bm-space-1);
+  padding: var(--bm-space-1);
+  border: 1px solid var(--bm-border);
+  border-radius: var(--bm-radius-md);
+  background: var(--bm-surface-soft);
+}
+.bm-segmented button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--bm-space-2);
+  min-width: 0;
+  min-height: var(--bm-touch-min);
+  padding: 9px 15px;
+  border: 0;
+  border-radius: var(--bm-radius-sm);
+  background: transparent;
+  color: var(--bm-muted);
+  font: 650 var(--bm-text-sm)/1.35 var(--bm-font-ui);
+  white-space: nowrap;
+}
+.bm-segmented button[aria-pressed="true"] {
+  color: var(--bm-ink);
+  background: var(--bm-surface);
+  box-shadow: 0 1px 5px rgba(29, 48, 63, .09);
+}
+.bm-segmented button:hover:not([aria-pressed="true"]):not(:disabled) {
+  color: var(--bm-brand);
+}
+.bm-segmented-icon { display: inline-flex; align-items: center; }
+
+@media (max-width: 380px) {
+  .bm-segmented button { padding-inline: 11px; font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(*, *::before, *::after) {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

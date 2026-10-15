@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import './design-system.css';
 import './styles.css';
 import './editorial.css';
 import {startOffline} from './offline';
