@@ -1,4 +1,4 @@
-import {videoCaptureDay} from './video-date';
+import {videoCaptureDay} from './video-date.ts';
 let parserPromise:Promise<any>|undefined;
 function metadataParser(){
  if(!parserPromise)parserPromise=import('exifr').then(({default:exifr})=>{
