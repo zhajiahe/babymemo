@@ -49,7 +49,7 @@ function runCli(args) {
   }
 }
 async function boot() {
-  writeFileSync(testConfig,JSON.stringify({name:'babymemo-isolated-e2e',main:join(root,'src/worker.ts'),compatibility_date:'2026-10-12',assets:{directory:join(root,'dist'),binding:'ASSETS',not_found_handling:'single-page-application',run_worker_first:['/api/*','/demo','/demo/','/demo/mobile','/demo/mobile/']},d1_databases:[{binding:'DB',database_name:'synthetic-db',database_id:'00000000-0000-0000-0000-000000000001',migrations_dir:join(root,'migrations')}],r2_buckets:[{binding:'MEDIA',bucket_name:'synthetic-media'}],durable_objects:{bindings:[{name:'BOT',class_name:'WechatSession'}]},migrations:[{tag:'v1',new_sqlite_classes:['WechatSession']}],triggers:{crons:['0 19 * * *']}}));
+  writeFileSync(testConfig,JSON.stringify({name:'babymemo-isolated-e2e',main:join(root,'src/worker.ts'),compatibility_date:'2026-10-12',assets:{directory:join(root,'dist'),binding:'ASSETS',not_found_handling:'single-page-application',run_worker_first:['/api/*']},d1_databases:[{binding:'DB',database_name:'synthetic-db',database_id:'00000000-0000-0000-0000-000000000001',migrations_dir:join(root,'migrations')}],r2_buckets:[{binding:'MEDIA',bucket_name:'synthetic-media'}],durable_objects:{bindings:[{name:'BOT',class_name:'WechatSession'}]},migrations:[{tag:'v1',new_sqlite_classes:['WechatSession']}],triggers:{crons:['0 19 * * *']}}));
   sessionSecret = randomBytes(32).toString('hex');
   writeFileSync(envFile,
     'SESSION_SECRET='+sessionSecret+'\n'+
@@ -110,17 +110,14 @@ async function e2e() {
     const html=await response.text();
     assert.match(html,/<title>产品体验/);
     assert.match(html,/assets\/demo-[^"]+\.js/,'Vite must compile a standalone React demo entry');
-    const live=await fetch(base+'/demo',{redirect:'manual'});
-    assert.equal(live.status,302,'/demo must redirect to real demo, not SPA login');
-    assert.equal(live.headers.get('location'),'/demo.html');
-    const mobile=await fetch(base+'/demo-mobile.html');
-    assert.equal(mobile.status,200,'mobile demo must be a separate build entry');
+    const live=await fetch(base+'/demo');
+    assert.equal(live.status,200,'Cloudflare must resolve /demo to the standalone demo.html asset');
+    assert.match(await live.text(),/<title>产品体验/);
+    const mobile=await fetch(base+'/demo/mobile');
+    assert.equal(mobile.status,200,'Cloudflare must resolve /demo/mobile to the standalone demo/mobile.html asset');
     const mobileHtml=await mobile.text();
     assert.match(mobileHtml,/<title>移动端体验/);
     assert.match(mobileHtml,/assets\/mobileDemo-[^"]+\.js/);
-    const mobileLink=await fetch(base+'/demo/mobile',{redirect:'manual'});
-    assert.equal(mobileLink.status,302,'/demo/mobile must not hit SPA fallback');
-    assert.equal(mobileLink.headers.get('location'),'/demo-mobile.html');
     const main=await fetch(base+'/');
     assert.equal(main.status,200,'Demo must not replace the private app');
   });

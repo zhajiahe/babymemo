@@ -30,23 +30,23 @@ test('README links to deployed interactive web and mobile demos instead of a moc
 
 test('mobile demo reuses real read-only Demo and avoids private API or nested mobile iframe',()=>{
  const mobile=read('src/demo/MobileDemo.tsx'),entry=read('src/demo/mobile-main.tsx');
- const html=read('demo-mobile.html'),vite=read('vite.config.ts');
+ const html=read('demo/mobile.html'),vite=read('vite.config.ts');
  assert.match(html,/src\/demo\/mobile-main\.tsx/);
- assert.match(vite,/mobileDemo:.*demo-mobile\.html/);
+ assert.match(vite,/mobileDemo:.*demo\/mobile\.html/);
  assert.match(entry,/import MobileDemo from '.\/MobileDemo'/);
  assert.match(mobile,/if\(onPhone\)return <div className="mobile-demo-live"><Demo\/><\/div>/);
  assert.match(mobile,/src="\/demo\.html"/);
  assert.doesNotMatch(mobile+entry,/\/api\/|localStorage|sessionStorage|startOffline|XMLHttpRequest/);
 });
 
-test('clean demo URLs explicitly bypass Cloudflare SPA fallback',()=>{
- const wrangler=read('wrangler.jsonc'),worker=read('src/worker.ts');
- for(const path of ['/demo','/demo/','/demo/mobile','/demo/mobile/']){
-  assert.ok(wrangler.includes('"'+path+'"'),path);
-  assert.ok(worker.includes("app.get('"+path+"'"),path);
- }
- assert.match(worker,/app\.get\('\/demo',c=>c\.redirect\('\/demo\.html',302\)\)/);
- assert.match(worker,/app\.get\('\/demo\/mobile',c=>c\.redirect\('\/demo-mobile\.html',302\)\)/);
+test('clean demo URLs are built as HTML assets without Worker redirects',()=>{
+ const vite=read('vite.config.ts'),wrangler=read('wrangler.jsonc');
+ const worker=read('src/worker.ts');
+ assert.match(vite,/mobileDemo:.*demo\/mobile\.html/);
+ assert.match(vite,/demo:fileURLToPath/);
+ assert.doesNotMatch(wrangler,/run_worker_first[^\n]*\/demo/);
+ assert.doesNotMatch(worker,/app\.get\('\/demo/);
+ assert.match(vite,/demo-clean-url-redirects/); // Local Vite also supports the same clean URLs.
 });
 
 test('demo retains real shared design primitives without enabling private changes',()=>{

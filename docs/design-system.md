@@ -36,7 +36,7 @@
 
 README 不再展示静态的网页模拟截图，而是直接链接已部署的 [网页 Demo](https://babymemo.zhajiahe1994.workers.dev/demo) 和 [移动端 Demo](https://babymemo.zhajiahe1994.workers.dev/demo/mobile)。
 
-- `/demo` → `/demo.html`；`/demo/mobile` → `/demo-mobile.html`。通过 Worker 路由和 `assets.run_worker_first` 显式跳转，防止 SPA fallback 将演示链接误导到需要登录的应用首页。
+- `/demo` 使用已有 `demo.html`，`/demo/mobile` 使用独立构建的 `demo/mobile.html`；Cloudflare Static Assets 自动解析无扩展名 HTML 路径，不需要额外 Worker 路由。Vite 开发服务器也提供这两个简洁路径。
 - 移动端 Demo 在电脑上使用独立 iframe 模拟真实窄屏布局，在手机上直接复用演示 React 应用，不维护第二份假 UI。
 - 所有 Demo 均为虚构、只读、不访问私有 API；微信模拟图明确标示为合成示意。
 
