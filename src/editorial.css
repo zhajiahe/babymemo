@@ -105,6 +105,12 @@ h1,h2,h3 { letter-spacing:normal; }
 .growth-svg g[role="button"] { cursor:pointer; outline-offset:3px; }
 .growth-svg g[role="button"]:focus-visible { outline:2px solid var(--bm-focus); }
 .chart-tabs { border-color:var(--bm-border); background:var(--bm-page); }
+/* Allow the trend header and segmented control to fit 320px iPhone widths. */
+@media(max-width:480px) {
+ .growth-chart>.section-title { flex-wrap:wrap; }
+ .growth-chart .chart-tabs { flex:1 1 100%; width:100%; }
+ .growth-chart .chart-tabs button { flex:1 1 0; padding:8px 9px; font-size:12px; }
+}
 /* Story-first album: real narrative stays visible instead of being clipped. */
 .album-view-switch { margin:0 0 16px; }
 .photo-stories { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--bm-space-5); align-items:start; }

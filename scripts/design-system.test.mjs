@@ -34,6 +34,7 @@ test('growth chart, preview and shared controls consume 2.1 semantic tokens', ()
   const ui=read('src/components/ui.tsx');
   assert.match(growth, /<SegmentedControl className="chart-tabs"/);
   assert.match(growth, /var\(--bm-chart-line\)/);
+  assert.match(read('src/editorial.css'),/\.growth-chart>\.section-title \{ flex-wrap:wrap; \}/);
   assert.doesNotMatch(growth, /#[0-9a-fA-F]{6}/);
   assert.match(ui,/export function IconButton/);
   assert.match(ui,/export function StatusMessage/);
