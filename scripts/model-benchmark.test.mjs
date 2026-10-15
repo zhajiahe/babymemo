@@ -216,7 +216,7 @@ test('multi-turn consent and refusal have opposite mutation permissions',()=>{
  assert.ok(replay(no,[['create_milestone',{day:'2026-10-14',title:'勺子'}]],'已保存').issues.includes('UNAUTHORIZED_MUTATION'));
  assert.ok(scoreModelCase(no,{calls:[],reply:'已经记录下来了'}).issues.includes('FALSE_WRITE_CLAIM'));
 });
-test('previous baby's record ID cannot be used in the new baby context',()=>{
+test('previous-baby record ID cannot be used in the new baby context',()=>{
  const item=scenario('baby-switch-context');
  assert.equal(replay(item,[],'先确认当前宝宝的哪条记录，不能沿用之前宝宝的编号').result.passed,true);
  assert.ok(replay(item,[['update_growth',{id:'aaaaaaaa',weight:10.2}]],'已经更新').issues.includes('UNAUTHORIZED_MUTATION'));
