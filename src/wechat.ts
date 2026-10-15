@@ -2,7 +2,7 @@ import JSONBig from 'json-bigint';
 import type { Env, Baby } from './types';
 import { decryptSecret, encryptSecret, setting, resolveOpenRouterKey } from './crypto';
 import { wechatTools, wechatHelp, runWechatTool } from './wechat-harness.mjs';
-import {WechatPhotoError,mediaItems,persistWeChatMedia,reserveWechatMedia,failWechatMediaReservations,wechatMediaErrorCode} from './wechat-media.mjs';
+import {WechatPhotoError,mediaItems,mediaItemKind,persistWeChatMedia,reserveWechatMedia,failWechatMediaReservations,wechatMediaErrorCode} from './wechat-media.mjs';
 import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {qwenCompletion,DEFAULT_AI_PROVIDER,friendlyWorkersAIError} from './qwen-workers-ai.mjs';
@@ -179,7 +179,7 @@ async function resolveWechatMediaBaby(env:Env,raw:Json,thread:any=null,targetBab
   return baby;
 }
 async function savedWechatMediaIds(env:Env,raw:Json,babyId:string,messageId:string):Promise<string[]>{
- const sources=mediaItems(raw).slice(0,4).map((item:any,n)=>messageId+(item.type===5?':video:':':image:')+n);
+ const sources=mediaItems(raw).slice(0,4).map((item:any,n)=>messageId+':'+mediaItemKind(item)+':'+n);
  if(!sources.length)return [];
  const rows=await env.DB.prepare('SELECT id FROM media WHERE baby_id=? AND source_message_id IN ('+sources.map(()=>'?').join(',')+') AND deleted_at IS NULL ORDER BY source_message_id LIMIT 4')
    .bind(babyId,...sources).all<{id:string}>();
@@ -189,7 +189,7 @@ export async function handleWechatPhotoMessage(env:Env,raw:Json,messageId:string
   const baby=await resolveWechatMediaBaby(env,raw,thread,targetBabyId);
   if(typeof baby==='string')return baby;
   if(thread)thread.selectedBabyId=baby.id;
-  const reply=(await persistWeChatMedia(env,raw,baby,messageId))||'没有检测到可保存的图片或视频。';
+  const reply=(await persistWeChatMedia(env,raw,baby,messageId))||'没有检测到可保存的图片或视频文件。';
   if(thread&&reply.startsWith('已保存')){
    const ids=await savedWechatMediaIds(env,raw,baby.id,messageId);
    if(ids.length)thread.lastMedia={babyId:baby.id,ids,expiresAt:Date.now()+1200000};
@@ -453,9 +453,11 @@ export class WechatSession {
         const text=forwarded?parsed.text:originalText||(parsed.missingVoice?'':parsed.text);
         const sourceRaw=forwarded?normalizedWechatMediaEnvelope(raw,parsed):raw;
         const msgid=String(raw.message_id||raw.msg_id||'');
-        const hasMedia=mediaItems(sourceRaw).length>0;
+        const acceptedMedia=mediaItems(sourceRaw);
+        const hasMedia=acceptedMedia.length>0;
+        const unsupportedFiles=forwarded?0:(raw.item_list as Json[]).filter(item=>item?.type===4).length-acceptedMedia.filter(item=>item?.type===4).length;
          const processingStarted=Date.now();
-        if((!text&&!hasMedia&&!hasVoice)||!msgid||text.length>3000)continue;
+        if((!text&&!hasMedia&&!hasVoice&&!unsupportedFiles)||!msgid||text.length>3000)continue;
         const unique=botId+':'+msgid;
         await this.env.DB.prepare("INSERT OR IGNORE INTO wechat_messages(message_id,state,created_at) VALUES(?,'processing',?)").bind(unique,new Date().toISOString()).run();
         const row=await this.env.DB.prepare('SELECT state,reply_text,client_id,photo_attempts FROM wechat_messages WHERE message_id=?').bind(unique)
@@ -483,6 +485,7 @@ export class WechatSession {
           try{
             if(clear)reply='已清除本次微信会话的短期上下文和宝宝选择。';
             else if(!text&&!hasMedia&&hasVoice)reply='收到语音消息，但微信没有附带文字转写。请在微信里转成文字后发送；暂不识别语音音频。';
+            else if(!text&&!hasMedia&&unsupportedFiles)reply='收到文件，但只能将 JPG、PNG、WebP、HEIC、GIF 照片或 MP4、MOV、WebM 视频文件保存到相册。请使用微信「文件」发送这些格式，单个文件不超过 50 MB。';
             else if(hasMedia){
               const baby=await resolveWechatMediaBaby(this.env,raw,thread);
               if(typeof baby==='string')reply=baby;
@@ -516,7 +519,7 @@ export class WechatSession {
                   thread.selectedBabyId=baby.id;
                   thread.lastMedia={babyId:baby.id,ids:reservedIds,expiresAt:receivedAt+1200000};
                   thread.pendingMedia={sourceId:unique,babyId:baby.id,expiresAt:receivedAt+1200000};
-                  reply='已收到 '+mediaItems(sourceRaw).length+' 项照片或视频，正在保存。保存结果会另行通知，其他文字记录可以继续发送。';
+                  reply='已收到 '+acceptedMedia.length+' 项照片或视频，正在保存。保存结果会另行通知，其他文字记录可以继续发送。'+(unsupportedFiles?' 另有 '+unsupportedFiles+' 个不支持的文件未保存。':'');
                 }
                }
               }
@@ -538,7 +541,7 @@ export class WechatSession {
         // Persist operational context before transport acknowledgement; replay reuses it.
         if(clear)await this.ctx.storage.delete('conversation');
         else if((thread.selectedBabyId||thread.babyId)&&(text||hasMedia)){
-          const next=appendTurn(thread,hasMedia?(forwarded?'[微信转发内容]\n'+text.slice(0,1200):'[微信图片或视频]'):text,reply,thread.selectedBabyId||thread.babyId);
+          const next=appendTurn(thread,hasMedia?(forwarded?'[微信转发内容]\n'+text.slice(0,1200):'[微信图片、视频或原文件附件]'):text,reply,thread.selectedBabyId||thread.babyId);
           await this.ctx.storage.put('conversation',next);
         }
         await ilink(base,'ilink/bot/sendmessage',{msg:{from_user_id:'',to_user_id:userId,client_id:clientId,message_type:2,message_state:2,context_token:raw.context_token,item_list:[{type:1,text_item:{text:reply.slice(0,1800)}}]},base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token);
