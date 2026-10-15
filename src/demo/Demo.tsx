@@ -98,22 +98,22 @@ export default function Demo(){
     <div className="top-right"><span className="secure"><ShieldCheck size={14}/> 仅家人可见</span><span className="avatar" aria-label="示例管理员">家</span></div>
    </div>
    <div className="page">
-    <div className="demo-note"><span><strong>产品体验</strong> · 虚构家庭与示例记录，直接浏览真实风格的应用界面</span><div className="demo-note-links"><a href="/demo/mobile">移动端体验 ↗</a><a href="https://github.com/zhajiahe/babymemo" target="_blank" rel="noopener noreferrer">了解 BabyMemo ↗</a></div></div>
+    <div className="demo-note" role="note"><span><strong>只读演示</strong> · 虚构的家庭与成长故事</span><div className="demo-note-links"><a href="/demo/mobile">体验手机版 ↗</a><a className="demo-note-project" href="https://github.com/zhajiahe/babymemo" target="_blank" rel="noopener noreferrer">了解项目 ↗</a></div></div>
     <header className={'page-heading'+(active==='album'?' page-heading-album':'')}>
      <div className="page-heading-content"><h1>{active==='overview'?'小星星':titles[active]}</h1><p className="muted">{active==='overview'?'10 个月 · 成长日记':active==='album'?'照片与视频':'小星星 · 10 个月'}</p></div>
-     {active==='overview'&&<button type="button" className="home-quick-add" onClick={()=>go('moments')}><Plus size={16}/> 记录瞬间</button>}
+     {active==='overview'&&<button type="button" className="home-quick-add" onClick={()=>go('moments')}><BookHeart size={16}/> 浏览瞬间</button>}
     </header>
     {active==='overview'&&<div className="home-feed">
      <section className="home-memories" aria-label="最近照片">
       <div className="section-title home-section-title"><h2>最近的照片</h2><button type="button" className="text-btn" onClick={()=>go('album')}>查看相册 <ChevronRight size={16}/></button></div>
       <button type="button" className="home-photo-cover" onClick={()=>go('album')} aria-label="打开相册查看照片故事"><DemoPhoto photo={photos[0]}/></button>
-      <div className="home-photo-strip">{photos.slice(1).map((p,i)=><button type="button" key={p.id} className="home-photo-thumb" onClick={()=>{go('album');setSelected(i+1)}} aria-label={'查看 '+p.day+' 的照片故事'}><DemoPhoto photo={p} lazy/>{p.video&&<span className="home-thumb-video"><Play size={13} fill="currentColor"/></span>}</button>)}</div>
-      <button type="button" className="demo-story-highlight" onClick={()=>{go('album');setSelected(0)}}>
-       <span className="demo-story-date">10 月 12 日 · 一天的小故事</span>
+      <button type="button" className="home-story-highlight demo-story-highlight" onClick={()=>{go('album');setSelected(0)}}>
+       <span className="home-story-date demo-story-date">10 月 12 日 · 一天的小故事</span>
        <strong>追着泡泡跑的下午</strong>
        <span>今天在公园里发现了会飞的泡泡。小星星一路追着跑，摔了一跤也不哭……</span>
-       <span className="demo-story-open">读完整故事 <ChevronRight size={16}/></span>
+       <span className="home-story-open demo-story-open">读完整故事 <ChevronRight size={16}/></span>
       </button>
+      <div className="home-photo-strip">{photos.slice(1).map((p,i)=><button type="button" key={p.id} className="home-photo-thumb" onClick={()=>{go('album');setSelected(i+1)}} aria-label={'查看 '+p.day+' 的照片故事'}><DemoPhoto photo={p} lazy/>{p.video&&<span className="home-thumb-video"><Play size={13} fill="currentColor"/></span>}</button>)}</div>
      </section>
      <section className="home-measurements" aria-label="成长曲线"><div className="section-title home-section-title"><h2>成长记录</h2><button type="button" className="text-btn" onClick={()=>go('growth')}>查看记录 <ChevronRight size={16}/></button></div><GrowthChart items={growth}/></section>
      <section className="home-events" aria-label="最近的日子"><div className="section-title home-section-title"><h2>最近的日子</h2><button type="button" className="text-btn" onClick={()=>go('moments')}>查看全部 <ChevronRight size={16}/></button></div>

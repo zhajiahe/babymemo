@@ -63,5 +63,14 @@ test('product preview never reads family sessions or requests private data',()=>
  assert.match(code,/示例|虚构|fictional/i);
  assert.match(code,/referrerPolicy="no-referrer"/);
 });
+test('screenshot-led home layout puts the real story ahead of thumbnails without fabricating missing stories',()=>{
+ const demo=read('src/demo/Demo.tsx'),app=read('src/App.tsx'),editorial=read('src/editorial.css'),demoCss=read('src/demo/demo.css');
+ assert.ok(demo.indexOf('home-story-highlight demo-story-highlight')<demo.indexOf('home-photo-strip'));
+ assert.ok(app.indexOf('className="home-story-highlight"')<app.indexOf('home-photo-strip'));
+ assert.match(app,/!!media\[0\]\.description\?\.trim\(\)/,'no fake story card when there is no description');
+ assert.match(editorial,/\.home-story-highlight/);
+ assert.match(editorial,/\.home-photo-cover \{ aspect-ratio:16\/9; \}/);
+ assert.match(demoCss,/demo-note-project\{display:none\}/,'keep mobile introductory note compact');
+});
 test('video play mark is visible on home and album thumbnails',()=>{const home=read('src/App.tsx'),album=read('src/features/album/Album.tsx');assert.match(home,/home-video-badge.*<Play/);assert.match(home,/home-thumb-video.*<Play/);assert.match(album,/video-play-badge.*<Play/);});
 test('typed bootstrap response and resumable upload descriptor',()=>{assert.doesNotMatch(read('src/App.tsx'),/api<any>\('\/api\/bootstrap\/status'/);assert.doesNotMatch(read('src/features/album/Album.tsx'),/resumable:Record<string,any>/);});

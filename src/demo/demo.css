@@ -1,9 +1,9 @@
 /* The public demo uses the same layout, visual tokens and growth chart as BabyMemo.
    Only explanatory labels, sample stories and the read-only photo viewer live here. */
 .demo-app .demo-note {
- display:flex;align-items:center;justify-content:space-between;gap:10px 18px;flex-wrap:wrap;
- padding:10px 14px;margin:-2px 0 26px;border:1px solid var(--bm-border);
- border-radius:10px;background:var(--bm-surface);color:var(--bm-muted);font-size:12px;line-height:1.6;
+ display:flex;align-items:center;justify-content:space-between;gap:4px 14px;flex-wrap:wrap;
+ padding:8px 11px;margin:0 0 16px;border:0;
+ border-radius:var(--bm-radius-sm);background:var(--bm-surface-soft);color:var(--bm-muted);font-size:12px;line-height:1.5;
 }
 .demo-app .demo-note strong{color:var(--bm-brand);font-weight:700}
 .demo-app .demo-note a,.demo-setting-note a{color:var(--bm-brand);font-weight:650}
@@ -11,11 +11,9 @@
 .demo-note-links{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .demo-sidebar-foot{padding:0 17px;font-size:11px;color:var(--bm-muted)}
 .demo-app .home-quick-add{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;padding:9px 12px;background:var(--bm-brand-soft);color:var(--bm-brand);border:0;border-radius:9px;font-size:13px;font-weight:650}
-.demo-story-highlight{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:7px;margin-top:15px;padding:20px 22px;text-align:left;border:1px solid var(--bm-border);border-radius:13px;background:var(--bm-surface);color:var(--bm-ink)}
 .demo-story-highlight .demo-story-date{font-size:12px;color:var(--bm-muted)}
-.demo-story-highlight strong{font-size:20px;font-weight:650}
-.demo-story-highlight>span:nth-last-child(2){font-size:14px;line-height:1.75;color:var(--bm-muted)}
-.demo-story-highlight .demo-story-open{display:inline-flex;align-items:center;gap:3px;margin-top:6px;color:var(--bm-brand);font-size:13px;font-weight:650}
+.demo-story-highlight .demo-story-open{display:inline-flex;align-items:center;gap:3px;margin-top:1px;color:var(--bm-brand);font-size:13px;font-weight:650}
+.demo-story-highlight>span:nth-last-child(2){display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;font-size:14px;line-height:1.75;color:var(--bm-muted)}
 .demo-story-highlight:hover .demo-story-open{text-decoration:underline}
 .demo-app .home-photo-cover img,.demo-app .home-photo-thumb img,.demo-app .photo-frame img{background:var(--bm-photo-bg)}
 .demo-app .home-photo-cover img{aspect-ratio:4/3;object-fit:cover}
@@ -51,10 +49,11 @@
 .demo-video-mark{position:absolute;bottom:12px;right:12px;display:flex;align-items:center;gap:6px;color:white;background:rgba(20,34,51,.7);padding:8px 11px;border-radius:8px;font-size:12px}
 .demo-viewer-controls{justify-content:space-between}
 @media(max-width:800px){
- .demo-app .demo-note{margin:-4px 0 20px;padding:10px 12px}
+ .demo-app .demo-note{margin:-5px 0 14px;padding:7px 9px;font-size:11px}
  .demo-app .demo-note a{white-space:nowrap}
- .demo-story-highlight{padding:18px 16px;margin-top:12px}
- .demo-story-highlight strong{font-size:18px}
+ .demo-app .demo-note .demo-note-project{display:none}
+ .demo-note-links{gap:7px}
+ .demo-story-highlight{padding:13px 15px;margin-top:8px}
  .demo-growth,.demo-settings{display:flex;flex-direction:column;gap:14px}
  .demo-growth>.card,.demo-settings>.card{width:100%}
  .demo-app .photo-item .photo-frame{aspect-ratio:1}

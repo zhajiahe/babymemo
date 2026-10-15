@@ -677,6 +677,21 @@ async function browserE2e(){
         await preview.locator('.home-photo-cover').waitFor();
         await preview.getByText('追着泡泡跑的下午').waitFor();
         await preview.screenshot({path:join(evidence,'demo-desktop.png'),fullPage:true});
+        for(const width of [320,390,1024,1280]){
+          await preview.setViewportSize({width,height:width===320?740:width===390?844:768});
+          const metrics=await preview.evaluate(()=>{
+            const story=document.querySelector('.demo-story-highlight')?.getBoundingClientRect();
+            const cover=document.querySelector('.home-photo-cover')?.getBoundingClientRect();
+            const strip=document.querySelector('.home-photo-strip')?.getBoundingClientRect();
+            const bottom=document.querySelector('.mobile-nav')?.getBoundingClientRect();
+            return {storyTop:story?.top,storyBottom:story?.bottom,coverBottom:cover?.bottom,stripTop:strip?.top,viewport:innerHeight,usableBottom:bottom&&bottom.height?bottom.top:innerHeight,overflow:document.documentElement.scrollWidth>innerWidth+1};
+          });
+          assert.equal(metrics.overflow,false,'Home overflow at '+width);
+          assert.ok(metrics.storyTop>=metrics.coverBottom-1&&metrics.storyBottom<=metrics.stripTop+1,'Story should be between cover and thumbnails at '+width+': '+JSON.stringify(metrics));
+          assert.ok(metrics.storyTop<metrics.usableBottom-35,'Story preview must be discoverable in first viewport at '+width+': '+JSON.stringify(metrics));
+          if(width===390||width===1024)await preview.screenshot({path:join(evidence,'home-first-viewport-'+width+'.png'),fullPage:false});
+        }
+        await preview.setViewportSize({width:1280,height:812});
         await preview.getByRole('button',{name:/查看相册/}).click();
         await preview.locator('.photo-story').first().waitFor();
         assert.ok(await preview.locator('.photo-story').count()>1);
