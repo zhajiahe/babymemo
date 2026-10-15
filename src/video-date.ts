@@ -120,7 +120,7 @@ async function parse(size:number,read:Reader,zone:string){
 }
 export async function videoCaptureDay(input:Blob|Uint8Array,timeZone='Asia/Shanghai'){
  const data=input instanceof Uint8Array?input:null,size=data?data.length:input.size;
- return parse(size,async(offset,length)=>data?data.subarray(offset,offset+length):new Uint8Array(await input.slice(offset,offset+length).arrayBuffer()),timeZone);
+ return parse(size,async(offset,length)=>data?data.subarray(offset,offset+length):new Uint8Array(await (input as Blob).slice(offset,offset+length).arrayBuffer()),timeZone);
 }
 export async function r2VideoCaptureDay(bucket:R2Bucket,key:string,size:number,mime:string,timeZone='Asia/Shanghai'){
  if(!['video/mp4','video/quicktime'].includes(mime))return null;
