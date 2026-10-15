@@ -1,4 +1,5 @@
 import {deviceRead,deviceList,deviceWrite,deviceRemove,deviceClear,projectMutation,PRIVATE_MEDIA_CACHE} from './offline-store.mjs';
+import {PRIVATE_THUMBNAIL_CACHE} from './private-media-cache.mjs';
 import {ApiFailure,friendlyError} from './lib/errors';
 export type OfflineJob={id:string;path:string;method:string;payload:Record<string,any>;createdAt:number;kind:'json'|'media'|'avatar';file?:Blob;error?:string};
 const event=()=>{window.dispatchEvent(new Event('babymemo-offline'));const channel=new BroadcastChannel('babymemo-device');channel.postMessage('changed');channel.close()};
@@ -20,7 +21,7 @@ export async function readCached(path:string){
 }
 export async function clearDevice(){
  localStorage.removeItem('babymemo-unlocked');
- await deviceClear();await deviceWrite('resources',{id:'__session',value:{unlocked:false}});await caches.delete(PRIVATE_MEDIA_CACHE);
+ await deviceClear();await deviceWrite('resources',{id:'__session',value:{unlocked:false}});await Promise.all([caches.delete(PRIVATE_MEDIA_CACHE),caches.delete(PRIVATE_THUMBNAIL_CACHE)]);
  for(const storage of [localStorage,sessionStorage])for(const key of Object.keys(storage))if(key.startsWith('babymemo-draft-')||key.startsWith('bm-direct-'))storage.removeItem(key);
  navigator.serviceWorker?.controller?.postMessage({type:'LOCK'});event();
  const channel=new BroadcastChannel('babymemo-device');channel.postMessage('logout');channel.close();
@@ -30,7 +31,12 @@ export async function offlineJobs(){return (await deviceList<OfflineJob>('jobs')
 async function invalidateMedia(job:OfflineJob){
  const match=job.path.match(/^\/api\/media\/([^/]+)$/);
  const cache=await caches.open(PRIVATE_MEDIA_CACHE);
- if(job.method==='DELETE'&&match)await Promise.all([cache.delete('/api/media/'+match[1]+'/content'),cache.delete('/api/media/'+match[1]+'/thumbnail')]);
+ if(job.method==='DELETE'&&match){
+  await Promise.all([cache.delete('/api/media/'+match[1]+'/content'),cache.delete('/api/media/'+match[1]+'/thumbnail')]);
+  const previews=await caches.open(PRIVATE_THUMBNAIL_CACHE);
+  const path='/api/media/'+match[1]+'/thumbnail';
+  for(const key of await previews.keys())if(new URL(key.url).pathname===path)await previews.delete(key);
+ }
  if(job.path.endsWith('/avatar'))await cache.delete(job.path);
 }
 async function project(job:OfflineJob){for(const resource of await deviceList('resources'))await deviceWrite('resources',projectMutation(resource,job));await invalidateMedia(job);event()}
