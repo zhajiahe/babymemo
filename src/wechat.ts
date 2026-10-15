@@ -453,7 +453,7 @@ export class WechatSession {
         const text=forwarded?parsed.text:originalText||(parsed.missingVoice?'':parsed.text);
         const sourceRaw=forwarded?normalizedWechatMediaEnvelope(raw,parsed):raw;
         const msgid=String(raw.message_id||raw.msg_id||'');
-        const acceptedMedia=mediaItems(sourceRaw);
+        const acceptedMedia=mediaItems(sourceRaw) as Json[];
         const hasMedia=acceptedMedia.length>0;
         const unsupportedFiles=forwarded?0:(raw.item_list as Json[]).filter(item=>item?.type===4).length-acceptedMedia.filter(item=>item?.type===4).length;
          const processingStarted=Date.now();
