@@ -12,7 +12,7 @@ export function thumbnailVersion(requestUrl:string):string|null{
  const url=new URL(requestUrl,'https://babymemo.invalid');
  if(!/^\/api\/media\/[^/]+\/thumbnail$/.test(url.pathname))return null;
  const version=url.searchParams.get('v');
- return version&&url.searchParams.size===1?version:null;
+ return version&&[...url.searchParams].length===1?version:null;
 }
 export function cacheableThumbnail(requestUrl:string,response:Response):boolean{
  const version=thumbnailVersion(requestUrl);

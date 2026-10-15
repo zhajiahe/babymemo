@@ -9,7 +9,7 @@ const manifest=JSON.parse(text('public/site.webmanifest'));
 
 test('home is a real-media journal, without marketing dashboard ornaments',()=>{
  assert.match(app,/className="home-photo-cover"/);
- assert.match(app,/api\/media\/.*thumbnail/);
+ assert.match(app,/mediaThumbnailUrl\(media\[0\]\)/);
  assert.match(app,/className="home-measurements"/);
  assert.match(app,/className="home-events"/);
  assert.doesNotMatch(app,/OUR LITTLE STORY|今天也在闪闪发光|className="stats"/);
