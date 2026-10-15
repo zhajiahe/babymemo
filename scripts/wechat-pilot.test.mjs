@@ -54,4 +54,6 @@ test('Both drivers share DO cursor; Cron runs in the existing Worker',()=>{
  assert.ok(JSON.parse(config).triggers.crons.includes('0 19 * * *'));
  assert.match(worker,/runWechatCronPolling\(env\)/);
  assert.match(pilot,/SELECT id FROM wechat_connections WHERE enabled=1/);
+ assert.match(pilot,/POLL_BUSY/);
+ assert.match(pilot,/setTimeout\(resolve,9000\)/);
 });

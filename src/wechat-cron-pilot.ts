@@ -33,9 +33,19 @@ async function poll(claim:Claim):Promise<PilotCompletion>{
 }
 async function pollOne(env:Pick<Env,'BOT'>,connectionId:string):Promise<void>{
  const stub=env.BOT.get(env.BOT.idFromName(connectionId==='legacy'?'family':'wechat:'+connectionId));
- const claimed=await stub.fetch('https://bot.internal/pilot/claim',{
+ const claimRequest=()=>stub.fetch('https://bot.internal/pilot/claim',{
   method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({connectionId})
  });
+ let claimed=await claimRequest();
+ if(claimed.status===409){
+  // Legacy Alarm listens for up to 8 seconds; wait once before giving up.
+  // This prevents a fixed 30s Alarm / 60s Cron phase from starving takeover.
+  const busy=await claimed.json().catch(()=>null) as {error?:string}|null;
+  if(busy?.error==='POLL_BUSY'){
+   await new Promise<void>(resolve=>setTimeout(resolve,9000));
+   claimed=await claimRequest();
+  }
+ }
  if(!claimed.ok)return;
  const claim=await claimed.json() as Claim;
  const result=await poll(claim);
