@@ -64,11 +64,65 @@ export function validCaptureDay(value:unknown,timeZone:string='Asia/Shanghai'){
  const today=new Date().toLocaleDateString('sv-SE',{timeZone});
  return day<=today?day:null;
 }
-const photoOptions={pick:['DateTimeOriginal'],reviveValues:false,translateValues:false,gps:false,interop:false,ifd1:false,xmp:false,icc:false,iptc:false,jfif:false,ihdr:false,makerNote:false,userComment:false,chunked:true,firstChunkSize:65536,chunkSize:65536,chunkLimit:16};
+/**
+ * JPEG APP1 may still carry camera dates in Adobe XMP even when WeChat or an
+ * exporter removed the EXIF TIFF block. Only accept named creation fields;
+ * never search pixel data, file modification dates, or arbitrary date strings.
+ */
+export function jpegXmpCaptureDay(bytes:Uint8Array,timeZone:string='Asia/Shanghai'){
+ if(!(bytes instanceof Uint8Array)||bytes.length<12||bytes[0]!==255||bytes[1]!==216)return null;
+ const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+ const fields=['exif:DateTimeOriginal','photoshop:DateCreated','xmp:CreateDate'];
+ const candidates=new Map<string,Set<string>>();
+ const header='http://ns.adobe.com/xap/1.0/\\0'.replace('\\0','\\u0000');
+ let p=2;
+ while(p+4<=bytes.length&&bytes[p]===255){
+  const marker=bytes[p+1];
+  if(marker===218||marker===217)break;
+  if(marker===255){p++;continue}
+  const segmentLength=view.getUint16(p+2,false),end=p+2+segmentLength;
+  if(segmentLength<2||end>bytes.length)break;
+  if(marker===225&&end-p-4>header.length){
+   const payload=new TextDecoder().decode(bytes.subarray(p+4,Math.min(end,p+4+header.length)));
+   if(payload===header){
+    const xml=new TextDecoder().decode(bytes.subarray(p+4+header.length,end));
+    for(const field of fields){
+     const attribute=new RegExp('\\b'+field+'\\s*=\\s*["\\\']([^"\\\']{10,48})["\\\']','gi');
+     const element=new RegExp('<'+field+'(?:\\s[^>]*)?>([^<]{10,48})<\\/'+field+'>','gi');
+     for(const re of [attribute,element])for(const m of xml.matchAll(re)){
+      const day=validCaptureDay(m[1],timeZone);
+      if(day){
+       if(!candidates.has(field))candidates.set(field,new Set());
+       candidates.get(field)!.add(day);
+      }
+     }
+    }
+   }
+  }
+  p=end;
+ }
+ for(const field of fields){
+  const days=candidates.get(field);
+  if(days?.size===1)return [...days][0];
+  if(days&&days.size>1)return null; // Conflicting values are not an authoritative date.
+ }
+ return null;
+}
+
+function metadataCaptureDay(metadata:Record<string,unknown>|null|undefined,timeZone:string){
+ // Camera EXIF wins. XMP/IPTC creation dates are useful fallbacks for exports
+ // that preserve creation metadata but not the camera's original EXIF block.
+ for(const field of ['DateTimeOriginal','DateCreated','CreateDate']){
+  const date=validCaptureDay(metadata?.[field],timeZone);
+  if(date)return date;
+ }
+ return null;
+}
+const photoOptions={pick:['DateTimeOriginal','DateCreated','CreateDate'],reviveValues:false,translateValues:false,gps:false,interop:false,ifd1:false,xmp:true,icc:false,iptc:true,jfif:false,ihdr:false,makerNote:false,userComment:false,chunked:true,firstChunkSize:65536,chunkSize:65536,chunkLimit:16};
 export async function photoCaptureDay(input:Blob|Uint8Array,timeZone:string='Asia/Shanghai'){
  try{
   const prefix=input instanceof Uint8Array?input:new Uint8Array(await input.slice(0,Math.min(input.size,262144)).arrayBuffer());
-  const day=validCaptureDay(jpegCaptureDay(prefix),timeZone);if(day)return day;
+  const day=validCaptureDay(jpegCaptureDay(prefix),timeZone)||jpegXmpCaptureDay(prefix,timeZone);if(day)return day;
   if(prefix.length>=12&&new TextDecoder().decode(prefix.subarray(0,4))==='RIFF'&&new TextDecoder().decode(prefix.subarray(8,12))==='WEBP'){
    const length=input instanceof Uint8Array?input.length:input.size;
    for(let offset=12,chunks=0;chunks<16&&offset+8<=length;chunks++){
@@ -78,14 +132,14 @@ export async function photoCaptureDay(input:Blob|Uint8Array,timeZone:string='Asi
      if(size>262144)return null;
      let bytes=end<=prefix.length?prefix.subarray(offset+8,end):new Uint8Array(await (input as Blob).slice(offset+8,end).arrayBuffer());
      if(new TextDecoder().decode(bytes.subarray(0,6))==='Exif\0\0')bytes=bytes.subarray(6);
-     const metadata=await (await metadataParser()).parse(bytes,photoOptions);return validCaptureDay(metadata?.DateTimeOriginal,timeZone);
+     const metadata=await (await metadataParser()).parse(bytes,photoOptions);return metadataCaptureDay(metadata,timeZone);
     }
     offset=end+(size%2);
    }
    return null;
   }
   const metadata=await (await metadataParser()).parse(input,photoOptions);
-  return validCaptureDay(metadata?.DateTimeOriginal,timeZone);
+  return metadataCaptureDay(metadata,timeZone);
  }catch{return null}
 }
 // A lazy Blob for EXIF's supported Blob reader: all I/O stays in private R2.
