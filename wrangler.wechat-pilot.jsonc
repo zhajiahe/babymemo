@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "babymemo-wechat-cron-pilot",
+  "main": "src/wechat-cron-pilot.ts",
+  "compatibility_date": "2026-10-12",
+  "durable_objects": {
+    "bindings": [
+      {"name": "BOT", "class_name": "WechatSession", "script_name": "babymemo"}
+    ]
+  },
+  "triggers": {"crons": ["* * * * *"]}
+}
