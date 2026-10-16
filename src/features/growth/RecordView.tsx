@@ -49,7 +49,7 @@ export function RecordView({baby,kind,items,history,historyLimited,busy,setBusy,
  {!!item.media?.length&&<div className="moment-media">{item.media.map(media=><button type="button" key={media.id} aria-label={'预览 '+media.day+' 的媒体'} onClick={()=>setSelected(media)}>{media.mime.startsWith('image/')||media.thumbnail_ready?<img src={mediaThumbnailUrl(media)} alt="成长瞬间照片" loading="lazy"/>:<span>查看视频</span>}</button>)}</div>}
  </div></div>):<div className="empty">没有符合条件的记录，可以清除筛选或新增记录。</div>}</div><Pager page={page} setPage={setPage} hasMore={hasMore}/></Card>
  <div className="record-editor-side">
-  {!editing?kind==='growth'?null:<Card><div className="section-title"><h3>{kind==='growth'?'新增测量':'记录一个第一次'}</h3><span className="icon-subtle">{kind==='growth'?<TrendingUp size={20}/>:<BookHeart size={20}/>}</span></div>{recordForm}</Card>
+  {!editing?kind==='growth'?null:<Card><div className="section-title"><h3>记录一个第一次</h3><span className="icon-subtle"><BookHeart size={20}/></span></div>{recordForm}</Card>
   :<Card className="record-resume-card"><div className="section-title"><h3>待完成的记录编辑</h3></div><p className="muted">修改草稿已保留在这台设备。继续编辑或取消后可新增记录。</p><div className="bm-modal-actions"><Button variant="primary" onClick={()=>setEditorOpen(true)}>继续编辑</Button><Button variant="secondary" disabled={busy} onClick={reset}>取消编辑</Button></div></Card>}
  </div>
  </div> <ModalDialog open={kind==='growth'&&!editing&&createOpen} onClose={()=>setCreateOpen(false)} busy={busy} title="新增成长记录">{recordForm}</ModalDialog>
