@@ -1,6 +1,9 @@
+export type MemoMediaReference={id:string;kind:'image'|'video';fileName?:string};
+export const MAX_CONTEXT_TURNS:number;
+export const MAX_HISTORY_UNITS:number;
 export const CONTEXT_TTL_MS:number;
 export function getActiveThread(saved:any,botId:string,userId:string,now?:number):any;
-export function appendTurn(thread:any,user:string,reply:string,babyId:string,now?:number):any;
+export function appendTurn(thread:any,user:string,reply:string,babyId:string,now?:number,media?:MemoMediaReference[]):any;
 export function isClearContext(text:string):boolean;
 export function buildCommandContext(text:string,thread:any,now?:number,babyId?:string):{modelMessages:Array<{role:string;content:string}>;groundedText:string;milestoneGroundedText:null;referencedId:null};
 export function recordQuery(thread:any,babyId:string,kind:string,ids:string[],now?:number,sourceMessageId?:string):void;
