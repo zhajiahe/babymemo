@@ -2,11 +2,12 @@ import type {Env} from './types';
 import type {WechatBaby} from './wechat-harness.mjs';
 type RecordKind='growth'|'milestones'|'media'|'baby';
 type ToolCall={type:'function';function:{name:string;arguments:string};id?:string};
-type PlanOptions={messageId:string;text:string;groundedText?:string;at?:number;thread?:any;stepOffset?:number;encryptReply?:(value:string)=>Promise<string>;decryptReply?:(value:string)=>Promise<string>};
+type PlanOptions={messageId:string;text:string;groundedText?:string;at?:number;thread?:any;stepOffset?:number;referenceScope?:MessageReferenceScope;encryptReply?:(value:string)=>Promise<string>;decryptReply?:(value:string)=>Promise<string>};
 // Bounded tool execution and scenario state. No free-form SQL or arbitrary model actions.
 import {runWechatTool,wechatTools} from './wechat-harness.mjs';
 import {guardAction,MUTATING_ACTIONS,isCancel,isUndo} from './wechat-policy.mjs';
 import {recordQuery} from './wechat-memory.mjs';
+import {validateReferenceMutation,captureMessageReferences,type MessageReferenceScope} from './wechat-context-snapshot.mjs';
 import {auditChange,operationSnapshot,undoOperation} from './wechat-operations.mjs';
 const KINDS:Record<string,RecordKind|null>={create_growth:'growth',update_growth:'growth',delete_growth:'growth',list_growth:'growth',
  create_milestone:'milestones',update_milestone:'milestones',delete_milestone:'milestones',list_milestones:'milestones',
@@ -54,7 +55,7 @@ async function createdBySource(env:Env,kind:RecordKind,babyId:string,sourceId:st
  if(!['growth','milestones'].includes(kind))return null;
  return env.DB.prepare('SELECT * FROM '+TABLES[kind]+' WHERE baby_id=? AND source_message_id=? LIMIT 1').bind(babyId,sourceId).first();
 }
-export async function runWechatPlan(env:Env,baby:WechatBaby,calls:ToolCall[],{messageId,text,groundedText=text,at=Date.now(),thread=null,stepOffset=0,encryptReply=async (x:string)=>x,decryptReply=async (x:string)=>x}:PlanOptions){
+export async function runWechatPlan(env:Env,baby:WechatBaby,calls:ToolCall[],{messageId,text,groundedText=text,at=Date.now(),thread=null,stepOffset=0,referenceScope=captureMessageReferences(thread,at),encryptReply=async (x:string)=>x,decryptReply=async (x:string)=>x}:PlanOptions){
  if(!Array.isArray(calls)||!calls.length)return '没有需要执行的工具';
  if(calls.length>4)return '一次最多处理 4 项操作，请分开发送';
  const names=new Set(wechatTools.map(t=>t.function.name)),results:string[]=[];
@@ -90,7 +91,7 @@ export async function runWechatPlan(env:Env,baby:WechatBaby,calls:ToolCall[],{me
   }
   // Model selects operations using conversation context. Only clear refusal
   // in this incoming message is a hard stop; DB validates target and scope.
-  const denied=guardAction(action,args,text,baby,at);
+  const denied=guardAction(action,args,text,baby,at)||validateReferenceMutation({action,args,text,babyId:baby.id,messageId,scope:referenceScope,currentQuery:thread?.lastQuery,at:Date.now()});
   if(denied){results.push(denied);break}
   const before=MUTATING_ACTIONS.has(action)&&kind?await recordFor(env,kind,baby.id,args):null;
   // A second, different WeChat message may still be a duplicate business operation.
