@@ -8,6 +8,7 @@ import {validDate,cleanText,short,tableForKind,labelForKind,maxLimit,listLine,fi
 import {guardAction,validDay,dayInZone} from './wechat-policy.mjs';
 import {ageOnDay} from './wechat-answer.mjs';
 import {retentionCutoff} from './media-retention.mjs';
+import {mediaCapabilities} from './wechat-capabilities.mjs';
 import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
 export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,args:Record<string,any>={},messageId='',originalText='',options:ToolOptions={}){
  const at=options.at||Date.now();
@@ -78,7 +79,7 @@ export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,a
    if(action==='update_'+(kind==='milestones'?'milestone':kind)){
     if(args.id===undefined&&args.day===undefined)return '请指定记录日期或编号，避免改错记录';
     const row=await findTarget(env,baby.id,kind,args);
-     if(kind==='media'&&row.upload_state==='failed')return '该照片保存失败，请重新发送原文件后再修改。';
+     if(kind==='media'&&!mediaCapabilities(row).editDescription)return '该媒体当前不可编辑（'+mediaCapabilities(row).reason+'），请核对上传状态。';
     const changes:Record<string,any>={};
     if(kind==='growth')Object.assign(changes,measurement(args));
     else if(kind==='milestones'){
@@ -155,9 +156,9 @@ export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,a
     const id=batch.ids[i];
     const previous=await env.DB.prepare('SELECT * FROM media WHERE id=? AND baby_id=? AND deleted_at IS NULL LIMIT 1').bind(id,baby.id).first<DbRow>();
     if(!previous)throw Error('最近照片批次包含无效或已删除记录，请重新查询');
-     if(previous.upload_state==='failed')throw Error('最近的照片保存失败，请重新发送原文件后再添加描述。');
+     if(!mediaCapabilities(previous).editDescription)throw Error('最近的媒体当前不可编辑（'+mediaCapabilities(previous).reason+'）。');
     const opId=crypto.randomUUID();opIds.push(opId);
-    statements.push(env.DB.prepare('UPDATE media SET '+names.map(k=>k+'=?').join(',')+' WHERE id=? AND baby_id=? AND deleted_at IS NULL AND '+names.map(k=>k+' IS ?').join(' AND '))
+    statements.push(env.DB.prepare('UPDATE media SET '+names.map(k=>k+'=?').join(',')+' WHERE id=? AND baby_id=? AND deleted_at IS NULL AND COALESCE(upload_state,\'ready\') IN (\'processing\',\'ready\') AND purge_token IS NULL AND '+names.map(k=>k+' IS ?').join(' AND '))
       .bind(...names.map(k=>changes[k]),id,baby.id,...names.map(k=>previous[k]??null)));
     statements.push(env.DB.prepare('INSERT OR IGNORE INTO wechat_operation_log(id,source_message_id,baby_id,kind,record_id,action,before_json,after_json,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE changes()>0')
       .bind(opId,messageId+':media:'+i,baby.id,'media',id,'update_recent_media',
