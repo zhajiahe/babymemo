@@ -77,12 +77,15 @@ async function presentReferences(env:Env,babyId:string,ref:ExpiringMemo|null|und
  if(!base.valid)return base;
  const table=TABLES[base.kind||''];
  if(!table)return {...base,valid:false,reason:'unknown_kind',ids:[]};
+ // One bounded D1 read for all references, rather than N sequential reads.
+ const rows=await env.DB.prepare('SELECT id FROM '+table+' WHERE baby_id=? AND deleted_at IS NULL AND ('+
+   base.ids.map(()=> 'id LIKE ?').join(' OR ')+') LIMIT 21')
+  .bind(babyId,...base.ids.map(id=>id+'%')).all<{id:string}>();
  const checked:string[]=[];
  for(const id of base.ids){
-  const rows=await env.DB.prepare('SELECT id FROM '+table+' WHERE baby_id=? AND deleted_at IS NULL AND id LIKE ? LIMIT 2')
-   .bind(babyId,id+'%').all<{id:string}>();
-  if(rows.results.length!==1)return {...base,valid:false,reason:rows.results.length?'ambiguous_reference':'record_unavailable',ids:[]};
-  checked.push(rows.results[0].id);
+  const matching=rows.results.filter(row=>row.id.startsWith(id));
+  if(matching.length!==1)return {...base,valid:false,reason:matching.length?'ambiguous_reference':'record_unavailable',ids:[]};
+  checked.push(matching[0].id);
  }
  return {...base,ids:checked};
 }
@@ -92,7 +95,8 @@ export async function buildWechatContextSnapshot(
 ){
  const now=Date.now();
  const query=await presentReferences(env,baby.id,thread?.lastQuery,now);
- const originalQuery=await presentReferences(env,baby.id,scope.query,now);
+ const originalQuery=JSON.stringify(thread?.lastQuery||null)===JSON.stringify(scope.query||null)
+  ?query:await presentReferences(env,baby.id,scope.query,now);
  const invalidated=referenceState(thread?.invalidReferences||scope.invalidated,baby.id,now);
  const mediaRef=referenceState(thread?.lastMedia,baby.id,now);
  const originalMedia=referenceState(scope.media,baby.id,now);
