@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Manual ONLY: same thirty virtual-family tasks, exact BabyMemo tool schema,
+// Manual ONLY: thirty V3 virtual-family tasks, exact BabyMemo tool schema,
 // same prompts/observations/scoring for Qwen Workers AI and Muse OpenRouter.
 // No production WeChat, D1, R2, personal messages or real tool side effects.
 import {writeFile} from 'node:fs/promises';
