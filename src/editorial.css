@@ -417,3 +417,18 @@ h1,h2,h3 { letter-spacing:normal; }
  .bm-modal-actions { flex-wrap:wrap; }
  .bm-modal-actions button { flex:1 1 auto; }
 }
+
+/* Intentional create action precedes the chart; record form is a task modal. */
+.record-create-toolbar { display:flex; justify-content:flex-end; align-items:center; margin:0 0 13px; }
+.record-create-toolbar .bm-button { min-height:44px; gap:8px; }
+.bm-story-modal .media-viewer-edit { padding:0; display:flex; flex-direction:column; gap:16px; }
+.bm-story-modal .media-viewer-edit textarea { min-height:160px; line-height:1.75; resize:vertical; }
+.bm-story-modal .bm-modal-actions { padding-top:3px; }
+@media(max-width:800px) {
+ .record-create-toolbar { margin-bottom:12px; }
+ .record-create-toolbar .bm-button { width:100%; justify-content:center; }
+ .bm-story-modal .media-viewer-edit textarea { min-height:180px; }
+}
+
+/* A modal-based growth creator needs no empty desktop sidebar. */
+.record-layout--single { grid-template-columns:minmax(0,1fr); }

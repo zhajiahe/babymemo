@@ -56,6 +56,22 @@ test('shared native modal gives album upload, baby create, and record edit corre
  assert.match(css,/\.bm-modal::backdrop/);
  assert.match(css,/safe-area-inset-bottom/);
 });
+test('growth add record has its own modal and edit drafts survive switching records',()=>{
+ assert.match(chart,/新增成长记录':'新增成长瞬间'/);
+ assert.match(chart,/open={!editing&&createOpen}/);
+ assert.match(chart,/title={kind==='growth'\?'新增成长记录':'新增成长瞬间'}/);
+ assert.match(chart,/className="record-create-toolbar"/);
+ assert.match(chart,/if\(editing\.id!==item\.id\)notify/);
+ assert.match(chart,/localStorage\.setItem\(draftKey,JSON\.stringify\(form\)\)/);
+ assert.match(chart,/editing\?readDraft\(draftKey,baby\.time_zone\)/);
+ assert.match(css,/\.record-create-toolbar \{ display:flex/);
+});
+test('album resets reused description but retains manually selected upload date',()=>{
+ assert.match(album,/setUploadDescription\(''\)/);
+ assert.match(album,/uploadDateTouched\.current=false/);
+ assert.match(album,/if\(!uploadDateTouched\.current\)setUploadDay\(today\(baby\.time_zone\)\)/);
+ assert.match(album,/uploadDateTouched\.current=true/);
+});
 test('growth chart supports tapping and keyboard selection',()=>{
  assert.match(chart,/setSelectedId\(p.id\)/);
  assert.match(chart,/role="button" tabIndex=\{0\}/);

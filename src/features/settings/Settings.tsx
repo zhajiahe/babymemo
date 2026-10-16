@@ -25,7 +25,12 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  const [babyBusy,setBabyBusy]=useState(false),[avatarBusy,setAvatarBusy]=useState(false),[exportBusy,setExportBusy]=useState(false);
  const [archived,setArchived]=useState<{id:string;name:string}[]>([]);
  const [showNewBaby,setShowNewBaby]=useState(false),[creatingBaby,setCreatingBaby]=useState(false),[createError,setCreateError]=useState('');
- const [newBaby,setNewBaby]=useState({name:'',birthday:'',birthTime:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
+ const newBabyDraftKey='babymemo-draft-new-baby-'+baby.id;
+ const [newBaby,setNewBaby]=useState(()=>{
+  try{const raw=localStorage.getItem(newBabyDraftKey);return raw?{name:'',birthday:'',birthTime:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:'',...JSON.parse(raw)}:{name:'',birthday:'',birthTime:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''}}
+  catch{return {name:'',birthday:'',birthTime:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''}}
+ });
+ useEffect(()=>{try{if(newBaby.name||newBaby.birthday||newBaby.birthTime||newBaby.allergies)localStorage.setItem(newBabyDraftKey,JSON.stringify(newBaby))}catch{/* The form remains usable without local device storage. */}},[newBaby,newBabyDraftKey]);
  const [qr,setQr]=useState(''),[pairingId,setPairingId]=useState(''),[qrImage,setQrImage]=useState(''),[status,setStatus]=useState(''),[verifyCode,setVerifyCode]=useState('');
  const [runStatuses,setRunStatuses]=useState<Record<string,WechatRunStatus>>({}),[inspectedMember,setInspectedMember]=useState('');
  const checkedWechat=state.wechat.connections.filter(member=>!!runStatuses[member.id]);
@@ -84,6 +89,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   setCreatingBaby(true);setCreateError('');
   try{
    const created=await post<{id:string}>('/api/babies',newBaby);
+   localStorage.removeItem(newBabyDraftKey);
    setNewBaby({name:'',birthday:'',birthTime:'',gender:'girl',timeZone:'Asia/Shanghai',allergies:''});
    setShowNewBaby(false);
    changed();
