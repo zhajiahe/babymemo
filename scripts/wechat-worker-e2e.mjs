@@ -462,6 +462,21 @@ await step('non-caption measurements are saved before the queued photo finishes'
  assert.equal(r.media.find(x=>x.source_message_id===src).description,'');
  assert.equal(r.media.find(x=>x.source_message_id===src).upload_state,'ready');
 });
+await step('pending image reference and mixed-message caption are available to the next text Agent turn',async()=>{
+ const photo=raw('context-image-caption');photo.item_list.push({type:1,text_item:{text:'测试宝宝今天第一次坐滑梯'}});
+ const r=await run({mode:'alarm',holdMedia:true,messages:[photo],
+  followupMessages:[textFrom('context-image-reference','synthetic-user','synthetic-bot','看看刚才那张照片的状态')],
+  responses:[tool('list_media',{id:'00000000'}),natural('我已核对相册资料。')],encryptedBase64:encrypt(jpeg)});
+ assert.equal(r.error,undefined);
+ const src='synthetic-bot:context-image-caption:image:0';
+ const saved=r.media.find(x=>x.source_message_id===src);
+ assert.ok(saved?.id);
+ // The receiving message's text must not disappear behind a generic media marker.
+ const followup=r.modelMessages.find(list=>list.at(-1)?.content==='看看刚才那张照片的状态');
+ assert.ok(followup,'Agent received the follow-up');
+ assert.ok(followup.some(x=>x.role==='user'&&x.content.includes(saved.id)&&x.content.includes('第一次坐滑梯')));
+ assert.doesNotMatch(JSON.stringify(followup),/aes_key|encrypt_query_param|novac2c/);
+});
 await step('a caption edits a real pending row and survives eventual file completion',async()=>{
  const r=await run({mode:'alarm',holdMedia:true,messages:[raw('placeholder-caption')],
   followupMessages:[textFrom('placeholder-description','synthetic-user','synthetic-bot','把刚刚那张照片描述为第一次去公园')],

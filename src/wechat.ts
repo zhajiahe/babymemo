@@ -2,11 +2,11 @@ import JSONBig from 'json-bigint';
 import type { Env, Baby } from './types';
 import { decryptSecret, encryptSecret, setting, resolveOpenRouterKey } from './crypto';
 import { wechatTools, wechatHelp, runWechatTool } from './wechat-harness.mjs';
-import {WechatPhotoError,mediaItems,mediaItemKind,persistWeChatMedia,reserveWechatMedia,failWechatMediaReservations,wechatMediaErrorCode} from './wechat-media.mjs';
+import {WechatPhotoError,mediaItems,mediaItemKind,fileAttachmentInfo,persistWeChatMedia,reserveWechatMedia,failWechatMediaReservations,wechatMediaErrorCode} from './wechat-media.mjs';
 import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {qwenCompletion,DEFAULT_AI_PROVIDER,friendlyWorkersAIError} from './qwen-workers-ai.mjs';
-import {getActiveThread,appendTurn,buildCommandContext,isClearContext} from './wechat-memory.mjs';
+import {getActiveThread,appendTurn,buildCommandContext,isClearContext,type MemoMediaReference} from './wechat-memory.mjs';
 import {wechatMessageText,hasWechatVoice} from './wechat-message.mjs';
 import {parseWechatIncoming,normalizedWechatMediaEnvelope} from './wechat-forward';
 import {hydrateWechatIncoming} from './wechat-attachment';
@@ -480,6 +480,7 @@ export class WechatSession {
         if(published)await this.ctx.storage.delete('mediaResult');
         const version=(await this.ctx.storage.get<number>('conversationVersion')||0)+1;
         const clear=!hasMedia&&isClearContext(text);
+        const mediaRefs:MemoMediaReference[]=[];
         let reply=row?.reply_text?await decryptSecret(this.env,row.reply_text):'';
         if(!reply){
           try{
@@ -498,6 +499,10 @@ export class WechatSession {
                if(payload.length>120000)reply='照片或视频消息过大，未接收保存任务，请分开发送。';
                else{
                 const reservedIds=await reserveWechatMedia(this.env,sourceRaw,baby,unique);
+                const acceptedRefs:MemoMediaReference[]=acceptedMedia.slice(0,reservedIds.length).map((item,i)=>{
+                 const file=fileAttachmentInfo(item);
+                 return {id:reservedIds[i],kind:mediaItemKind(item),...(file?{fileName:file.fileName}:{})};
+                });
                  const queued=await workerMediaBot(this.env,connectionId).fetch('https://bot.internal/media/enqueue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceId:unique,payload})});
                 if(!queued.ok)throw Error('WECHAT_MEDIA_QUEUE_UNAVAILABLE');
                 const result=await queued.json() as {accepted:boolean;alreadyDone?:boolean};
@@ -507,6 +512,7 @@ export class WechatSession {
                   if(rows.results.length===reservedIds.length&&rows.results.every(row=>row.upload_state==='ready')){
                    thread.selectedBabyId=baby.id;
                    thread.lastMedia={babyId:baby.id,ids:reservedIds,expiresAt:receivedAt+1200000};
+                   mediaRefs.push(...acceptedRefs);
                    reply='这些照片或视频之前已经保存过，无需重复导入。';
                   }else{
                    await failWechatMediaReservations(this.env,sourceRaw,baby.id,unique);
@@ -518,6 +524,7 @@ export class WechatSession {
                  }else{
                   thread.selectedBabyId=baby.id;
                   thread.lastMedia={babyId:baby.id,ids:reservedIds,expiresAt:receivedAt+1200000};
+                  mediaRefs.push(...acceptedRefs);
                   thread.pendingMedia={sourceId:unique,babyId:baby.id,expiresAt:receivedAt+1200000};
                   reply='已收到 '+acceptedMedia.length+' 项照片或视频，正在保存。保存结果会另行通知，其他文字记录可以继续发送。'+(unsupportedFiles?' 另有 '+unsupportedFiles+' 个不支持的文件未保存。':'');
                 }
@@ -541,7 +548,8 @@ export class WechatSession {
         // Persist operational context before transport acknowledgement; replay reuses it.
         if(clear)await this.ctx.storage.delete('conversation');
         else if((thread.selectedBabyId||thread.babyId)&&(text||hasMedia)){
-          const next=appendTurn(thread,hasMedia?(forwarded?'[微信转发内容]\n'+text.slice(0,1200):'[微信图片、视频或原文件附件]'):text,reply,thread.selectedBabyId||thread.babyId);
+          const contextText=hasMedia?(forwarded?'[微信转发材料，仅供阅读]\n'+text:(text||'[用户发送媒体消息]')):text;
+          const next=appendTurn(thread,contextText,reply,thread.selectedBabyId||thread.babyId,Date.now(),mediaRefs);
           await this.ctx.storage.put('conversation',next);
         }
         await ilink(base,'ilink/bot/sendmessage',{msg:{from_user_id:'',to_user_id:userId,client_id:clientId,message_type:2,message_state:2,context_token:raw.context_token,item_list:[{type:1,text_item:{text:reply.slice(0,1800)}}]},base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token);
