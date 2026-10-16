@@ -125,8 +125,11 @@ async function evaluate(modelProvider,item,iteration){
     const observation=syntheticObservation(checked.name,checked.args,item);
     // Tool acknowledgements are authoritative in the benchmark as in production:
     // never mark a rejected/missing recent-media batch as a committed write.
-    return {content:observation,committed:/^(create_|update_|delete_|restore_)/.test(checked.name)&&
-     item.observationCommitted!==false&&/^已(?:保存|更新|将|恢复)/.test(observation)};
+    const mutating=/^(create_|update_|delete_|restore_)/.test(checked.name);
+    const committed=mutating&&item.observationCommitted!==false&&/^已(?:保存|更新|将|恢复)/.test(observation);
+    // Mirror production: an uncommitted mutation halts further writes rather
+    // than letting another model round turn a failed operation into success.
+    return {content:observation,committed,halt:mutating&&!committed};
    }
   });
  }catch(e){error=e instanceof Error?e.message:'UNKNOWN_ERROR'}
