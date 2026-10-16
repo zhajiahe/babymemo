@@ -429,3 +429,6 @@ h1,h2,h3 { letter-spacing:normal; }
  .record-create-toolbar .bm-button { width:100%; justify-content:center; }
  .bm-story-modal .media-viewer-edit textarea { min-height:180px; }
 }
+
+/* A modal-based growth creator needs no empty desktop sidebar. */
+.record-layout--single { grid-template-columns:minmax(0,1fr); }
