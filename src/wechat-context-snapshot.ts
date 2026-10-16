@@ -4,8 +4,8 @@
  */
 import type {Env} from './types';
 import type {WechatBaby} from './wechat-tool-schema.ts';
-import {mediaCapabilities} from './wechat-capabilities.mjs';
-import type {ConversationMemo,ExpiringMemo} from './wechat-memory.mjs';
+import {mediaCapabilities} from './wechat-capabilities.ts';
+import type {ConversationMemo,ExpiringMemo} from './wechat-memory.ts';
 
 const TABLES:Record<string,string>={growth:'growth_records',milestones:'milestones',media:'media'};
 const idsOf=(ref:ExpiringMemo|null|undefined)=>Array.isArray(ref?.ids)
