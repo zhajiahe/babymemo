@@ -206,8 +206,8 @@ test('independent text after a photo is not swallowed as a photo description',()
 test('photo processing state cannot be reported as uploaded successfully',()=>{
  const item=scenario('photo-pending-status');
  assert.match(syntheticObservation('list_media',{},item),/状态：processing/);
- assert.equal(replay(item,[['list_media',{}]],'照片还在上传，尚未完成').result.passed,true);
- assert.equal(replay(item,[['list_media',{}]],'照片已保存完成').result.passed,false);
+ assert.equal(replay(item,[['list_media',{id:'f1111111-1111-4111-8111-111111111111'}]],'照片还在上传，尚未完成').result.passed,true);
+ assert.equal(replay(item,[['list_media',{id:'f1111111-1111-4111-8111-111111111111'}]],'照片已保存完成').result.passed,false);
 });
 test('multi-turn consent and refusal have opposite mutation permissions',()=>{
  const yes=scenario('story-confirm-create');
