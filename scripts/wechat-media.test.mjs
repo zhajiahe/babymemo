@@ -87,6 +87,28 @@ test('encrypted image decrypts, MIME is sniffed, and only JPEG bytes are persist
  assert.equal(env.rows.size,1);assert.equal(env.objects.size,1);
 });
 
+
+test('normal WeChat photo auto-archives by retained XMP capture date without file-attachment mode',async()=>{
+ const body=new TextEncoder().encode('http://ns.adobe.com/xap/1.0/'+String.fromCharCode(0)+
+  '<rdf:Description photoshop:DateCreated="2020-09-03" xmp:ModifyDate="2026-10-15"/>');
+ const bytes=new Uint8Array(2+4+body.length+2);
+ bytes.set([255,216,255,225]);new DataView(bytes.buffer).setUint16(4,body.length+2,false);
+ bytes.set(body,6);bytes.set([255,217],6+body.length);
+ const env=mockEnv();
+ const reply=await persistWeChatPhotos(env,raw,baby,'bot:image-xmp-only',
+  {fetchImpl:async()=>new Response(encrypted(bytes))});
+ assert.match(reply,/已保存.*1 张照片/);
+ const row=[...env.rows.values()][0];
+ assert.equal(row.day,'2020-09-03');
+ assert.equal(row.mime,'image/jpeg');
+ assert.deepEqual(env.objects.get(row.object_key).bytes,bytes);
+});
+test('normal WeChat photo with all metadata removed cannot gain a fabricated capture date',async()=>{
+ const env=mockEnv();
+ await persistWeChatPhotos(env,raw,baby,'bot:image-no-metadata',{fetchImpl:cdnFetch});
+ assert.equal([...env.rows.values()][0].day,new Date(Number(raw.create_time_ms)).toLocaleDateString('sv-SE',{timeZone:baby.time_zone}));
+});
+
 const fileItem=(name,len)=>({type:4,file_item:{file_name:name,len:String(len),media:{encrypt_query_param:'synthetic',aes_key:key.toString('base64')}}});
 const encrypted=bytes=>{const cipher=createCipheriv('aes-128-ecb',key,null);return Buffer.concat([cipher.update(bytes),cipher.final()])};
 test('only named image/video file attachments are admitted; no arbitrary files or paths',()=>{
