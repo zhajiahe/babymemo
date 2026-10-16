@@ -53,7 +53,7 @@ test('snapshot reads current D1 media status and reports original query provenan
  let state='processing';
  const env={DB:{prepare(sql){let params=[];return {bind(...args){params=args;return this},
  async all(){
-  if(sql.includes('FROM growth_records'))return {results:[{id:params[1].replace('%','')===id1?id1:id2}]};
+  if(sql.includes('FROM growth_records'))return {results:[{id:id1},{id:id2}]};
   if(sql.includes('FROM media'))return {results:[{id:params[0],baby_id:'a',title:'IMG_1001.HEIC',day:'2026-10-16',upload_state:state}]};
   throw Error('unexpected SQL '+sql);
  }}}}};
