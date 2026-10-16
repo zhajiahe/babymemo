@@ -874,8 +874,11 @@ async function browserE2e(){
       await page.locator('.sidebar .nav-link').filter({hasText:'成长'}).click();
       await page.getByRole('heading',{name:'成长记录'}).waitFor();
       if(await page.locator('.timeline-item').count()===0){
-        await page.locator('.record-editor-side input[type="number"]').first().fill('9.87');
-        await page.locator('.record-editor-side').getByRole('button',{name:/保存记录/}).click();
+        await page.getByRole('button',{name:'新增成长记录'}).click();
+        const create=page.getByRole('dialog',{name:'新增成长记录'});
+        await create.getByLabel('体重 · kg').fill('9.87');
+        await create.getByRole('button',{name:'保存记录'}).click();
+        await create.waitFor({state:'hidden'});
         await page.locator('.timeline-item').first().waitFor();
       }
       await page.locator('.timeline-item').first().getByRole('button',{name:'编辑记录'}).click();
@@ -948,15 +951,18 @@ async function browserE2e(){
       await img.waitFor();
       await page.waitForFunction(()=>document.querySelector('.media-viewer-stage img')?.naturalWidth > 0);
       await page.locator('.media-story-body').filter({hasText:'浏览器上传的描述'}).waitFor();
-      assert.equal(await page.locator('.media-viewer-edit').isVisible(),false);
+      assert.equal(await page.locator('.media-viewer-edit').count(),0);
       await page.getByRole('button',{name:'编辑故事'}).click();
-      assert.equal(await page.getByLabel('照片或视频描述').inputValue(),'浏览器上传的描述');
+      const storyDialog=page.getByRole('dialog',{name:'编辑照片故事'});
+      await storyDialog.waitFor();
+      assert.equal(await storyDialog.getByLabel('照片或视频描述').inputValue(),'浏览器上传的描述');
+      await page.screenshot({path:join(evidence,'story-editor-modal-desktop.png'),fullPage:false});
       await page.screenshot({path:join(evidence,'desktop-album-viewer.png'),fullPage:false});
     });
     await step((useWebKit?'WebKit':'Chromium')+': gallery metadata edit and delete',async()=>{
             await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
       await page.getByLabel('照片或视频描述').fill('浏览器编辑后的描述');
-      await page.getByRole('button',{name:/保存信息/}).click();
+      await page.getByRole('button',{name:'保存故事'}).click();
       await page.getByText('照片信息已更新').waitFor({timeout:15000});
       const source=await page.locator('.media-viewer-stage img').getAttribute('src');
       const deletedId=source?.match(/\/api\/media\/([^/]+)\/content/)?.[1];

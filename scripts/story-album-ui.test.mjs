@@ -37,11 +37,13 @@ test('preview reads the story first, with explicit editor and existing save safe
  assert.match(viewer,/className="media-story-body"/);
  assert.match(viewer,/aria-expanded={editing}/);
  assert.match(viewer,/aria-controls="media-story-edit"/);
- assert.match(viewer,/className="media-viewer-edit" id="media-story-edit" hidden={!editing}/);
+ assert.match(viewer,/<ModalDialog open={editing} onClose=\{\(\)=>setEditing\(false\)\}/);
+ assert.match(viewer,/className="media-viewer-edit" id="media-story-edit" onSubmit=/);
+ assert.match(viewer,/title={item.description/);
  assert.match(viewer,/if\(!editing\|\|draftId!==item.id\)return/);
  assert.match(viewer,/localStorage\.removeItem\('babymemo-draft-media-'/);
  assert.match(viewer,/setEditing\(false\)/);
  assert.match(viewer,/onSave\(\{day,description,requestId,expectedUpdatedAt:version\}\)/);
  assert.match(viewer,/onThumbnailSaved\(id,saved\.updated_at\)/);
- assert.match(css,/\.media-viewer-edit\[hidden\] \{ display:none!important/);
+ assert.match(css,/\.bm-story-modal \.media-viewer-edit/);
 });

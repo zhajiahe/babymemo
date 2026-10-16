@@ -8,8 +8,10 @@ export async function browserWebManagement({page,context,base,evidence,step}){
  const babyId=await page.locator('.settings-baby-switch select').inputValue();
  const requestHeaders={Origin:base,Cookie:(await context.cookies()).map(cookie=>cookie.name+'='+cookie.value).join(';')};
  await step('Chromium: web growth and milestone create/edit/query with complete baby profile',async()=>{
-  await nav('成长');await page.getByLabel('体重 · kg',{exact:true}).fill('11.55');await page.getByLabel('备注',{exact:true}).fill('web-ui-fixture');
-  await page.getByRole('button',{name:'保存记录',exact:true}).click();await page.locator('.timeline-item').filter({hasText:'web-ui-fixture'}).waitFor();
+  await nav('成长');await page.getByRole('button',{name:'新增成长记录'}).click();
+  const addGrowth=page.getByRole('dialog',{name:'新增成长记录'});await addGrowth.waitFor();
+  await addGrowth.getByLabel('体重 · kg',{exact:true}).fill('11.55');await addGrowth.getByLabel('备注',{exact:true}).fill('web-ui-fixture');
+  await addGrowth.getByRole('button',{name:'保存记录',exact:true}).click();await addGrowth.waitFor({state:'hidden'});await page.locator('.timeline-item').filter({hasText:'web-ui-fixture'}).waitFor();
   await page.locator('.timeline-item').filter({hasText:'web-ui-fixture'}).getByRole('button',{name:'编辑记录'}).click();
   await page.getByLabel('体重 · kg',{exact:true}).fill('12.25');await page.getByLabel('备注',{exact:true}).fill('web-ui-edited');await page.getByRole('button',{name:'保存修改',exact:true}).click();
   await page.locator('.timeline-item').filter({hasText:'web-ui-edited'}).waitFor();assert.match(await page.locator('.timeline-item').filter({hasText:'web-ui-edited'}).textContent(),/12\.25kg/);
@@ -34,12 +36,18 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   await nav('首页');await page.locator('.home-event').filter({hasText:'Pagination newest'}).waitFor();
  });
  await step('Chromium: offline page reopen preserves drafts and synchronizes exactly one record',async()=>{
-  await nav('成长');await page.waitForFunction(()=>!!navigator.serviceWorker.controller);await page.getByLabel('体重 · kg',{exact:true}).fill('13.4');await page.getByLabel('备注',{exact:true}).fill('offline-reopen-fixture');
+  await nav('成长');await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
+  await page.getByRole('button',{name:'新增成长记录'}).click();
+  await page.getByRole('dialog',{name:'新增成长记录'}).getByLabel('体重 · kg',{exact:true}).fill('13.4');
+  await page.getByRole('dialog',{name:'新增成长记录'}).getByLabel('备注',{exact:true}).fill('offline-reopen-fixture');
   await page.waitForFunction(id=>JSON.parse(localStorage.getItem('babymemo-draft-growth-'+id)||'{}').weight==='13.4',babyId);
   await context.setOffline(true);const reopened=await context.newPage();
   try{
-   await reopened.goto(base+'/',{waitUntil:'domcontentloaded'});await reopened.getByRole('heading',{name:'成长记录',exact:true}).waitFor();assert.equal(await reopened.getByLabel('体重 · kg',{exact:true}).inputValue(),'13.4');assert.equal(await reopened.getByLabel('备注',{exact:true}).inputValue(),'offline-reopen-fixture');
-   await reopened.getByRole('button',{name:'保存记录',exact:true}).click();await reopened.locator('.timeline-item').filter({hasText:'offline-reopen-fixture'}).waitFor();assert.match(await reopened.locator('.timeline-item').filter({hasText:'offline-reopen-fixture'}).textContent(),/待同步/);
+   await reopened.goto(base+'/',{waitUntil:'domcontentloaded'});await reopened.getByRole('heading',{name:'成长记录',exact:true}).waitFor();
+   await reopened.getByRole('button',{name:'新增成长记录'}).click();
+   const offlineAdd=reopened.getByRole('dialog',{name:'新增成长记录'});
+   assert.equal(await offlineAdd.getByLabel('体重 · kg',{exact:true}).inputValue(),'13.4');assert.equal(await offlineAdd.getByLabel('备注',{exact:true}).inputValue(),'offline-reopen-fixture');
+   await offlineAdd.getByRole('button',{name:'保存记录',exact:true}).click();await reopened.locator('.timeline-item').filter({hasText:'offline-reopen-fixture'}).waitFor();assert.match(await reopened.locator('.timeline-item').filter({hasText:'offline-reopen-fixture'}).textContent(),/待同步/);
    await reopened.reload();await reopened.locator('.timeline-item').filter({hasText:'offline-reopen-fixture'}).waitFor();await reopened.screenshot({path:join(evidence,'offline-pending-record.png'),fullPage:true});
    await context.setOffline(false);await reopened.waitForFunction(()=>!document.querySelector('.offline-status'),null,{timeout:30000});
    const r=await context.request.get(base+'/api/records/growth?babyId='+babyId+'&q=offline-reopen-fixture',{headers:requestHeaders});const data=await r.json();assert.equal(data.items.length,1);assert.equal(data.items[0].weight,13.4);
@@ -50,11 +58,11 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   const row=page.locator('.timeline-item').filter({hasText:'web-ui-edited'});
   await row.getByRole('button',{name:'编辑记录'}).click();await context.setOffline(true);
   await page.getByLabel('备注',{exact:true}).fill('offline-chain-one');await page.getByRole('button',{name:'保存修改',exact:true}).click();
-  await page.locator('.timeline-item').filter({hasText:'offline-chain-one'}).getByRole('button',{name:'编辑记录'}).click();await page.getByLabel('备注',{exact:true}).fill('offline-chain-two');await page.getByRole('button',{name:'保存修改',exact:true}).click();await page.locator('.timeline-item').filter({hasText:'offline-chain-two'}).waitFor();await page.getByRole('button',{name:'保存记录',exact:true}).waitFor();
+  await page.locator('.timeline-item').filter({hasText:'offline-chain-one'}).getByRole('button',{name:'编辑记录'}).click();await page.getByLabel('备注',{exact:true}).fill('offline-chain-two');await page.getByRole('button',{name:'保存修改',exact:true}).click();await page.locator('.timeline-item').filter({hasText:'offline-chain-two'}).waitFor();await page.getByRole('button',{name:'新增成长记录'}).waitFor();
   await context.setOffline(false);await page.waitForFunction(()=>!document.querySelector('.offline-status'),null,{timeout:30000});
   const list=await context.request.get(base+'/api/records/growth?babyId='+babyId+'&q=offline-chain-two',{headers:requestHeaders});const target=(await list.json()).items[0];assert.ok(target);
   await page.locator('.timeline-item').filter({hasText:'offline-chain-two'}).getByRole('button',{name:'编辑记录'}).click();
-  await context.setOffline(true);await page.getByLabel('备注',{exact:true}).fill('offline-conflict-preserved');await page.getByRole('button',{name:'保存修改',exact:true}).click();await page.locator('.timeline-item').filter({hasText:'offline-conflict-preserved'}).waitFor();await page.getByRole('button',{name:'保存记录',exact:true}).waitFor();
+  await context.setOffline(true);await page.getByLabel('备注',{exact:true}).fill('offline-conflict-preserved');await page.getByRole('button',{name:'保存修改',exact:true}).click();await page.locator('.timeline-item').filter({hasText:'offline-conflict-preserved'}).waitFor();await page.getByRole('button',{name:'新增成长记录'}).waitFor();
   // A different client changes D1 while the browser remains offline.
   const external=await fetch(base+'/api/records/growth/'+target.id,{method:'PATCH',headers:{...requestHeaders,'Content-Type':'application/json'},body:JSON.stringify({babyId,day:target.day,weight:14,height:null,headCircumference:null,notes:'server-conflict-wins',expectedUpdatedAt:target.updated_at})});assert.equal(external.status,200);
   await context.setOffline(false);await page.getByRole('button',{name:'查看待同步内容',exact:true}).click();await page.locator('.offline-jobs').getByText('记录已被其他设备修改。请重新载入后核对并编辑。',{exact:true}).waitFor();
@@ -73,15 +81,17 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   let dialog=page.getByRole('dialog',{name:'相册预览'});await dialog.waitFor();
   const mediaId=await dialog.locator('.media-viewer-stage img, .media-viewer-stage video').getAttribute('src').then(src=>src.split('/')[3]);
   await dialog.getByRole('button',{name:/^(写下故事|编辑故事)$/}).click();
-  await dialog.getByLabel('拍摄日期',{exact:true}).fill('2023-07-07');await dialog.getByRole('button',{name:'关闭预览',exact:true}).click();
-  await page.reload();await page.locator('.photo-preview').first().click();dialog=page.getByRole('dialog',{name:'相册预览'});await dialog.waitFor();await dialog.getByRole('button',{name:/^(写下故事|编辑故事)$/}).click();assert.equal(await dialog.getByLabel('拍摄日期',{exact:true}).inputValue(),'2023-07-07');
+  const storyEditor=page.getByRole('dialog',{name:/^(编辑照片故事|写下照片故事)$/});await storyEditor.waitFor();
+  await storyEditor.getByLabel('拍摄日期',{exact:true}).fill('2023-07-07');
+  await page.keyboard.press('Escape');await storyEditor.waitFor({state:'hidden'});await dialog.getByRole('button',{name:'关闭预览',exact:true}).click();
+  await page.reload();await page.locator('.photo-preview').first().click();dialog=page.getByRole('dialog',{name:'相册预览'});await dialog.waitFor();await dialog.getByRole('button',{name:/^(写下故事|编辑故事)$/}).click();assert.equal(await page.getByRole('dialog',{name:/^(编辑照片故事|写下照片故事)$/}).getByLabel('拍摄日期',{exact:true}).inputValue(),'2023-07-07');
   const detail=await context.request.get(base+'/api/media/'+mediaId,{headers:requestHeaders});const previous=await detail.json();
   const external=await context.request.patch(base+'/api/media/'+mediaId,{headers:requestHeaders,data:{babyId,day:'2023-07-09',expectedUpdatedAt:previous.updated_at}});assert.equal(external.status(),200);
-  await dialog.getByRole('button',{name:'保存信息',exact:true}).click();await dialog.getByText('记录已被其他设备修改。请重新载入后核对并编辑。',{exact:true}).waitFor();
+  await page.getByRole('dialog',{name:/^(编辑照片故事|写下照片故事)$/}).getByRole('button',{name:'保存故事',exact:true}).click();await dialog.getByText('记录已被其他设备修改。请重新载入后核对并编辑。',{exact:true}).waitFor();
   assert.equal(await dialog.getByLabel('拍摄日期',{exact:true}).inputValue(),'2023-07-07');page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'核对服务器版本（保留草稿）',exact:true}).click();await dialog.getByRole('button',{name:'核对服务器版本（保留草稿）',exact:true}).waitFor({state:'hidden'});
-  await dialog.getByRole('button',{name:'保存信息',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.media-viewer-header strong')?.textContent==='2023-07-07');
+  await page.getByRole('dialog',{name:/^(编辑照片故事|写下照片故事)$/}).getByRole('button',{name:'保存故事',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.media-viewer-header strong')?.textContent==='2023-07-07');
   await dialog.getByRole('button',{name:/^(写下故事|编辑故事)$/}).click();
-  await dialog.getByLabel('拍摄日期',{exact:true}).fill('2023-07-08');await dialog.getByRole('button',{name:'保存信息',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.media-viewer-header strong')?.textContent==='2023-07-08');await dialog.getByRole('button',{name:'关闭预览',exact:true}).click();
+  await dialog.getByLabel('拍摄日期',{exact:true}).fill('2023-07-08');await page.getByRole('dialog',{name:/^(编辑照片故事|写下照片故事)$/}).getByRole('button',{name:'保存故事',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.media-viewer-header strong')?.textContent==='2023-07-08');await dialog.getByRole('button',{name:'关闭预览',exact:true}).click();
  });
  await step('Chromium: offline original upload survives reload and logout clears private device data',async()=>{
   await nav('相册');await page.getByRole('button',{name:'添加照片或视频',exact:true}).first().click();await context.setOffline(true);
