@@ -105,8 +105,30 @@ test('normal WeChat photo auto-archives by retained XMP capture date without fil
 });
 test('normal WeChat photo with all metadata removed cannot gain a fabricated capture date',async()=>{
  const env=mockEnv();
- await persistWeChatPhotos(env,raw,baby,'bot:image-no-metadata',{fetchImpl:cdnFetch});
+ const reply=await persistWeChatPhotos(env,raw,baby,'bot:image-no-metadata',{fetchImpl:cdnFetch});
  assert.equal([...env.rows.values()][0].day,new Date(Number(raw.create_time_ms)).toLocaleDateString('sv-SE',{timeZone:baby.time_zone}));
+ assert.match(reply,/1 项未读取到原始拍摄日期，暂按微信发送日期归档/);
+ assert.match(reply,/网页相册中修改/);
+});
+test('camera EXIF date does not trigger send-date fallback warning',async()=>{
+ const bytes=exifJpeg(),env=mockEnv();
+ const reply=await persistWeChatPhotos(env,raw,baby,'bot:camera-exif',{
+  fetchImpl:async()=>new Response(encrypted(bytes))
+ });
+ assert.equal([...env.rows.values()][0].day,'2020-09-03');
+ assert.doesNotMatch(reply,/未读取到原始拍摄日期/);
+});
+test('retained XMP camera date also does not trigger fallback warning',async()=>{
+ const body=new TextEncoder().encode('http://ns.adobe.com/xap/1.0/'+String.fromCharCode(0)+'<rdf:Description xmp:CreateDate="2020-09-03"/>');
+ const bytes=new Uint8Array(2+4+body.length+2);
+ bytes.set([255,216,255,225]);new DataView(bytes.buffer).setUint16(4,body.length+2,false);
+ bytes.set(body,6);bytes.set([255,217],6+body.length);
+ const env=mockEnv();
+ const reply=await persistWeChatPhotos(env,raw,baby,'bot:xmp-capture',{
+  fetchImpl:async()=>new Response(encrypted(bytes))
+ });
+ assert.equal([...env.rows.values()][0].day,'2020-09-03');
+ assert.doesNotMatch(reply,/未读取到原始拍摄日期/);
 });
 
 const fileItem=(name,len)=>({type:4,file_item:{file_name:name,len:String(len),media:{encrypt_query_param:'synthetic',aes_key:key.toString('base64')}}});
