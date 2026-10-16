@@ -52,7 +52,7 @@ export function validateReferenceMutation(input:{
  const index=ordinal(text);
  const kind=action.includes('growth')?'growth':action.includes('milestone')?'milestones':action.includes('media')?'media':null;
  if(index!==null&&kind){
-  const sameMessageQuery=/先(?:查|查询|找)|查询(?:后|一下).*?(?:再|然后)/.test(text);
+  const sameMessageQuery=!/(?:刚才|上次|前面)/.test(text)&&/先(?:查|查询|找)|查询(?:后|一下).*?(?:再|然后)/.test(text);
   const candidate=sameMessageQuery&&input.currentQuery?.sourceMessageId===messageId
    ?input.currentQuery:scope.query;
   const ref=referenceState(candidate,babyId,at);
