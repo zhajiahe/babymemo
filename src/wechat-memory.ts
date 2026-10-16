@@ -50,7 +50,7 @@ export function getActiveThread(saved:ConversationMemo|null|undefined,botId:stri
   lastMedia:within(saved.lastMedia)?copy(saved.lastMedia):null,
   lastOperation:within(saved.lastOperation)?copy(saved.lastOperation):null,
   pendingMedia:within(saved.pendingMedia)?copy(saved.pendingMedia):null,
-  invalidReferences:within(saved.invalidReferences)?copy(saved.invalidReferences):null};
+  invalidReferences:within(saved.invalidReferences??null)?copy(saved.invalidReferences??null):null};
 }
 export function appendTurn(thread:ConversationMemo,user:string,reply:string,babyId:string,now:number=Date.now(),media:MemoMediaReference[]=[]):ConversationMemo{
  const refs=safeMediaRefs(media);
