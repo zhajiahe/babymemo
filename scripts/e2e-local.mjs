@@ -930,6 +930,31 @@ async function browserE2e(){
       await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
       await page.setViewportSize({width:1280,height:860});
     });
+    await step((useWebKit?'WebKit':'Chromium')+': add a milestone through its modal and preserve draft on Escape',async()=>{
+      await page.locator('.sidebar .nav-link').filter({hasText:'瞬间'}).click();
+      await page.getByRole('heading',{name:'成长瞬间'}).waitFor();
+      const add=page.getByRole('button',{name:'新增成长瞬间'});
+      await add.click();
+      const modal=page.getByRole('dialog',{name:'新增成长瞬间'});
+      await modal.waitFor();
+      await modal.getByLabel('事件标题').fill('未完成的第一次');
+      await page.keyboard.press('Escape');
+      await modal.waitFor({state:'hidden'});
+      await add.click();
+      assert.equal(await modal.getByLabel('事件标题').inputValue(),'未完成的第一次','Milestone draft must survive Escape');
+      await modal.getByLabel('事件标题').fill('浏览器新增的成长瞬间');
+      await modal.getByLabel('故事内容').fill('留住一个特别的日子');
+      for(const width of [320,390,768]){
+        await page.setViewportSize({width,height:812});
+        const bounds=await modal.evaluate(el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,height:r.height,viewport:innerWidth}});
+        assert.ok(bounds.left>=-1&&bounds.right<=bounds.viewport+1,'Milestone editor fits width '+width+': '+JSON.stringify(bounds));
+        if(width===390)await page.screenshot({path:join(evidence,'add-milestone-modal-390.png'),fullPage:false});
+      }
+      await page.setViewportSize({width:1280,height:860});
+      await modal.getByRole('button',{name:'保存记录'}).click();
+      await modal.waitFor({state:'hidden'});
+      await page.locator('.timeline-item').filter({hasText:'浏览器新增的成长瞬间'}).waitFor();
+    });
     await step((useWebKit?'WebKit':'Chromium')+': gallery is photo-first; maintenance is out of product',async()=>{
       // Generate a browser-native PNG so WebKit and Chromium decode the same valid fixture.
       const pngBase64=await page.evaluate(()=>{

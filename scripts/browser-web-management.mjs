@@ -17,7 +17,11 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   await page.locator('.timeline-item').filter({hasText:'web-ui-edited'}).waitFor();assert.match(await page.locator('.timeline-item').filter({hasText:'web-ui-edited'}).textContent(),/12\.25kg/);
   await page.locator('.record-filter-toggle').click();await page.getByLabel('关键词',{exact:true}).fill('web-ui-edited');await page.getByRole('button',{name:'查询',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.timeline-item').length===1);
   await page.locator('.record-filter-toggle').click();await page.getByRole('button',{name:'清除筛选',exact:true}).click();
-  await nav('瞬间');await page.getByLabel('事件标题',{exact:true}).fill('Web moment fixture');await page.getByLabel('故事内容',{exact:true}).fill('完整网页入口');await page.getByRole('button',{name:'保存记录',exact:true}).click();
+  await nav('瞬间');await page.getByRole('button',{name:'新增成长瞬间'}).click();
+  const addMoment=page.getByRole('dialog',{name:'新增成长瞬间'});await addMoment.waitFor();
+  await addMoment.getByLabel('事件标题',{exact:true}).fill('Web moment fixture');
+  await addMoment.getByLabel('故事内容',{exact:true}).fill('完整网页入口');
+  await addMoment.getByRole('button',{name:'保存记录',exact:true}).click();await addMoment.waitFor({state:'hidden'});
   await page.locator('.timeline-item').filter({hasText:'Web moment fixture'}).getByRole('button',{name:'编辑记录'}).click();await page.getByLabel('事件标题',{exact:true}).fill('Web moment edited');await page.getByRole('button',{name:'保存修改',exact:true}).click();await page.locator('.timeline-item').filter({hasText:'Web moment edited'}).waitFor();
   await nav('设置');await page.getByLabel('过敏与注意事项',{exact:true}).fill('测试花生过敏');await page.getByLabel('档案备注',{exact:true}).fill('完整档案备注');await page.getByLabel('宝宝时区',{exact:true}).selectOption('Asia/Tokyo');const profileRefresh=page.waitForResponse(response=>response.url().endsWith('/api/state')&&response.ok());await page.getByRole('button',{name:'保存资料',exact:true}).click();
   await profileRefresh;await page.reload();assert.equal(await page.getByLabel('过敏与注意事项',{exact:true}).inputValue(),'测试花生过敏');

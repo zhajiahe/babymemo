@@ -57,9 +57,10 @@ test('shared native modal gives album upload, baby create, and record edit corre
  assert.match(css,/safe-area-inset-bottom/);
 });
 test('growth add record has its own modal and edit drafts survive switching records',()=>{
- assert.match(chart,/新增成长记录<\/Button>/);
- assert.match(chart,/open={kind==='growth'&&!editing&&createOpen}/);
- assert.match(chart,/title="新增成长记录"/);
+ assert.match(chart,/新增成长记录':'新增成长瞬间'/);
+ assert.match(chart,/open={!editing&&createOpen}/);
+ assert.match(chart,/title={kind==='growth'\?'新增成长记录':'新增成长瞬间'}/);
+ assert.match(chart,/className="record-create-toolbar"/);
  assert.match(chart,/if\(editing\.id!==item\.id\)notify/);
  assert.match(chart,/localStorage\.setItem\(draftKey,JSON\.stringify\(form\)\)/);
  assert.match(chart,/editing\?readDraft\(draftKey,baby\.time_zone\)/);
