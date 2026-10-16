@@ -17,6 +17,8 @@ jobs:
       - run: node --check scripts/provision-cloudflare.mjs && node --check scripts/smoke-check.mjs && node --check scripts/family-backup.mjs && node --check scripts/reconcile-birth-time.mjs && node --check scripts/prepare-openrouter-secret.mjs
       - run: npm run check
       - run: npm run test:unit
+      - name: Offline 20-turn and media-reference Harness stress (no model usage)
+        run: HARNESS_CASES=1200 npm run test:harness:deep
       - run: npm run build
 
   e2e:
