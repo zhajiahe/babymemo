@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {wechatTools} from '../src/wechat-harness.mjs';
 import {runWechatAgentLoop} from '../src/wechat-agent-loop.mjs';
-import {MODEL_BENCH_CASES,BENCHMARK_ID,BENCHMARK_SYSTEM,benchmarkMessages,syntheticObservation,validateBenchmarkTool,scoreModelCase,classifyBenchmarkIssues,aggregateBenchmark} from './model-benchmark-cases.mjs';
+import {MODEL_BENCH_CASES,BENCHMARK_ID,BENCHMARK_SYSTEM,benchmarkMessages,benchmarkSnapshot,syntheticObservation,validateBenchmarkTool,scoreModelCase,classifyBenchmarkIssues,aggregateBenchmark} from './model-benchmark-cases.mjs';
 import {wechatSystemPrompt} from '../src/wechat-prompt.mjs';
 
 const call=(name,args={})=>({id:'fixture_'+name,type:'function',function:{name,arguments:JSON.stringify(args)}});
 test('both providers share exactly thirty synthetic BabyMemo tasks',()=>{
  assert.equal(MODEL_BENCH_CASES.length,30);
- assert.equal(BENCHMARK_ID,'babymemo-model-parity-v3.1');
+ assert.equal(BENCHMARK_ID,'babymemo-model-parity-v3.2-state');
  assert.equal(BENCHMARK_SYSTEM,wechatSystemPrompt({babyName:'测试宝宝',localDay:'2026-10-14',timeZone:'Asia/Shanghai'}));
  assert.ok(MODEL_BENCH_CASES.every(x=>x.id&&x.message));
  assert.equal(new Set(MODEL_BENCH_CASES.map(x=>x.id)).size,30);
@@ -126,7 +126,11 @@ test('V3 keeps thirty comparable-sized tasks and adds real short-session/media r
  assert.equal(MODEL_BENCH_CASES.length,30);
  assert.equal(new Set(MODEL_BENCH_CASES.map(x=>x.id)).size,30);
  assert.ok(ids.slice(0,6).every(id=>benchmarkMessages(scenario(id)).length>2));
- assert.equal(benchmarkMessages(scenario('baby-switch-context')).length,2,'the other baby’s record ID is not in this baby’s context');
+ assert.equal(benchmarkMessages(scenario('baby-switch-context')).length,3,'the other baby’s record ID is not in this baby’s context');
+ assert.equal(benchmarkSnapshot(scenario('baby-switch-context')).references.invalidated.reason,'baby_changed');
+ assert.equal(benchmarkSnapshot(scenario('photo-pending-status')).recentMedia[0].capabilities.editDescription,true);
+ assert.equal(benchmarkSnapshot(scenario('photo-pending-status')).recentMedia[0].capabilities.claimUploadComplete,false);
+ assert.equal(benchmarkSnapshot(scenario('file-attachment-reference')).recentMedia[0].capabilities.claimUploadComplete,true);
  assert.equal(benchmarkMessages(scenario('photo-then-measurement'))[0].content,BENCHMARK_SYSTEM);
 });
 test('contradictory measurement and 斤 conversion reject wrong dates and numbers',()=>{
