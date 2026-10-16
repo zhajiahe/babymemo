@@ -1,7 +1,7 @@
 import type {Env} from './types';
 import type {WechatBaby} from './wechat-tool-schema.ts';
 import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
-import {mediaCapabilities,explainMediaCapabilities} from './wechat-capabilities.mjs';
+import {mediaCapabilities,explainMediaCapabilities} from './wechat-capabilities.ts';
 export type Kind='growth'|'milestones'|'media';
 export type DbRow=Record<string,any>&{id:string;day:string;baby_id:string};
 export type ToolOptions={at?:number;thread?:any;messageId?:string};
