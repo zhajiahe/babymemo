@@ -272,8 +272,8 @@ test('V3 separates operation correctness, safety failures, and answer quality',(
 
 test('V3 original-file references keep photo and video distinct, requiring verified video ID and date',()=>{
  const item=scenario('file-attachment-reference'),messages=benchmarkMessages(item);
- assert.equal(messages.length,4);
- const historical=messages[1].content;
+ assert.equal(messages.length,5);
+ const historical=messages[2].content;
  assert.match(historical,/IMG_1001.HEIC/);
  assert.match(historical,/IMG_1002.MOV/);
  assert.match(historical,/f1111111-1111-4111-8111-111111111111/);
@@ -289,11 +289,11 @@ test('V3 original-file references keep photo and video distinct, requiring verif
 });
 test('V3 last 20 short turns are assembled with real context window, and file ID never leaks across babies',()=>{
  const q=benchmarkMessages(scenario('photo-then-query'));
- assert.equal(q.length,42,'system + 20 user/assistant pairs + question');
+ assert.equal(q.length,43,'prompt + snapshot + 20 user/assistant pairs + question');
  assert.ok(q.some(x=>x.content.includes('f1111111-1111-4111-8111-111111111111')));
  assert.equal(q.at(-1).content,'对了，查询宝宝最近五次体重记录');
  const other=benchmarkMessages(scenario('baby-switch-context'));
- assert.equal(other.length,2);
+ assert.equal(other.length,3);
  assert.doesNotMatch(JSON.stringify(other),/aaaaaaaa|哥哥/);
  assert.ok(other[0].content.includes('妹妹'));
 });
