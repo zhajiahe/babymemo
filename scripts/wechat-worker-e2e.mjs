@@ -404,7 +404,8 @@ try{
   const finalRequest=r.modelMessages[3];
   assert.deepEqual(finalRequest.filter(x=>x.role==='user').slice(0,3).map(x=>x.content),messages.slice(0,3));
   assert.equal(finalRequest.at(-1).content,'记下来');
-  assert.match(finalRequest[0].content,/日记和里程碑共用/);
+  assert.match(finalRequest[0].content,/日记和里程碑.*create_milestone/);
+  assert.match(finalRequest[0].content,/没有用户明确同意不写入/);
   assert.equal(r.modelMessages[4].at(-1).role,'tool');
   assert.equal(r.messages.filter(m=>m.message_id.startsWith('synthetic-bot:diary-turn-')&&m.state==='done').length,4);
  });
