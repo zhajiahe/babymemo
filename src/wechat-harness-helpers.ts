@@ -65,7 +65,7 @@ export async function update(env:Env,kind:Kind,record:DbRow,changes:Record<strin
   const r=await stmt.run();return r.meta.changes?'已更新'+labelForKind[kind]+'（编号 '+short(record.id)+'）。':'记录已发生变化';
  }
  const opId=await auditChange(env,{sourceId:options.messageId,babyId:record.baby_id,kind,recordId:record.id,
-   action:'update',before:operationSnapshot(kind,record),after:snapshotChanges(kind,record,changes),statement:stmt});
+   action:kind==='media'&&names.includes('day')?'update_day':'update',before:operationSnapshot(kind,record),after:snapshotChanges(kind,record,changes),statement:stmt});
  if(opId&&options.thread)options.thread.lastOperation={babyId:record.baby_id,opId,expiresAt:(options.at||Date.now())+1200000};
  return opId?'已更新'+labelForKind[kind]+'（编号 '+short(record.id)+'）。':'记录已发生变化，请重新查询';
 }
