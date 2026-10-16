@@ -161,7 +161,7 @@ export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,a
     statements.push(env.DB.prepare('UPDATE media SET '+names.map(k=>k+'=?').join(',')+' WHERE id=? AND baby_id=? AND deleted_at IS NULL AND COALESCE(upload_state,\'ready\') IN (\'processing\',\'ready\') AND purge_token IS NULL AND '+names.map(k=>k+' IS ?').join(' AND '))
       .bind(...names.map(k=>changes[k]),id,baby.id,...names.map(k=>previous[k]??null)));
     statements.push(env.DB.prepare('INSERT OR IGNORE INTO wechat_operation_log(id,source_message_id,baby_id,kind,record_id,action,before_json,after_json,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE changes()>0')
-      .bind(opId,messageId+':media:'+i,baby.id,'media',id,'update_recent_media',
+      .bind(opId,messageId+':media:'+i,baby.id,'media',id,names.includes('day')?'update_recent_media_day':'update_recent_media',
        JSON.stringify(operationSnapshot('media',previous)),JSON.stringify(snapshotChanges('media',previous,changes)),new Date().toISOString()));
    }
    const results=await env.DB.batch(statements);
