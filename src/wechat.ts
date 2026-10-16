@@ -7,7 +7,7 @@ import {openRouterCompletion,friendlyOpenRouterError} from './openrouter-retry.m
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {qwenCompletion,DEFAULT_AI_PROVIDER,friendlyWorkersAIError} from './qwen-workers-ai.mjs';
 import {getActiveThread,appendTurn,buildCommandContext,isClearContext,type MemoMediaReference} from './wechat-memory.mjs';
-import {captureMessageReferences,buildWechatContextSnapshot} from './wechat-context-snapshot.mjs';
+import {captureMessageReferences,buildWechatContextSnapshot} from './wechat-context-snapshot.ts';
 import {wechatMessageText,hasWechatVoice} from './wechat-message.mjs';
 import {parseWechatIncoming,normalizedWechatMediaEnvelope} from './wechat-forward';
 import {hydrateWechatIncoming} from './wechat-attachment';
