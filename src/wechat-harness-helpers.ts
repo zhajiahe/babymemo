@@ -39,6 +39,15 @@ export async function findTarget(env:Env,babyId:string,kind:Kind,args:Record<str
 }
 export async function listItems(env:Env,baby:WechatBaby,kind:Kind,args:Record<string,any>){
  const table=tableForKind[kind];
+ if(kind==='media'&&args.id!==undefined){
+  if(typeof args.id!=='string'||!/^[0-9a-f-]{8,36}$/i.test(args.id))return '相册编号格式不正确，请提供至少前 8 位编号';
+  const rows=await env.DB.prepare('SELECT * FROM media WHERE baby_id=? AND deleted_at IS NULL AND id LIKE ? LIMIT 2')
+   .bind(baby.id,args.id+'%').all<DbRow>();
+  if(rows.results.length!==1)return rows.results.length?'编号不唯一，请使用完整编号':'这位宝宝的相册中没有该编号的媒体记录';
+  const r=rows.results[0];
+  return baby.name+' 的相册记录：'+r.id+' · '+r.day+' · '+(r.mime||'未知类型')+' · '+String(r.title||'').slice(0,120)+
+   ' · 状态：'+(r.upload_state||'ready')+(r.description?' · 描述：'+String(r.description).slice(0,400):'');
+ }
  const clauses=['baby_id=?','deleted_at IS NULL'],params=[baby.id];
  if(args.day!==undefined){if(!validDate(args.day))return '请提供有效日期';clauses.push('day=?');params.push(args.day)}
  if(args.title!==undefined&&kind==='media'){const name=cleanText(args.title,60);if(!name)return '请提供照片或视频名称';clauses.push('title LIKE ?');params.push('%'+name+'%')}
