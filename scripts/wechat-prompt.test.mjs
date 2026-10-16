@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {wechatSystemPrompt,wechatFinalMessages} from '../src/wechat-prompt.mjs';
-import {wechatTools} from '../src/wechat-tool-schema.mjs';
+import {wechatTools} from '../src/wechat-tool-schema.ts';
 test('system prompt stays brief and free of age/intent heuristics',()=>{
  const s=wechatSystemPrompt({babyName:'小好',localDay:'2026-10-13',timeZone:'Asia/Shanghai'});
  assert.ok(s.length<350,'Prompt grew to '+s.length);
