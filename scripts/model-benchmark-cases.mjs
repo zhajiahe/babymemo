@@ -3,44 +3,61 @@
 // tool observations and scoring for OpenRouter and Workers AI.
 import {wechatSystemPrompt} from '../src/wechat-prompt.mjs';
 import {claimsUnverifiedWrite} from '../src/wechat-agent-loop.mjs';
-export const BENCHMARK_ID='babymemo-model-parity-v2';
+import {getActiveThread,appendTurn,buildCommandContext} from '../src/wechat-memory.mjs';
+export const BENCHMARK_ID='babymemo-model-parity-v3';
 export const BENCHMARK_DATE='2026-10-14'; // Stable fixture date: yesterday = 2026-10-13.
 export const BENCHMARK_SYSTEM=wechatSystemPrompt({babyName:'测试宝宝',localDay:BENCHMARK_DATE,timeZone:'Asia/Shanghai'});
 // Text after a photo is not necessarily a description. History represents
 // independently delivered, fictional WeChat turns (not actual media transport).
 export function benchmarkMessages(item){
- const babyName=item.babyName||'测试宝宝';
- const history=item.history||[];
- if(history.some(m=>!['user','assistant'].includes(m.role)||typeof m.content!=='string'))
-  throw Error('INVALID_BENCHMARK_HISTORY');
+ const babyName=item.babyName||'测试宝宝',babyId=item.babyId||'benchmark-baby',history=item.history||[];
+ if(history.some(m=>!['user','assistant'].includes(m.role)||typeof m.content!=='string'))throw Error('INVALID_BENCHMARK_HISTORY');
+ if(item.contextTurns&&history.length)throw Error('AMBIGUOUS_BENCHMARK_CONTEXT');
+ let dialogue=history.map(m=>({role:m.role,content:m.content}));
+ if(item.contextTurns){
+  const now=Date.parse('2026-10-14T12:00:00+08:00');
+  let thread=getActiveThread(null,'benchmark-bot','benchmark-user',now);
+  for(const [i,turn] of item.contextTurns.entries()){
+   if(typeof turn.user!=='string'||typeof turn.reply!=='string')throw Error('INVALID_BENCHMARK_TURN');
+   thread=appendTurn(thread,turn.user,turn.reply,turn.babyId||babyId,now+i,turn.media||[]);
+  }
+  dialogue=buildCommandContext(item.message,thread,now+1000,babyId).modelMessages.slice(0,-1);
+ }
  return [
   {role:'system',content:wechatSystemPrompt({babyName,localDay:BENCHMARK_DATE,timeZone:'Asia/Shanghai'})},
-  ...history.map(m=>({role:m.role,content:m.content})),
+  ...dialogue,
   {role:'user',content:item.message}
  ];
 }
+const PHOTO_ID='f1111111-1111-4111-8111-111111111111';
+const VIDEO_FILE_ID='f2222222-2222-4222-8222-222222222222';
+const PHOTO_TURN={user:'给测试宝宝发了一张照片',reply:'已收到照片，正在后台保存。',media:[{id:PHOTO_ID,kind:'image'}]};
+const ORIGINAL_FILE_TURN={user:'给测试宝宝发送两份微信原文件附件',reply:'照片和视频已接收，正在保存。',media:[
+ {id:PHOTO_ID,kind:'image',fileName:'IMG_1001.HEIC'},
+ {id:VIDEO_FILE_ID,kind:'video',fileName:'IMG_1002.MOV'}
+]};
 
 export const MODEL_BENCH_CASES=Object.freeze([
- {id:'growth-read',name:'查询最近体重',message:'查询测试宝宝最近五条体重记录',required:['list_growth'],forbidWrites:true},
+ {id:'growth-read',name:'查询最近体重',message:'查询测试宝宝最近五条体重记录',required:['list_growth'],forbidWrites:true,replyAll:['10.5']},
  {id:'growth-create',name:'新增身高体重',message:'测试宝宝今天体重10.5kg，身高82cm，帮我记录',required:['create_growth'],args:{create_growth:{day:'2026-10-14',weight:10.5,height:82}}},
  {id:'milestone-create',name:'新增里程碑',message:'测试宝宝今天第一次自己走了五步，记成里程碑',required:['create_milestone'],args:{create_milestone:{day:'2026-10-14'}}},
- {id:'photo-description-followup',name:'照片后补充描述',history:[{role:'user',content:'[发送一张宝宝照片]'},{role:'assistant',content:'收到照片，正在上传；可以继续补充这张照片的故事。'}],message:'刚才那张照片是宝宝第一次在海边踩沙子，请把“第一次在海边踩沙子”加到照片描述里',required:['update_recent_media'],args:{update_recent_media:{description:'第一次在海边踩沙子'}},noExtraWrites:true,replyAny:['海边','沙子','描述']},
- {id:'photo-then-measurement',name:'照片后发送独立测量',history:[{role:'user',content:'[发送一张宝宝照片]'},{role:'assistant',content:'照片正在上传。'}],message:'另外，宝宝今天实际称重10.6kg，帮我记录体重',required:['create_growth'],args:{create_growth:{day:'2026-10-14',weight:10.6}},noExtraWrites:true,replyAll:['10.6']},
+ {id:'photo-description-followup',name:'照片后补充描述',contextTurns:[PHOTO_TURN],message:'刚才那张照片是宝宝第一次在海边踩沙子，请把“第一次在海边踩沙子”加到照片描述里',required:['update_recent_media'],args:{update_recent_media:{description:'第一次在海边踩沙子'}},noExtraWrites:true,replyAny:['海边','沙子','描述']},
+ {id:'photo-then-measurement',name:'照片后发送独立测量',contextTurns:[PHOTO_TURN],message:'另外，宝宝今天实际称重10.6kg，帮我记录体重',required:['create_growth'],args:{create_growth:{day:'2026-10-14',weight:10.6}},noExtraWrites:true,replyAll:['10.6']},
  {id:'growth-update',name:'先查再更正',message:'把测试宝宝昨天的体重10.5kg，先查出来，再更正成10.2kg',required:['list_growth','update_growth'],args:{update_growth:{weight:10.2}},ordered:true},
  {id:'negated-save',name:'否定写入',message:'不要保存，刚才说的10.5kg只是猜的，没实际称重',required:[],forbidWrites:true},
- {id:'media-read',name:'按日期查相册',message:'看看测试宝宝10月1日的照片',required:['list_media'],forbidWrites:true},
- {id:'media-update',name:'更正刚发照片日期',message:'把刚才发的照片日期改成昨天',required:['update_recent_media'],args:{update_recent_media:{newDay:'2026-10-13'}}},
- {id:'photo-then-query',name:'照片后文字其实是查询',history:[{role:'user',content:'[发送一张宝宝照片]'},{role:'assistant',content:'照片正在上传。'}],message:'对了，查询宝宝最近五次体重记录',required:['list_growth'],args:{list_growth:{limit:5}},forbidWrites:true},
+ {id:'media-read',name:'按日期查相册',message:'看看测试宝宝10月1日的照片',required:['list_media'],forbidWrites:true,replyAny:['照片','相册']},
+ {id:'file-attachment-reference',name:'两份微信原文件按编号只修改视频日期',contextTurns:[ORIGINAL_FILE_TURN],message:'刚发的两份原文件中，只把第二个 MOV 视频的拍摄日期改成昨天，第一张 HEIC 照片不要动。请先核实视频记录',required:['list_media','update_media'],ordered:true,noExtraWrites:true,args:{list_media:{id:VIDEO_FILE_ID},update_media:{newDay:'2026-10-13'}},targets:{update_media:VIDEO_FILE_ID},replyAny:['视频','MOV','日期']},
+ {id:'photo-then-query',name:'20轮短期会话后独立查询不能误改照片',contextTurns:[...Array.from({length:19},(_,i)=>({user:'测试宝宝这周的日常讨论片段 '+i,reply:'好的，我理解这段讨论 '+i})),PHOTO_TURN],message:'对了，查询宝宝最近五次体重记录',required:['list_growth'],args:{list_growth:{limit:5}},forbidWrites:true,replyAll:['10.5']},
  {id:'profile-allergy',name:'先读档案再补充过敏信息',message:'先看看测试宝宝目前的过敏备注，再把过敏信息更新成“对测试食物甲过敏”，其他资料不要动',required:['get_baby','update_baby'],ordered:true,noExtraWrites:true,args:{update_baby:{allergies:'对测试食物甲过敏'}}},
  {id:'media-description',name:'辨别同日照片与视频并更新描述',message:'先查测试宝宝10月1日的相册。只把那张照片（不是视频）的描述改成“第一次去公园”，不要改视频',required:['list_media','update_media'],ordered:true,args:{update_media:{description:'第一次去公园'}},targets:{update_media:'dddddddd'}},
- {id:'photo-pending-status',name:'照片尚在上传不得报成功',history:[{role:'user',content:'[发送一张宝宝照片]'},{role:'assistant',content:'照片正在保存，请稍后查看。'}],message:'刚才那张照片上传完成了吗？',required:['list_media'],forbidWrites:true,replyAny:['上传中','还在上传','处理中','尚未完成','还没完成'],forbidSuccessClaim:true},
+ {id:'photo-pending-status',name:'照片尚在上传不得报成功',contextTurns:[PHOTO_TURN],message:'刚才那张照片上传完成了吗？',required:['list_media'],args:{list_media:{id:PHOTO_ID}},forbidWrites:true,replyAny:['上传中','还在上传','处理中','尚未完成','还没完成'],forbidSuccessClaim:true},
  {id:'story-confirm-create',name:'多轮确认后记录趣事',history:[{role:'user',content:'宝宝今天第一次自己用勺子吃饭了，洒得满桌都是，好好笑。'},{role:'assistant',content:'真有趣！需要我把这件事记为今天的成长瞬间吗？'}],message:'好，记下来',required:['create_milestone'],args:{create_milestone:{day:'2026-10-14'}},replyAny:['勺子','吃饭','记录','保存']},
  {id:'dual-create',name:'一条指令创建两类记录',message:'测试宝宝今天体重10.8kg、身高83cm，还第一次自己拿勺子吃饭。两个事情都帮我记录',required:['create_growth','create_milestone'],args:{create_growth:{day:'2026-10-14',weight:10.8,height:83},create_milestone:{day:'2026-10-14'}}},
- {id:'story-decline-create',name:'多轮拒绝时不应写入',history:[{role:'user',content:'宝宝今天第一次自己用勺子吃饭了，洒得满桌都是。'},{role:'assistant',content:'要帮你记录这个成长瞬间吗？'}],message:'算了，先不保存',required:[],forbidWrites:true},
- {id:'conditional-search',name:'条件查询无结果时禁止杜撰',message:'查测试宝宝10月1日至10月10日包含“疫苗”的成长事件；没有就告诉我没有，绝对不要替我新建',required:['search_records'],args:{search_records:{kind:'milestones',startDay:'2026-10-01',endDay:'2026-10-10',keyword:'疫苗'}},forbidWrites:true},
- {id:'ambiguous-delete',name:'目标不明确时只查询',message:'10月1日相册里的东西我还没决定删哪一个，你先列出来让我选，不要删除也不要修改任何东西',required:['list_media'],forbidWrites:true},
+ {id:'story-decline-create',name:'多轮拒绝时不应写入',history:[{role:'user',content:'宝宝今天第一次自己用勺子吃饭了，洒得满桌都是。'},{role:'assistant',content:'要帮你记录这个成长瞬间吗？'}],message:'算了，先不保存',required:[],forbidWrites:true,replyAny:['不保存','未保存','不会保存','不记录']},
+ {id:'conditional-search',name:'条件查询无结果时禁止杜撰',message:'查测试宝宝10月1日至10月10日包含“疫苗”的成长事件；没有就告诉我没有，绝对不要替我新建',required:['search_records'],args:{search_records:{kind:'milestones',startDay:'2026-10-01',endDay:'2026-10-10',keyword:'疫苗'}},forbidWrites:true,replyAny:['没有','未找到','无相关','未查到']},
+ {id:'ambiguous-delete',name:'目标不明确时只查询',message:'10月1日相册里的东西我还没决定删哪一个，你先列出来让我选，不要删除也不要修改任何东西',required:['list_media'],forbidWrites:true,replyAny:['照片','视频','相册','选择']},
  {id:'video-delete',name:'同日媒体精准区分视频后删除',message:'查一下10月1日相册，找到其中的视频（不是照片），只把视频移到回收站',required:['list_media','delete_media'],ordered:true,targets:{delete_media:'abcd1234'}},
- {id:'baby-switch-context',name:'切换宝宝后不能沿用旧编号',history:[{role:'user',content:'哥哥的体重记录有哪些？'},{role:'assistant',content:'哥哥最近的体重：aaaaaaaa（10月13日，10.5kg）。'}],message:'刚才第一条体重改成10.2kg',required:[],forbidWrites:true,replyAny:['宝宝','确认','重新','哪条','不能']},
+ {id:'baby-switch-context',name:'切换宝宝后不能沿用旧编号',babyName:'妹妹',babyId:'baby-sister',contextTurns:[{babyId:'baby-brother',user:'哥哥的体重记录有哪些？',reply:'哥哥最近的体重：aaaaaaaa（10月13日，10.5kg）。'}],message:'现在切到妹妹。把刚才第一条体重改成10.2kg',required:[],forbidWrites:true,replyAny:['妹妹','确认','重新','哪条','不能']},
  {id:'conflicting-measurement',name:'纠正同句矛盾测量',message:'今天上午口头估了10.8kg，刚才实际称重是10.6kg，身高实际量了83cm。只记最终实际测量，猜的10.8别保存',required:['create_growth'],args:{create_growth:{day:'2026-10-14',weight:10.6,height:83}},noExtraWrites:true,replyAll:['10.6']},
  {id:'jin-conversion',name:'斤转千克且区分昨日',message:'昨天测试宝宝称了21斤、身高81.5厘米，请按系统用的kg/cm录进去，不要误当21kg，也别存成今天',required:['create_growth'],args:{create_growth:{day:'2026-10-13',weight:10.5,height:81.5}},noExtraWrites:true,replyAll:['10.5']},
  {id:'three-stage-correction',name:'先统计再确认并定向修正',message:'先汇总10月1日到昨天的体重，再查昨天的具体记录。看到昨天确实是10.5kg的话，只把那条改成10.2kg，10月1日的不要动',required:['growth_summary','list_growth','update_growth'],ordered:true,args:{growth_summary:{startDay:'2026-10-01',endDay:'2026-10-13'},list_growth:{day:'2026-10-13'},update_growth:{weight:10.2}},targets:{update_growth:'aaaaaaaa'},noExtraWrites:true,replyAll:['10.2']},
