@@ -920,7 +920,7 @@ async function browserE2e(){
         await page.setViewportSize({width,height:844});
         const r=await dialog.evaluate(el=>{const b=el.getBoundingClientRect();return{left:b.left,right:b.right,top:b.top,bottom:b.bottom,viewport:innerWidth}});
         assert.ok(r.left>=-1&&r.right<=r.viewport+1,'Growth create modal must fit '+width+': '+JSON.stringify(r));
-        assert.ok(r.top>=-1&&r.bottom<=innerHeight+1,'Growth create modal must fit height '+width+': '+JSON.stringify(r));
+        assert.ok(r.top>=-1&&r.bottom<=845,'Growth create modal must fit height '+width+': '+JSON.stringify(r));
         if(width===390)await page.screenshot({path:join(evidence,'growth-create-modal-390.png'),fullPage:false});
       }
       await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
