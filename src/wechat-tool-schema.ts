@@ -19,7 +19,7 @@ export const wechatTools=[
  tool('update_milestone','修改某条成长事件标题/描述/日期',{...selector,newDay:day,title:str,description:str}),
  tool('delete_milestone','把唯一一条成长事件移入 30 天回收站，必须有删除意图',selector),
  tool('list_media','列出相册照片和视频元数据，可按日期查询或用会话中的记录编号精确查询',{id:{type:'string',description:'相册记录编号，至少前 8 位；用于核对附件状态和描述'},day,limit:{type:'integer',minimum:1,maximum:10}}),
- tool('update_media','修改指定照片或视频的拍摄日期及描述，description 可设为空字符串以清除',{...selector,newDay:day,description:str}),
+ tool('update_media','修改指定照片或视频拍摄日期/描述；用户已授权且用 list_media 核实唯一目标后直接修改，不必再次确认；只改指定字段，description 可设为空字符串清除',{...selector,newDay:day,description:str}),
  tool('delete_media','把一项相册内容移入 30 天回收站，必须有删除意图',selector),
  tool('list_trash','查看当前宝宝的回收站',{kind:{type:'string',enum:['growth','milestones','media']}}),
  tool('restore_trash','从回收站中恢复一项内容',{kind:{type:'string',enum:['growth','milestones','media']},...selector},['kind']),
