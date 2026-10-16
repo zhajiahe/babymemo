@@ -1,6 +1,7 @@
 import type {Env} from './types';
 import type {WechatBaby} from './wechat-tool-schema.ts';
 import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
+import {mediaCapabilities,explainMediaCapabilities} from './wechat-capabilities.mjs';
 export type Kind='growth'|'milestones'|'media';
 export type DbRow=Record<string,any>&{id:string;day:string;baby_id:string};
 export type ToolOptions={at?:number;thread?:any;messageId?:string};
@@ -17,7 +18,7 @@ export const maxLimit=(args:Record<string,any>)=>Number.isInteger(args.limit)?Ma
 export const listLine=(kind:Kind,r:DbRow)=>{
  const bits=kind==='growth'?[r.weight!=null?'体重 '+r.weight+' kg':'',r.height!=null?'身高 '+r.height+' cm':'',r.head_circumference!=null?'头围 '+r.head_circumference+' cm':'',r.notes||'']:
  kind==='milestones'?[r.title||'',r.description||'']:[r.upload_state==='processing'?'正在保存':r.upload_state==='failed'?'保存失败':r.mime||'',r.description||''];
- return short(r.id)+' · '+r.day+' · '+bits.filter(Boolean).join('，');
+ return short(r.id)+' · '+r.day+' · '+bits.filter(Boolean).join('，')+(kind==='media'?'；'+explainMediaCapabilities(r):'');
 };
 export async function findTarget(env:Env,babyId:string,kind:Kind,args:Record<string,any>,deleted=false):Promise<DbRow>{
  const table=tableForKind[kind];
@@ -46,7 +47,7 @@ export async function listItems(env:Env,baby:WechatBaby,kind:Kind,args:Record<st
   if(rows.results.length!==1)return rows.results.length?'编号不唯一，请使用完整编号':'这位宝宝的相册中没有该编号的媒体记录';
   const r=rows.results[0];
   return baby.name+' 的相册记录：'+r.id+' · '+r.day+' · '+(r.mime||'未知类型')+' · '+String(r.title||'').slice(0,120)+
-   ' · 状态：'+(r.upload_state||'ready')+(r.description?' · 描述：'+String(r.description).slice(0,400):'');
+   ' · 状态：'+(r.upload_state||'ready')+(r.description?' · 描述：'+String(r.description).slice(0,400):'')+' · '+explainMediaCapabilities(r);
  }
  const clauses=['baby_id=?','deleted_at IS NULL'],params=[baby.id];
  if(args.day!==undefined){if(!validDate(args.day))return '请提供有效日期';clauses.push('day=?');params.push(args.day)}
@@ -58,7 +59,7 @@ export async function update(env:Env,kind:Kind,record:DbRow,changes:Record<strin
  const table=tableForKind[kind],names=Object.keys(changes);
  if(!names.length)return '请明确需要修改的内容';
  const stmt=env.DB.prepare('UPDATE '+table+' SET '+names.map(x=>x+'=?').join(',')+
-  ' WHERE id=? AND baby_id=? AND deleted_at IS NULL AND '+names.map(x=>x+' IS ?').join(' AND '))
+  ' WHERE id=? AND baby_id=? AND deleted_at IS NULL '+(kind==='media'?"AND COALESCE(upload_state,'ready') IN ('processing','ready') AND purge_token IS NULL ":'')+'AND '+names.map(x=>x+' IS ?').join(' AND '))
   .bind(...names.map(x=>changes[x]),record.id,record.baby_id,...names.map(x=>record[x]??null));
  if(typeof env.DB.batch!=='function'){
   const r=await stmt.run();return r.meta.changes?'已更新'+labelForKind[kind]+'（编号 '+short(record.id)+'）。':'记录已发生变化';
