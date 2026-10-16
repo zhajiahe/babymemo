@@ -7,7 +7,7 @@ type PlanOptions={messageId:string;text:string;groundedText?:string;at?:number;t
 import {runWechatTool,wechatTools} from './wechat-harness.mjs';
 import {guardAction,MUTATING_ACTIONS,isCancel,isUndo} from './wechat-policy.mjs';
 import {recordQuery} from './wechat-memory.mjs';
-import {validateReferenceMutation,captureMessageReferences,type MessageReferenceScope} from './wechat-context-snapshot.mjs';
+import {validateReferenceMutation,captureMessageReferences,type MessageReferenceScope} from './wechat-context-snapshot.ts';
 import {auditChange,operationSnapshot,undoOperation} from './wechat-operations.mjs';
 const KINDS:Record<string,RecordKind|null>={create_growth:'growth',update_growth:'growth',delete_growth:'growth',list_growth:'growth',
  create_milestone:'milestones',update_milestone:'milestones',delete_milestone:'milestones',list_milestones:'milestones',
