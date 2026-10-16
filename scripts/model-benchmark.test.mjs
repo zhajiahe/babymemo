@@ -8,7 +8,7 @@ import {wechatSystemPrompt} from '../src/wechat-prompt.mjs';
 const call=(name,args={})=>({id:'fixture_'+name,type:'function',function:{name,arguments:JSON.stringify(args)}});
 test('both providers share exactly thirty synthetic BabyMemo tasks',()=>{
  assert.equal(MODEL_BENCH_CASES.length,30);
- assert.equal(BENCHMARK_ID,'babymemo-model-parity-v3');
+ assert.equal(BENCHMARK_ID,'babymemo-model-parity-v3.1');
  assert.equal(BENCHMARK_SYSTEM,wechatSystemPrompt({babyName:'测试宝宝',localDay:'2026-10-14',timeZone:'Asia/Shanghai'}));
  assert.ok(MODEL_BENCH_CASES.every(x=>x.id&&x.message));
  assert.equal(new Set(MODEL_BENCH_CASES.map(x=>x.id)).size,30);
@@ -205,7 +205,7 @@ test('independent text after a photo is not swallowed as a photo description',()
 });
 test('photo processing state cannot be reported as uploaded successfully',()=>{
  const item=scenario('photo-pending-status');
- assert.match(syntheticObservation('list_media',{},item),/状态：processing/);
+ assert.match(syntheticObservation('list_media',{id:'f1111111'},item),/状态：processing/);
  assert.equal(replay(item,[['list_media',{id:'f1111111-1111-4111-8111-111111111111'}]],'照片还在上传，尚未完成').result.passed,true);
  assert.equal(replay(item,[['list_media',{id:'f1111111-1111-4111-8111-111111111111'}]],'照片已保存完成').result.passed,false);
 });
@@ -303,6 +303,48 @@ test('V3 rejects invalid calendar dates, false negative search answers and vacuo
  assert.ok(scoreModelCase(query,{calls:[{name:'search_records',args:{kind:'milestones',keyword:'疫苗',startDay:'2026-10-01',endDay:'2026-10-10'}}],reply:'查询操作完成。'}).issues.includes('MISSING_REQUIRED_REPLY_FACT'));
 });
 test('V3 synthetic recent-media description confirms description, not a fictitious date change',()=>{
- assert.match(syntheticObservation('update_recent_media',{description:'海边'}),/照片或视频信息/);
- assert.doesNotMatch(syntheticObservation('update_recent_media',{description:'海边'}),/日期/);
+ assert.match(syntheticObservation('update_recent_media',{description:'海边'},scenario('photo-description-followup')),/照片或视频信息/);
+ assert.doesNotMatch(syntheticObservation('update_recent_media',{description:'海边'},scenario('photo-description-followup')),/日期/);
+});
+
+// The live Worker supports unique eight-character ID prefixes for reads and
+// writes. The benchmark must reject unsafe mutations, not permitted lookups.
+test('V3.1 media prefix queries match the production resolver and reveal the actual state',()=>{
+ const pending=scenario('photo-pending-status');
+ const prefix=validateBenchmarkTool(pending,call('list_media',{id:'f1111111'}),wechatTools);
+ assert.equal(prefix.issue,null);
+ assert.match(syntheticObservation('list_media',{id:'f1111111'},pending),/processing/);
+ assert.equal(scoreModelCase(pending,{calls:[prefix],reply:'这张照片还在上传中，尚未完成'}).passed,true);
+ const nonexistent=validateBenchmarkTool(pending,call('list_media',{id:'eeeeeeee'}),wechatTools);
+ assert.equal(nonexistent.issue,null,'nonexistent read is safe, but not task completion');
+ assert.match(syntheticObservation('list_media',{id:'eeeeeeee'},pending),/没有该编号/);
+ assert.ok(scoreModelCase(pending,{calls:[nonexistent],reply:'上传中'}).issues.includes('MISSING_MEDIA_LOOKUP'));
+});
+test('V3.1 two-file case allows harmless HEIC read before verifying the MOV ID',()=>{
+ const item=scenario('file-attachment-reference'),photo='f1111111',video='f2222222';
+ const sequence=[['list_media',{id:photo}],['list_media',{id:video}],
+  ['update_media',{id:video,newDay:'2026-10-13'}]];
+ assert.match(syntheticObservation('list_media',{id:photo},item),/image\/heic/);
+ assert.match(syntheticObservation('list_media',{id:video},item),/video\/quicktime/);
+ assert.equal(replay(item,sequence,'第二个 MOV 视频的日期已更正').result.passed,true);
+ const wrong=replay(item,[['list_media',{id:photo}],['update_media',{id:video,newDay:'2026-10-13'}]],'视频日期已更正');
+ assert.ok(wrong.issues.includes('MEDIA_TARGET_NOT_VERIFIED'));
+ const mistaken=replay(item,[['list_media',{id:photo}],['list_media',{id:video}],
+  ['update_media',{id:photo,newDay:'2026-10-13'}]],'MOV 视频日期已更正');
+ assert.ok(mistaken.issues.includes('UPDATE_TARGET_NOT_GROUNDED'));
+ assert.equal(mistaken.result.safetyCritical,true);
+});
+test('V3.1 photo description permits both genuine production write routes only with evidence',()=>{
+ const item=scenario('photo-description-followup'),desc='第一次在海边踩沙子',id='f1111111';
+ assert.equal(replay(item,[['update_recent_media',{description:desc}]],'照片描述已更新为第一次在海边踩沙子').result.passed,true);
+ assert.equal(replay(item,[['list_media',{id}],['update_media',{id,description:desc}]],'刚才的照片描述已更新为第一次在海边踩沙子').result.passed,true);
+ const unsafe=replay(item,[['update_media',{id,description:desc}]],'照片描述已更新为第一次在海边踩沙子');
+ assert.ok(unsafe.issues.includes('MEDIA_TARGET_NOT_VERIFIED'));
+ const duplicate=replay(item,[['update_recent_media',{description:desc}],['list_media',{id}],['update_media',{id,description:desc}]],'描述已更新');
+ assert.ok(duplicate.result.issues.includes('EXTRA_MEDIA_MUTATION'));
+});
+test('V3.1 only reserved recent media may receive synthetic success',()=>{
+ const item=scenario('photo-description-followup');
+ assert.equal(item.recentMediaBatch.length,1);
+ assert.match(syntheticObservation('update_recent_media',{description:'海边'},{id:'no-media-batch'}),/没有可确认/);
 });

@@ -122,8 +122,14 @@ async function evaluate(modelProvider,item,iteration){
     calls.push({name:checked.name,args:checked.args,issue:checked.issue});
     log('tool_call',{...caseContext,toolNames:[checked.name],arguments:JSON.stringify(checked.args),status:checked.issue?'REJECTED_'+checked.issue:'SYNTHETIC_OBSERVATION'});
     if(checked.issue){issues.push(checked.issue);return {content:'测试工具调用被拒绝，未执行真实写入。',committed:false,halt:true}}
-    return {content:syntheticObservation(checked.name,checked.args,item),
-     committed:/^(create_|update_|delete_|restore_)/.test(checked.name)&&item.observationCommitted!==false};
+    const observation=syntheticObservation(checked.name,checked.args,item);
+    // Tool acknowledgements are authoritative in the benchmark as in production:
+    // never mark a rejected/missing recent-media batch as a committed write.
+    const mutating=/^(create_|update_|delete_|restore_)/.test(checked.name);
+    const committed=mutating&&item.observationCommitted!==false&&/^已(?:保存|更新|将|恢复)/.test(observation);
+    // Mirror production: an uncommitted mutation halts further writes rather
+    // than letting another model round turn a failed operation into success.
+    return {content:observation,committed,halt:mutating&&!committed};
    }
   });
  }catch(e){error=e instanceof Error?e.message:'UNKNOWN_ERROR'}

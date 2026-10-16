@@ -23,3 +23,6 @@ Workers AI Neurons、Durable Objects duration、OpenRouter 美元余额是**三�
 V3 保持 **30 道核心题**，增加真实短期会话装配、20 轮消息、照片/视频原文件 ID、按编号查上传状态、跨宝宝隔离与更严格的回答校验。离线 Harness 扩展至不同会话长度、中文大文本及媒体安全边界；不会额外收费。V3 使用独立版本号和用例集合指纹；**V2 与 V3 成绩不可直接比较**。具体成绩及费用以该次 Actions Run 和平台账单为准，文档不保留历次结果快照。
 
 离线验证：`node --test scripts/model-benchmark.test.mjs scripts/model-benchmark-matrix.test.mjs scripts/openrouter-retry.test.mjs`。评测实现见 `scripts/model-benchmark.mjs` 和 `scripts/model-benchmark-cases.mjs`。
+
+
+V3.1 评分契约修复：按照生产接口允许唯一 8 位媒体编号前缀；照片/视频双附件查询允许无害的额外读取，但写入必须有目标媒体的查询证据；不同 ID 返回不同真实模拟记录及处理状态；照片描述允许已保留的最近批次或先核对再定向写入两条生产工具路径。V3.1 使用新版本标识和题目指纹，避免将之前 V3 的 27/30 与修正后分数直接比较。真实模型评测仍需手动付费运行。
