@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCipheriv} from 'node:crypto';
-import {decodeWeChatAesKey,wechatCdnUrl,downloadWeChatImage,persistWeChatPhotos,photoRecordId,WechatPhotoError,wechatMediaErrorCode,storeEncryptedMedia} from '../src/wechat-media.mjs';
-import {exifJpeg} from './fixtures/media-exif.mjs';
+import {exifJpeg,exifHeic} from './fixtures/media-exif.mjs';
+import {decodeWeChatAesKey,wechatCdnUrl,downloadWeChatImage,persistWeChatPhotos,mediaItems,fileAttachmentInfo,photoItems,videoItems,photoRecordId,WechatPhotoError,wechatMediaErrorCode,storeEncryptedMedia} from '../src/wechat-media.mjs';
 
 const jpeg=Uint8Array.from([255,216,255,224,0,16,74,70,73,70,0,1,255,217]);
 const key=Buffer.from('000102030405060708090a0b0c0d0e0f','hex');
@@ -40,7 +40,7 @@ function mockEnv({failIndexOnce=false}={}){
    MEDIA:{
      async head(key){const x=objects.get(key);return x?{size:x.bytes.length,httpMetadata:{contentType:x.mime}}:null},
      async put(key,bytes,opts){objects.set(key,{bytes:new Uint8Array(bytes),mime:opts?.httpMetadata?.contentType});return {etag:'fake'}},
-     async get(key,{range}={}){const value=objects.get(key);if(!value)return null;const bytes=range?value.bytes.slice(range.offset,range.offset+range.length):value.bytes;return {arrayBuffer:async()=>bytes.buffer}}
+     async get(key,{range}={}){const x=objects.get(key);if(!x)return null;const bytes=x.bytes.slice(range?.offset||0,range?range.offset+range.length:undefined);return {arrayBuffer:async()=>bytes.buffer}}
    }
  };
 }
@@ -87,24 +87,107 @@ test('encrypted image decrypts, MIME is sniffed, and only JPEG bytes are persist
  assert.equal(env.rows.size,1);assert.equal(env.objects.size,1);
 });
 
-test('WeChat photos use embedded camera date when original EXIF survives transfer',async()=>{
- const bytes=exifJpeg(),enc=createCipheriv('aes-128-ecb',key,null);
- const encrypted=Buffer.concat([enc.update(bytes),enc.final()]);
+
+test('normal WeChat photo auto-archives by retained XMP capture date without file-attachment mode',async()=>{
+ const body=new TextEncoder().encode('http://ns.adobe.com/xap/1.0/'+String.fromCharCode(0)+
+  '<rdf:Description photoshop:DateCreated="2020-09-03" xmp:ModifyDate="2026-10-15"/>');
+ const bytes=new Uint8Array(2+4+body.length+2);
+ bytes.set([255,216,255,225]);new DataView(bytes.buffer).setUint16(4,body.length+2,false);
+ bytes.set(body,6);bytes.set([255,217],6+body.length);
  const env=mockEnv();
- const reply=await persistWeChatPhotos(env,raw,baby,'bot:exif-photo',{
-  fetchImpl:async()=>new Response(encrypted)
+ const reply=await persistWeChatPhotos(env,raw,baby,'bot:image-xmp-only',
+  {fetchImpl:async()=>new Response(encrypted(bytes))});
+ assert.match(reply,/已保存.*1 张照片/);
+ const row=[...env.rows.values()][0];
+ assert.equal(row.day,'2020-09-03');
+ assert.equal(row.mime,'image/jpeg');
+ assert.deepEqual(env.objects.get(row.object_key).bytes,bytes);
+});
+test('normal WeChat photo with all metadata removed cannot gain a fabricated capture date',async()=>{
+ const env=mockEnv();
+ const reply=await persistWeChatPhotos(env,raw,baby,'bot:image-no-metadata',{fetchImpl:cdnFetch});
+ assert.equal([...env.rows.values()][0].day,new Date(Number(raw.create_time_ms)).toLocaleDateString('sv-SE',{timeZone:baby.time_zone}));
+ assert.match(reply,/1 项未读取到原始拍摄日期，暂按微信发送日期归档/);
+ assert.match(reply,/网页相册中修改/);
+});
+test('camera EXIF date does not trigger send-date fallback warning',async()=>{
+ const bytes=exifJpeg(),env=mockEnv();
+ const reply=await persistWeChatPhotos(env,raw,baby,'bot:camera-exif',{
+  fetchImpl:async()=>new Response(encrypted(bytes))
  });
  assert.equal([...env.rows.values()][0].day,'2020-09-03');
  assert.doesNotMatch(reply,/未读取到原始拍摄日期/);
 });
-test('compressed WeChat photo without EXIF is saved but reported as using send date',async()=>{
+test('retained XMP camera date also does not trigger fallback warning',async()=>{
+ const body=new TextEncoder().encode('http://ns.adobe.com/xap/1.0/'+String.fromCharCode(0)+'<rdf:Description xmp:CreateDate="2020-09-03"/>');
+ const bytes=new Uint8Array(2+4+body.length+2);
+ bytes.set([255,216,255,225]);new DataView(bytes.buffer).setUint16(4,body.length+2,false);
+ bytes.set(body,6);bytes.set([255,217],6+body.length);
  const env=mockEnv();
- const reply=await persistWeChatPhotos(env,raw,baby,'bot:missing-exif',{fetchImpl:cdnFetch});
- const fallback=new Date(Number(raw.create_time_ms)).toLocaleDateString('sv-SE',{timeZone:baby.time_zone});
- assert.equal([...env.rows.values()][0].day,fallback);
- assert.match(reply,/1 项未读取到原始拍摄日期，暂按微信发送日期归档/);
- assert.match(reply,/网页相册中修改/);
+ const reply=await persistWeChatPhotos(env,raw,baby,'bot:xmp-capture',{
+  fetchImpl:async()=>new Response(encrypted(bytes))
+ });
+ assert.equal([...env.rows.values()][0].day,'2020-09-03');
+ assert.doesNotMatch(reply,/未读取到原始拍摄日期/);
 });
+
+const fileItem=(name,len)=>({type:4,file_item:{file_name:name,len:String(len),media:{encrypt_query_param:'synthetic',aes_key:key.toString('base64')}}});
+const encrypted=bytes=>{const cipher=createCipheriv('aes-128-ecb',key,null);return Buffer.concat([cipher.update(bytes),cipher.final()])};
+test('only named image/video file attachments are admitted; no arbitrary files or paths',()=>{
+ const ok=fileItem('IMG_001.HEIC',100);
+ const vid=fileItem('trip.MOV',200);
+ const other=fileItem('secrets.pdf',300);
+ const traversal=fileItem('../photo.jpg',200);
+ const packed={item_list:[item(),ok,vid,other,traversal]};
+ assert.equal(mediaItems(packed).length,3);
+ assert.equal(photoItems(packed).length,2);
+ assert.equal(videoItems(packed).length,1);
+ assert.deepEqual(fileAttachmentInfo(ok),{kind:'image',mime:'image/heic',fileName:'IMG_001.HEIC'});
+ assert.equal(fileAttachmentInfo(other),null);
+ assert.equal(fileAttachmentInfo(traversal),null);
+ assert.equal(mediaItems({item_list:[{type:4,file_item:{file_name:'IMG.jpg'}}]}).length,0);
+});
+test('iLink image file attachment keeps byte-identical EXIF original and camera date',async()=>{
+ const bytes=exifJpeg(),file=fileItem('IMG_0007.JPG',bytes.length);
+ const env=mockEnv();
+ const message={...raw,item_list:[file]};
+ const reply=await persistWeChatPhotos(env,message,baby,'bot:file-exif',{fetchImpl:async()=>new Response(encrypted(bytes))});
+ assert.match(reply,/已保存.*1 张照片/);
+ assert.match(reply,/文件附件按收到的原始字节保存/);
+ const row=[...env.rows.values()][0];
+ assert.equal(row.title,'IMG_0007.JPG');
+ assert.equal(row.mime,'image/jpeg');
+ assert.equal(row.day,'2020-09-03');
+ assert.equal(row.source_message_id,'bot:file-exif:image:0');
+ assert.deepEqual(env.objects.get(row.object_key).bytes,bytes);
+ const dup=await persistWeChatPhotos(env,message,baby,'bot:file-exif',{fetchImpl:async()=>{throw Error('FILE_ALREADY_SAVED')}});
+ assert.match(dup,/重复导入/);
+ assert.equal(env.rows.size,1);
+});
+test('encrypted HEIC attachment is stored unchanged and original date survives R2 metadata reads',async()=>{
+ const bytes=exifHeic(),env=mockEnv();
+ const reply=await persistWeChatPhotos(env,{...raw,item_list:[fileItem('IMG_0008.heif',bytes.length)]},
+  baby,'bot:file-heic',{fetchImpl:async()=>new Response(encrypted(bytes))});
+ assert.match(reply,/已保存/);
+ const row=[...env.rows.values()][0];
+ assert.equal(row.mime,'image/heic');
+ assert.equal(row.day,'2020-09-03');
+ assert.deepEqual(env.objects.get(row.object_key).bytes,bytes);
+});
+test('file attachment MIME spoofing and malformed declared sizes fail before writing to R2',async()=>{
+ const bytes=exifJpeg();
+ const badFile=fileItem('photo.png',bytes.length),env=mockEnv();
+ await assert.rejects(()=>persistWeChatPhotos(env,{...raw,item_list:[badFile]},baby,'bot:spoof',
+  {fetchImpl:async()=>new Response(encrypted(bytes))}),/扩展名与实际格式不一致/);
+ assert.equal(env.objects.size,0);
+ const oversize=fileItem('photo.jpg',50*1024*1024+1);
+ await assert.rejects(()=>persistWeChatPhotos(mockEnv(),{...raw,item_list:[oversize]},baby,'bot:oversize',
+  {fetchImpl:async()=>{throw Error('SHOULD_NOT_DOWNLOAD')} }),/超过 50 MB/);
+ const invalid=fileItem('photo.jpg','garbled');invalid.file_item.len='garbled';
+ await assert.rejects(()=>persistWeChatPhotos(mockEnv(),{...raw,item_list:[invalid]},baby,'bot:invalidlen',
+  {fetchImpl:async()=>{throw Error('SHOULD_NOT_DOWNLOAD')}}),/文件大小无效/);
+});
+
 test('lost D1 commit is recovered from private R2 on retry without fetching CDN again',async()=>{
  const env=mockEnv({failIndexOnce:true});
  await assert.rejects(()=>persistWeChatPhotos(env,raw,baby,'bot:message2',{fetchImpl:cdnFetch}),/D1_TEMPORARY_FAILURE/);

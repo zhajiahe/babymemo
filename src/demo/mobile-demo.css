@@ -9,7 +9,7 @@
 .mobile-demo-links a{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;min-height:var(--bm-touch-min);border-radius:var(--bm-radius-md);font-size:13px;font-weight:620;color:var(--bm-muted)}
 .mobile-demo-links a[aria-current="page"]{background:var(--bm-brand-soft);color:var(--bm-brand)}
 .mobile-demo-links a:hover{background:var(--bm-surface-soft)}
-.mobile-demo-body{width:min(1160px,100%);margin:auto;padding:36px 28px;display:grid;grid-template-columns:minmax(250px,1fr) auto;align-items:center;justify-content:center;gap:clamp(32px,6vw,110px)}
+.mobile-demo-body{width:min(1160px,100%);margin:auto;padding:24px 28px;display:grid;grid-template-columns:minmax(250px,1fr) auto;align-items:center;justify-content:center;gap:clamp(32px,6vw,110px)}
 .mobile-demo-intro{max-width:445px}
 .mobile-demo-kicker{display:block;color:var(--bm-brand);font-weight:700;font-size:13px;letter-spacing:.05em;margin-bottom:14px}
 .mobile-demo-intro h1{font-size:clamp(32px,3.7vw,49px);line-height:1.3;letter-spacing:-.035em;margin:0 0 20px;font-weight:730}
@@ -18,7 +18,7 @@
 .mobile-demo-open:hover{background:var(--bm-brand-hover)}
 .mobile-demo-privacy{display:block;margin-top:24px;font-size:12px;line-height:1.7;color:var(--bm-muted)}
 .mobile-demo-device-wrap{display:flex;flex-direction:column;align-items:center;gap:14px}
-.mobile-demo-device{position:relative;isolation:isolate;box-sizing:content-box;width:390px;height:min(800px,calc(100dvh - 180px));min-height:560px;border:9px solid #252C34;border-radius:47px;background:var(--bm-page);overflow:hidden;box-shadow:0 36px 80px rgba(28,46,60,.16),0 6px 22px rgba(28,46,60,.13)}
+.mobile-demo-device{position:relative;isolation:isolate;box-sizing:content-box;width:390px;height:clamp(480px,calc(100dvh - 190px),740px);border:9px solid #252C34;border-radius:47px;background:var(--bm-page);overflow:hidden;box-shadow:0 36px 80px rgba(28,46,60,.16),0 6px 22px rgba(28,46,60,.13)}
 .mobile-demo-device iframe{display:block;width:100%;height:100%;border:0;background:var(--bm-page);border-radius:38px}
 .mobile-demo-island{position:absolute;z-index:2;top:11px;left:50%;width:92px;height:23px;transform:translateX(-50%);border-radius:999px;background:#252C34;pointer-events:none}
 .mobile-demo-device-label{display:flex;align-items:center;gap:7px;justify-content:center;font-size:12px;color:var(--bm-muted);margin:0}

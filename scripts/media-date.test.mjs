@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {jpegCaptureDay,photoCaptureDay,bestEffortFileDay,r2PhotoCaptureDay} from '../src/media-date.mjs';
+import {jpegCaptureDay,jpegXmpCaptureDay,photoCaptureDay,bestEffortFileDay,r2PhotoCaptureDay} from '../src/media-date.mjs';
 import {exifJpeg,exifHeic,exifWebp,exifPng} from './fixtures/media-exif.mjs';
 
 test('valid JPEG EXIF original date wins over modification metadata',()=>{
@@ -34,6 +34,42 @@ test('a missing, corrupt, impossible or future capture date uses the selected fa
  }
  assert.equal(await photoCaptureDay(exifJpeg()),'2020-09-03');
 });
+
+function xmpJpeg(xml){
+ const body=new TextEncoder().encode('http://ns.adobe.com/xap/1.0/\\0'.replace('\\0',String.fromCharCode(0))+xml);
+ const bytes=new Uint8Array(2+4+body.length+2),view=new DataView(bytes.buffer);
+ bytes.set([255,216,255,225]);view.setUint16(4,body.length+2,false);
+ bytes.set(body,6);bytes.set([255,217],6+body.length);
+ return bytes;
+}
+test('ordinary JPEG recovers the XMP camera date if its EXIF TIFF block was stripped',async()=>{
+ const bytes=xmpJpeg('<x:xmpmeta><rdf:Description exif:DateTimeOriginal="2020-09-03T08:14:23+08:00" xmp:ModifyDate="2026-10-15T01:00:00Z"/></x:xmpmeta>');
+ assert.equal(jpegCaptureDay(bytes),null);
+ assert.equal(jpegXmpCaptureDay(bytes),'2020-09-03');
+ assert.equal(await photoCaptureDay(bytes),'2020-09-03');
+ const ranges=[],bucket={get:async(_key,{range})=>{ranges.push(range);return {arrayBuffer:async()=>bytes.slice(range.offset,range.offset+range.length).buffer}}};
+ assert.equal(await r2PhotoCaptureDay(bucket,'private/example',bytes.length,'image/jpeg'),'2020-09-03');
+ assert.ok(ranges.reduce((n,x)=>n+x.length,0)<=1048576);
+});
+test('XMP Photoshop creation date and XML element date work when camera EXIF is absent',async()=>{
+ const ps=xmpJpeg('<rdf:Description photoshop:DateCreated="2019-06-02" xmp:ModifyDate="2026-10-15"/>');
+ assert.equal(jpegXmpCaptureDay(ps),'2019-06-02');
+ const exif=xmpJpeg('<exif:DateTimeOriginal>2020:01:03 10:25:00</exif:DateTimeOriginal>');
+ assert.equal(await photoCaptureDay(exif),'2020-01-03');
+});
+test('never invent a camera date from pixels, modification timestamps, conflicting XMP, or future dates',async()=>{
+ const forged=xmpJpeg('<rdf:Description xmp:ModifyDate="2020-01-01" dc:description="taken 2020-02-03"/>');
+ assert.equal(await photoCaptureDay(forged),null);
+ const conflict=xmpJpeg('<rdf:Description xmp:CreateDate="2020-09-03" xmp:CreateDate="2022-11-12"/>');
+ assert.equal(jpegXmpCaptureDay(conflict),null);
+ assert.equal(await photoCaptureDay(xmpJpeg('<rdf:Description xmp:CreateDate="2999-05-02"/>')),null);
+ const original=exifJpeg(),withoutEnd=original.subarray(0,original.length-2);
+ const later=xmpJpeg('<rdf:Description xmp:CreateDate="2026-01-01"/>');
+ const merged=new Uint8Array(withoutEnd.length+later.length-2);
+ merged.set(withoutEnd);merged.set(later.subarray(2),withoutEnd.length);
+ assert.equal(await photoCaptureDay(merged),'2020-09-03');
+});
+
 test('private R2 reads find HEIC metadata beyond the prefix within bounded range I/O',async()=>{
  const bytes=exifHeic(),ranges=[];const bucket={get:async(_key,{range})=>{ranges.push(range);return {arrayBuffer:async()=>bytes.slice(range.offset,range.offset+range.length).buffer}}};
  assert.equal(await r2PhotoCaptureDay(bucket,'private/test',bytes.length,'image/heic'),'2020-09-03');assert.ok(ranges.some(x=>x.offset>262144));assert.ok(ranges.length<=16);assert.ok(ranges.every(x=>x.length<=262144));assert.ok(ranges.reduce((n,x)=>n+x.length,0)<=1048576);

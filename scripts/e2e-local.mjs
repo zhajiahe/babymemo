@@ -677,9 +677,46 @@ async function browserE2e(){
         await preview.locator('.home-photo-cover').waitFor();
         await preview.getByText('追着泡泡跑的下午').waitFor();
         await preview.screenshot({path:join(evidence,'demo-desktop.png'),fullPage:true});
+        for(const width of [320,390,1024,1280]){
+          await preview.setViewportSize({width,height:width===320?740:width===390?844:768});
+          const metrics=await preview.evaluate(()=>{
+            const story=document.querySelector('.demo-story-highlight')?.getBoundingClientRect();
+            const cover=document.querySelector('.home-photo-cover')?.getBoundingClientRect();
+            const strip=document.querySelector('.home-photo-strip')?.getBoundingClientRect();
+            const bottom=document.querySelector('.mobile-nav')?.getBoundingClientRect();
+            return {storyTop:story?.top,storyBottom:story?.bottom,coverBottom:cover?.bottom,stripTop:strip?.top,viewport:innerHeight,usableBottom:bottom&&bottom.height?bottom.top:innerHeight,overflow:document.documentElement.scrollWidth>innerWidth+1};
+          });
+          assert.equal(metrics.overflow,false,'Home overflow at '+width);
+          assert.ok(metrics.storyTop>=metrics.coverBottom-1&&metrics.storyBottom<=metrics.stripTop+1,'Story should be between cover and thumbnails at '+width+': '+JSON.stringify(metrics));
+          assert.ok(metrics.storyTop<metrics.usableBottom-35,'Story preview must be discoverable in first viewport at '+width+': '+JSON.stringify(metrics));
+          if(width===390||width===1024)await preview.screenshot({path:join(evidence,'home-first-viewport-'+width+'.png'),fullPage:false});
+        }
+        await preview.setViewportSize({width:1280,height:812});
         await preview.getByRole('button',{name:/查看相册/}).click();
         await preview.locator('.photo-story').first().waitFor();
         assert.ok(await preview.locator('.photo-story').count()>1);
+        // Screenshot-led design: a readable desktop diary row and a shorter mobile photo.
+        const storyLayout=async width=>{
+          await preview.setViewportSize({width,height:844});
+          return preview.locator('.photo-story').first().evaluate(article=>{
+            const photo=article.querySelector('.photo-preview')?.getBoundingClientRect();
+            const story=article.querySelector('.photo-story-copy')?.getBoundingClientRect();
+            const frame=article.querySelector('.photo-frame')?.getBoundingClientRect();
+            return {photo:{x:photo?.x,y:photo?.y,height:photo?.height,right:photo?.right},story:{x:story?.x,y:story?.y},frame:{height:frame?.height,width:frame?.width},overflow:document.documentElement.scrollWidth>innerWidth+1};
+          });
+        };
+        const desktopStory=await storyLayout(1280);
+        assert.ok(desktopStory.story.x>=desktopStory.photo.right-2,'Desktop photo story should read beside the photo: '+JSON.stringify(desktopStory));
+        assert.ok(Math.abs(desktopStory.story.y-desktopStory.photo.y)<4,'Desktop photo and story must align at top');
+        await preview.screenshot({path:join(evidence,'album-story-desktop-1280.png'),fullPage:false});
+        for(const width of [320,390,768]){
+          const m=await storyLayout(width);
+          assert.equal(m.overflow,false,'Mobile story horizontal overflow '+width);
+          assert.ok(m.story.y>=m.photo.y+m.photo.height-2,'Mobile story must be below image '+width);
+          assert.ok(m.frame.height<=m.frame.width*.7+3,'Mobile photo must not push story below the fold '+width+': '+JSON.stringify(m));
+          if(width===390)await preview.screenshot({path:join(evidence,'album-story-mobile-390.png'),fullPage:false});
+        }
+        await preview.setViewportSize({width:1280,height:812});
         const mode=preview.getByRole('group',{name:'相册浏览方式'});
         assert.equal(await mode.getByRole('button',{name:'故事'}).getAttribute('aria-pressed'),'true');
         await preview.getByRole('button',{name:'照片墙'}).click();
@@ -704,6 +741,14 @@ async function browserE2e(){
         await preview.locator('.mobile-nav').getByRole('button',{name:'成长'}).click();
         await preview.getByRole('heading',{name:'成长记录'}).waitFor();
         await preview.locator('.growth-svg').waitFor();
+        const trend=await preview.locator('.growth-chart').evaluate(el=>{
+          const latest=el.querySelector('.growth-latest')?.getBoundingClientRect();
+          const svg=el.querySelector('.growth-svg')?.getBoundingClientRect();
+          return {latestBottom:latest?.bottom,chartTop:svg?.top,chartRight:svg?.right,width:innerWidth};
+        });
+        assert.ok(trend.chartTop>=trend.latestBottom-1,'Growth metric and chart must not overlap');
+        assert.ok(trend.chartRight<=trend.width+1,'Growth chart must fit the iPhone viewport');
+        await preview.screenshot({path:join(evidence,'growth-mobile-refined-375.png'),fullPage:false});
         await preview.screenshot({path:join(evidence,'demo-mobile.png'),fullPage:true});
         assert.deepEqual(requests,[],'Preview must never call the private family API');
       }finally{await preview.close();}
@@ -799,11 +844,19 @@ async function browserE2e(){
       await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
       await page.getByRole('heading',{name:'设置'}).waitFor();
       await page.getByRole('button',{name:'新增宝宝'}).click();
-      const create=page.locator('.baby-create-form');
+      const babyDialog=page.getByRole('dialog',{name:'新增宝宝'});
+      await babyDialog.waitFor();
+      const create=babyDialog.locator('.baby-create-form');
+      await create.getByLabel('宝宝名字').fill('未完成的宝宝草稿');
+      await page.keyboard.press('Escape');
+      await babyDialog.waitFor({state:'hidden'});
+      await page.getByRole('button',{name:'新增宝宝'}).click();
+      assert.equal(await create.getByLabel('宝宝名字').inputValue(),'未完成的宝宝草稿','closing baby modal preserves in-memory draft');
       await create.getByLabel('宝宝名字').fill('Browser New Baby');
       await create.getByLabel('出生日期').fill('2025-06-06');
       await create.getByLabel('性别').selectOption('girl');
       await create.getByRole('button',{name:/创建并切换到新宝宝/}).click();
+      await babyDialog.waitFor({state:'hidden'});
       await page.getByRole('heading',{name:'Browser New Baby'}).waitFor({timeout:15000}).catch(async error=>{console.error('Synthetic new-baby failure view: '+(await page.locator('body').innerText()).slice(0,4000));await page.screenshot({path:join(evidence,'new-baby-failure.png'),fullPage:true});throw error});
       assert.equal(await page.locator('.page-heading select[aria-label="选择宝宝"]').count(),0);
       await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
@@ -816,6 +869,91 @@ async function browserE2e(){
       assert.equal(await picker.locator('option:checked').textContent(),'Browser New Baby');
       await picker.selectOption({label:'Test Baby'});
       assert.equal(await picker.locator('option:checked').textContent(),'Test Baby');
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': edit modal keeps an unsaved growth draft on Escape',async()=>{
+      await page.locator('.sidebar .nav-link').filter({hasText:'成长'}).click();
+      await page.getByRole('heading',{name:'成长记录'}).waitFor();
+      if(await page.locator('.timeline-item').count()===0){
+        await page.getByRole('button',{name:'新增成长记录'}).click();
+        const create=page.getByRole('dialog',{name:'新增成长记录'});
+        await create.getByLabel('体重 · kg').fill('9.87');
+        await create.getByRole('button',{name:'保存记录'}).click();
+        await create.waitFor({state:'hidden'});
+        await page.locator('.timeline-item').first().waitFor();
+      }
+      await page.locator('.timeline-item').first().getByRole('button',{name:'编辑记录'}).click();
+      const editDialog=page.getByRole('dialog',{name:'编辑成长记录'});
+      await editDialog.waitFor();
+      await editDialog.getByLabel('备注').fill('待恢复的编辑草稿');
+      await page.keyboard.press('Escape');
+      await editDialog.waitFor({state:'hidden'});
+      const rows=page.locator('.timeline-item');
+      if(await rows.count()>1){
+        await rows.nth(1).getByRole('button',{name:'编辑记录'}).click();
+        await editDialog.waitFor();
+        assert.equal(await editDialog.getByLabel('备注').inputValue(),'待恢复的编辑草稿','Editing another row must not replace first row draft');
+        await page.keyboard.press('Escape');await editDialog.waitFor({state:'hidden'});
+      }
+      await page.getByRole('button',{name:'继续编辑'}).click();
+      await editDialog.waitFor();
+      assert.equal(await editDialog.getByLabel('备注').inputValue(),'待恢复的编辑草稿');
+      for(const width of [320,390,768]){
+        await page.setViewportSize({width,height:812});
+        const b=await editDialog.evaluate(el=>{const r=el.getBoundingClientRect();return{left:r.left,right:r.right,height:r.height,viewport:innerWidth}});
+        assert.ok(b.left>=-1&&b.right<=b.viewport+1,'growth editor fits screen '+width+': '+JSON.stringify(b));
+        assert.ok(b.height<=812+1,'growth editor fits viewport '+width);
+        if(width===390)await page.screenshot({path:join(evidence,'growth-record-edit-modal-390.png'),fullPage:false});
+      }
+      await page.setViewportSize({width:1280,height:860});
+      await editDialog.getByRole('button',{name:'取消编辑'}).click();
+      await editDialog.waitFor({state:'hidden'});
+      assert.equal(await page.getByRole('button',{name:'继续编辑'}).count(),0);
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': growth create modal is reachable, responsive and preserves drafts',async()=>{
+      await page.locator('.sidebar .nav-link').filter({hasText:'成长'}).click();
+      await page.getByRole('heading',{name:'成长记录'}).waitFor();
+      const createButton=page.getByRole('button',{name:'新增成长记录'});
+      await createButton.click();
+      const dialog=page.getByRole('dialog',{name:'新增成长记录'});
+      await dialog.getByLabel('备注').fill('临时成长测量草稿');
+      for(const width of [320,390,768,1280]){
+        await page.setViewportSize({width,height:844});
+        const r=await dialog.evaluate(el=>{const b=el.getBoundingClientRect();return{left:b.left,right:b.right,top:b.top,bottom:b.bottom,viewport:innerWidth}});
+        assert.ok(r.left>=-1&&r.right<=r.viewport+1,'Growth create modal must fit '+width+': '+JSON.stringify(r));
+        assert.ok(r.top>=-1&&r.bottom<=845,'Growth create modal must fit height '+width+': '+JSON.stringify(r));
+        if(width===390)await page.screenshot({path:join(evidence,'growth-create-modal-390.png'),fullPage:false});
+      }
+      await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
+      await createButton.click();await dialog.waitFor();
+      assert.equal(await dialog.getByLabel('备注').inputValue(),'临时成长测量草稿');
+      await dialog.getByLabel('备注').fill('');
+      await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
+      await page.setViewportSize({width:1280,height:860});
+    });
+    await step((useWebKit?'WebKit':'Chromium')+': add a milestone through its modal and preserve draft on Escape',async()=>{
+      await page.locator('.sidebar .nav-link').filter({hasText:'瞬间'}).click();
+      await page.getByRole('heading',{name:'成长瞬间'}).waitFor();
+      const add=page.getByRole('button',{name:'新增成长瞬间'});
+      await add.click();
+      const modal=page.getByRole('dialog',{name:'新增成长瞬间'});
+      await modal.waitFor();
+      await modal.getByLabel('事件标题').fill('未完成的第一次');
+      await page.keyboard.press('Escape');
+      await modal.waitFor({state:'hidden'});
+      await add.click();
+      assert.equal(await modal.getByLabel('事件标题').inputValue(),'未完成的第一次','Milestone draft must survive Escape');
+      await modal.getByLabel('事件标题').fill('浏览器新增的成长瞬间');
+      await modal.getByLabel('故事内容').fill('留住一个特别的日子');
+      for(const width of [320,390,768]){
+        await page.setViewportSize({width,height:812});
+        const bounds=await modal.evaluate(el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,height:r.height,viewport:innerWidth}});
+        assert.ok(bounds.left>=-1&&bounds.right<=bounds.viewport+1,'Milestone editor fits width '+width+': '+JSON.stringify(bounds));
+        if(width===390)await page.screenshot({path:join(evidence,'add-milestone-modal-390.png'),fullPage:false});
+      }
+      await page.setViewportSize({width:1280,height:860});
+      await modal.getByRole('button',{name:'保存记录'}).click();
+      await modal.waitFor({state:'hidden'});
+      await page.locator('.timeline-item').filter({hasText:'浏览器新增的成长瞬间'}).waitFor();
     });
     await step((useWebKit?'WebKit':'Chromium')+': gallery is photo-first; maintenance is out of product',async()=>{
       // Generate a browser-native PNG so WebKit and Chromium decode the same valid fixture.
@@ -847,11 +985,18 @@ async function browserE2e(){
       // A tiny valid PNG; user photos and R2 production storage are untouched.
       const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ln0AAAAASUVORK5CYII=','base64');
       await page.getByRole('button',{name:'添加照片或视频'}).click();
-      await page.getByLabel('描述（可选，本次选择的照片或视频共用）').fill('浏览器上传的描述');
+      const uploadDialog=page.getByRole('dialog',{name:'添加照片或视频'});
+      await uploadDialog.waitFor();
+      await uploadDialog.getByLabel('描述（可选，本次选择的照片或视频共用）').fill('浏览器上传的描述');
       await page.locator('input[type="file"]').setInputFiles({
         name:'browser-e2e.png',mimeType:'image/png',buffer:png
       });
+      await uploadDialog.waitFor({state:'hidden',timeout:30000});
       await page.locator('.photo-story-text').filter({hasText:'浏览器上传的描述'}).first().waitFor({state:'visible',timeout:30000});
+      await page.getByRole('button',{name:'添加照片或视频'}).click();
+      await uploadDialog.waitFor();
+      assert.equal(await uploadDialog.getByLabel('描述（可选，本次选择的照片或视频共用）').inputValue(),'','The next upload must not inherit the previous story');
+      await page.keyboard.press('Escape');await uploadDialog.waitFor({state:'hidden'});
       await page.getByRole('button',{name:'照片墙'}).click();
       assert.equal(await page.locator('.photo-stories').count(),0);
       await page.getByRole('button',{name:'故事'}).click();
@@ -863,15 +1008,23 @@ async function browserE2e(){
       await img.waitFor();
       await page.waitForFunction(()=>document.querySelector('.media-viewer-stage img')?.naturalWidth > 0);
       await page.locator('.media-story-body').filter({hasText:'浏览器上传的描述'}).waitFor();
-      assert.equal(await page.locator('.media-viewer-edit').isVisible(),false);
+      assert.equal(await page.locator('.media-viewer-edit').count(),0);
       await page.getByRole('button',{name:'编辑故事'}).click();
-      assert.equal(await page.getByLabel('照片或视频描述').inputValue(),'浏览器上传的描述');
+      const storyDialog=page.getByRole('dialog',{name:'编辑照片故事'});
+      await storyDialog.waitFor();
+      assert.equal(await storyDialog.getByLabel('照片或视频描述').inputValue(),'浏览器上传的描述');
+      await page.screenshot({path:join(evidence,'story-editor-modal-desktop.png'),fullPage:false});
+      await page.setViewportSize({width:390,height:844});
+      const bounds=await storyDialog.evaluate(el=>{const b=el.getBoundingClientRect();return{left:b.left,right:b.right,top:b.top,bottom:b.bottom}});
+      assert.ok(bounds.left>=-1&&bounds.right<=391&&bounds.top>=-1&&bounds.bottom<=845,'Story editor must fit iPhone: '+JSON.stringify(bounds));
+      await page.screenshot({path:join(evidence,'story-editor-modal-390.png'),fullPage:false});
+      await page.setViewportSize({width:1280,height:860});
       await page.screenshot({path:join(evidence,'desktop-album-viewer.png'),fullPage:false});
     });
     await step((useWebKit?'WebKit':'Chromium')+': gallery metadata edit and delete',async()=>{
             await page.locator('.media-viewer-edit input[type="date"]').fill('2026-02-01');
       await page.getByLabel('照片或视频描述').fill('浏览器编辑后的描述');
-      await page.getByRole('button',{name:/保存信息/}).click();
+      await page.getByRole('button',{name:'保存故事'}).click();
       await page.getByText('照片信息已更新').waitFor({timeout:15000});
       const source=await page.locator('.media-viewer-stage img').getAttribute('src');
       const deletedId=source?.match(/\/api\/media\/([^/]+)\/content/)?.[1];
@@ -906,8 +1059,36 @@ async function browserE2e(){
         for(const nav of ['成长','相册']){
           await page.locator('.mobile-nav button[aria-label="'+nav+'"]').click();
           const toggle=page.locator('.record-filter-toggle');
+          if(nav==='相册'){
+            const row=await page.locator('.album-controls').evaluate(el=>{
+              const names=['.record-filter-toggle','.album-add-btn','.album-view-switch'];
+              const rects=names.map(selector=>{
+                const b=el.querySelector(selector)?.getBoundingClientRect();
+                if(!b)throw Error('Missing '+selector);
+                return {top:b.top,bottom:b.bottom,left:b.left,right:b.right,height:b.height};
+              });
+              return {rects,pageWidth:document.documentElement.scrollWidth,windowWidth:innerWidth};
+            });
+            const [filterButton,addButton,viewSwitch]=row.rects;
+            assert.ok(Math.max(...row.rects.map(r=>r.top))-Math.min(...row.rects.map(r=>r.top))<=2,
+              'Album filter, add and view switch must stay on one row at '+width+': '+JSON.stringify(row));
+            assert.ok(filterButton.right<=addButton.left+1&&addButton.right<=viewSwitch.left+1,
+              'Album controls must remain in order without overlap at '+width+': '+JSON.stringify(row));
+            assert.ok(row.rects.every(r=>r.height>=44&&r.left>=-1&&r.right<=width+1),
+              'Album controls must fit viewport and remain tappable at '+width+': '+JSON.stringify(row));
+            assert.ok(row.pageWidth<=row.windowWidth+1,'Album row horizontal overflow at '+width);
+            await page.screenshot({path:join(evidence,'album-toolbar-single-row-'+width+'.png'),fullPage:false});
+          }
           await toggle.click();
           assert.equal(await toggle.getAttribute('aria-expanded'),'true','filter panel failed to expand');
+          if(nav==='相册'){
+            const panel=await page.locator('.album-controls').evaluate(el=>{
+              const form=el.querySelector('.record-filters')?.getBoundingClientRect();
+              const button=el.querySelector('.record-filter-toggle')?.getBoundingClientRect();
+              return {panelTop:form?.top,buttonBottom:button?.bottom};
+            });
+            assert.ok(panel.panelTop>=panel.buttonBottom-2,'Expanded album filter must appear BELOW toolbar '+width+': '+JSON.stringify(panel));
+          }
           const measure=await page.locator('.record-filter-fields input[type="date"]').evaluateAll(inputs=>
             inputs.map(input=>{const r=input.getBoundingClientRect();return{left:r.left,right:r.right,width:r.width}}));
           assert.equal(measure.length,2,'both date filters remain available');
@@ -954,32 +1135,42 @@ async function browserE2e(){
       await page.setViewportSize({width:390,height:844});
     });
     await step((useWebKit?'WebKit':'Chromium')+': draft persistence and multi-baby separation',async()=>{
-      // Moments are intentionally not a mobile tab in the new photo-first layout.
+      const momentDialog=page.getByRole('dialog',{name:'新增成长瞬间'});
       const openMoments=async()=>{
         await page.locator('.mobile-nav button[aria-label="首页"]').click();
         await page.getByRole('button',{name:'记录新瞬间'}).click();
         await page.getByRole('heading',{name:'成长瞬间',exact:true}).waitFor();
+        await page.getByRole('button',{name:'新增成长瞬间'}).click();
+        await momentDialog.waitFor();
+      };
+      const closeMoments=async()=>{
+        await page.keyboard.press('Escape');await momentDialog.waitFor({state:'hidden'});
       };
       await openMoments();
-      const input=page.locator('input[placeholder*="第一次独立走路"]');
+      const input=momentDialog.locator('input[placeholder*="第一次独立走路"]');
+      await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
       const picker=page.locator('.settings-baby-switch select[aria-label="选择宝宝"]');
       await picker.selectOption({label:'Test Baby'});
       await openMoments();
       await input.fill('只属于宝宝A的临时草稿');
+      await closeMoments();
       await page.locator('.mobile-nav button[aria-label="成长"]').click();
       await openMoments();
-      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
+      assert.equal(await input.inputValue(),'只属于宝宝A的临时草稿');
+      await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
       await picker.selectOption({label:'Second Baby'});
       await openMoments();
-      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='');
+      assert.equal(await input.inputValue(),'');
+      await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
       await picker.selectOption({label:'Test Baby'});
       await openMoments();
-      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
+      assert.equal(await input.inputValue(),'只属于宝宝A的临时草稿');
       const fontSize=await input.evaluate(el=>Number.parseFloat(getComputedStyle(el).fontSize));
       assert.ok(fontSize>=16,'Mobile Safari text input should not trigger focus zoom');
+      await closeMoments();
     });
     await step((useWebKit?'WebKit':'Chromium')+': reduced motion and accessible gallery dialog',async()=>{
       await page.emulateMedia({reducedMotion:'reduce'});

@@ -4,7 +4,7 @@ import {saveMediaOffline} from '../offline';
 import {createAlbumThumbnail,createVideoFrameThumbnail} from '../media-upload';
 import {api} from '../lib/client';
 import {mediaThumbnailUrl} from '../private-media-cache.mjs';
-import {Button,IconButton,StatusMessage} from './ui';
+import {Button,IconButton,StatusMessage,ModalDialog} from './ui';
 
 export type MediaItem = {
   id: string;
@@ -42,7 +42,7 @@ export function MediaViewer({ item, index, count, neighbors=[], onNavigate, onCl
   const [version,setVersion]=useState(()=>mediaDraft(item).version??item.updated_at??'');
   const [draftId,setDraftId]=useState(item.id);
   const [saving, setSaving] = useState(false);
-   const [editing,setEditing]=useState(false);
+  const [editing,setEditing]=useState(false);
   const [coverSaving,setCoverSaving]=useState(false);
   const [coverMessage,setCoverMessage]=useState('');
   const [error, setError] = useState('');
@@ -159,8 +159,8 @@ export function MediaViewer({ item, index, count, neighbors=[], onNavigate, onCl
         <section className="media-story-panel" aria-label="照片背后的故事">
            <div className="media-story-head">
              <div><span className="media-story-kicker">这天的故事</span><time dateTime={item.day}>{item.day}</time></div>
-             <Button variant="secondary" className="media-story-edit-button" disabled={saving} aria-expanded={editing} aria-controls="media-story-edit" onClick={()=>setEditing(value=>!value)}>
-               {editing?'收起编辑':item.description?.trim()?'编辑故事':'写下故事'}
+             <Button variant="secondary" className="media-story-edit-button" disabled={saving} aria-expanded={editing} aria-controls="media-story-edit" aria-haspopup="dialog" onClick={()=>setEditing(true)}>
+               {item.description?.trim()?'编辑故事':'写下故事'}
              </Button>
            </div>
            {item.description?.trim()
@@ -192,13 +192,16 @@ export function MediaViewer({ item, index, count, neighbors=[], onNavigate, onCl
             <StatusMessage tone={coverMessage.includes("失败")||coverMessage.includes("无法")?"error":"info"}>{coverMessage}</StatusMessage>
           </div>}
         </div>
-        <form className="media-viewer-edit" id="media-story-edit" hidden={!editing} onSubmit={event => void save(event)}>
+        <ModalDialog open={editing} onClose={()=>setEditing(false)} busy={saving} title={item.description?.trim()?'编辑照片故事':'写下照片故事'} className="bm-story-modal">
+         <form className="media-viewer-edit" id="media-story-edit" onSubmit={event => void save(event)}>
           <label className="field"><span>拍摄日期</span><input type="date" value={day} onChange={event => setDay(event.target.value)} required /></label>
           <label className="field"><span>照片或视频描述</span><textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={1000} rows={3} placeholder="写下这段回忆…" /></label>
-          <Button type="submit" variant="primary" disabled={saving}><Save size={16} />{saving ? '保存中…' : '保存信息'}</Button>
-        </form>
-        {error && <p className="error" role="alert">{error}</p>}
-        {error&&navigator.onLine&&<Button type="button" variant="secondary" disabled={saving} onClick={()=>void reviewVersion()}>核对服务器版本（保留草稿）</Button>}
+          <div className="bm-modal-actions"><Button type="button" variant="secondary" disabled={saving} onClick={()=>setEditing(false)}>稍后继续</Button><Button type="submit" variant="primary" disabled={saving}><Save size={16} />{saving ? '保存中…' : '保存故事'}</Button></div>
+          {error && <p className="error" role="alert">{error}</p>}
+          {error&&navigator.onLine&&<Button type="button" variant="secondary" disabled={saving} onClick={()=>void reviewVersion()}>核对服务器版本（保留草稿）</Button>}
+         </form>
+        </ModalDialog>
+        {!editing&&error&&<p className="error" role="alert">{error}</p>}
       </div>
     </dialog>
   );
