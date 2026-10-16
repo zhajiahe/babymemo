@@ -8,7 +8,7 @@ import {validDate,cleanText,short,tableForKind,labelForKind,maxLimit,listLine,fi
 import {guardAction,validDay,dayInZone} from './wechat-policy.mjs';
 import {ageOnDay} from './wechat-answer.mjs';
 import {retentionCutoff} from './media-retention.mjs';
-import {mediaCapabilities} from './wechat-capabilities.mjs';
+import {mediaCapabilities} from './wechat-capabilities.ts';
 import {auditChange,operationSnapshot,snapshotChanges} from './wechat-operations.mjs';
 export async function runWechatTool(env:Env,baby:WechatBaby|null,action:string,args:Record<string,any>={},messageId='',originalText='',options:ToolOptions={}){
  const at=options.at||Date.now();
