@@ -1135,32 +1135,42 @@ async function browserE2e(){
       await page.setViewportSize({width:390,height:844});
     });
     await step((useWebKit?'WebKit':'Chromium')+': draft persistence and multi-baby separation',async()=>{
-      // Moments are intentionally not a mobile tab in the new photo-first layout.
+      const momentDialog=page.getByRole('dialog',{name:'新增成长瞬间'});
       const openMoments=async()=>{
         await page.locator('.mobile-nav button[aria-label="首页"]').click();
         await page.getByRole('button',{name:'记录新瞬间'}).click();
         await page.getByRole('heading',{name:'成长瞬间',exact:true}).waitFor();
+        await page.getByRole('button',{name:'新增成长瞬间'}).click();
+        await momentDialog.waitFor();
+      };
+      const closeMoments=async()=>{
+        await page.keyboard.press('Escape');await momentDialog.waitFor({state:'hidden'});
       };
       await openMoments();
-      const input=page.locator('input[placeholder*="第一次独立走路"]');
+      const input=momentDialog.locator('input[placeholder*="第一次独立走路"]');
+      await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
       const picker=page.locator('.settings-baby-switch select[aria-label="选择宝宝"]');
       await picker.selectOption({label:'Test Baby'});
       await openMoments();
       await input.fill('只属于宝宝A的临时草稿');
+      await closeMoments();
       await page.locator('.mobile-nav button[aria-label="成长"]').click();
       await openMoments();
-      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
+      assert.equal(await input.inputValue(),'只属于宝宝A的临时草稿');
+      await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
       await picker.selectOption({label:'Second Baby'});
       await openMoments();
-      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='');
+      assert.equal(await input.inputValue(),'');
+      await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
       await picker.selectOption({label:'Test Baby'});
       await openMoments();
-      await page.waitForFunction(()=>document.querySelector('input[placeholder*="第一次独立走路"]')?.value==='只属于宝宝A的临时草稿');
+      assert.equal(await input.inputValue(),'只属于宝宝A的临时草稿');
       const fontSize=await input.evaluate(el=>Number.parseFloat(getComputedStyle(el).fontSize));
       assert.ok(fontSize>=16,'Mobile Safari text input should not trigger focus zoom');
+      await closeMoments();
     });
     await step((useWebKit?'WebKit':'Chromium')+': reduced motion and accessible gallery dialog',async()=>{
       await page.emulateMedia({reducedMotion:'reduce'});
