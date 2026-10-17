@@ -55,7 +55,7 @@ export async function browserThemeRegression({page,context,base,evidence}) {
  await page.getByRole('heading',{name:'Test Baby'}).waitFor();
  await page.screenshot({path:join(evidence,'theme-dark-mobile-home-390.png'),fullPage:false});
  await mobileNav.getByRole('button',{name:'相册'}).click();
- await page.locator('.album-content-toolbar').waitFor();
+ await page.locator('.photo-preview').first().waitFor();
  await page.screenshot({path:join(evidence,'theme-dark-mobile-album-390.png'),fullPage:false});
  await page.locator('.photo-preview').first().click();
  const liveViewer=page.getByRole('dialog',{name:'相册预览'});
