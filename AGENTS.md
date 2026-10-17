@@ -14,6 +14,6 @@
 
 ## 交付门槛
 
-执行 `npm run verify` 和相关 `npm run test:e2e`；修改 UI 时覆盖常见手机视口、44px 触控目标和可见状态；修改消息/媒体/数据库时补多宝宝、失败与幂等用例。禁止为绿灯删测试、弱化校验。真实微信与生产数据演练仅手动进行；唯一自动收费例外是仓库所有者发起、目标为 `main` 的 PR，在独立 `harness-benchmark` 环境使用低额度 OpenRouter Key 运行 30 题合成数据评测。不得将其他付费调用加入自动 CI。
+执行 `npm run verify` 和相关 `npm run test:e2e`；修改 UI 时覆盖常见手机视口、44px 触控目标和可见状态；修改消息/媒体/数据库时补多宝宝、失败与幂等用例。禁止为绿灯删测试、弱化校验。真实微信与生产数据演练仅手动进行；唯一自动收费例外是仓库所有者发起、目标为 `main` 的 PR，复用 GitHub `production` 环境的既有 `OPENROUTER_API_KEY`，在独立 Harness Job 仅注入这一密钥 运行 30 题合成数据评测。不得将其他付费调用加入自动 CI。
 
 部署、测试、设计分别以 [Actions](docs/github-action-deploy.md)、[QA](docs/qa-regression-matrix.md)、[设计规范](docs/design-system.md) 为准。文档不要记录已废弃功能、未实施实验或过往测试过程。
