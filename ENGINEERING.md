@@ -22,8 +22,8 @@
 
 ## 验证与记录
 
-`npm run verify` = 类型检查 + Node 单测 + 构建；`npm run test:e2e` = 隔离本地 Worker/D1/R2；浏览器及 Linux WebKit 在 [Check BabyMemo](https://github.com/zhajiahe/babymemo/actions/workflows/ci.yml) 中执行。真实 iPhone、iLink、收费模型、云端恢复需另行人工验收，不能从绿色 CI 推断通过。
+`npm run verify` = 类型检查 + Node 单测 + 构建；`npm run test:e2e` = 隔离本地 Worker/D1/R2；浏览器及 Linux WebKit 在 [Check BabyMemo](https://github.com/zhajiahe/babymemo/actions/workflows/ci.yml) 中执行。真实 iPhone、iLink、云端恢复仍需人工验收；CI 的 OpenRouter 30 题为合成任务与模拟工具响应，不代表真实微信/生产数据路径验收。
 
 **面向使用者**的说明只写现在能操作和观察到的功能。**面向维护者**的说明只保留仍然生效的部署、架构、安全与验证入口。不维护已移除功能、过期方案、实验经过或测试成绩的现行文档；需要追溯时使用 Git 历史、PR 和 Actions。README 只展示用户入口与必要的维护者链接。删除文档时修复全部引用，并运行 `node --test scripts/docs-quality.test.mjs`。
 
-外部模型现场测试仅能手动触发，必须使用合成数据、明确确认及独立密钥，绝不加入普通 PR/`main` 自动 CI。
+目标为 `main` 的仓库所有者 PR 自动执行 30 题 OpenRouter 合成数据基准测试（`Harness OpenRouter / 30 Cases`），复用既有 GitHub `production` Environment 中的 `OPENROUTER_API_KEY`（仅在 Harness Job 环境注入此一个密钥，不传入 Cloudflare 生产访问凭据）；30 题完整执行、安全关键错误为零、通过率至少 80%，账单和逐题轨迹留 Actions Artifact。其余真实模型、微信或生产数据测试保持手动。合并限制必须通过 GitHub Rulesets 将此状态检查设置为 Required。
