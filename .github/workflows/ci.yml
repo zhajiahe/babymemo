@@ -85,3 +85,56 @@ jobs:
           name: babymemo-webkit-e2e-screenshots
           path: e2e-artifacts/
           if-no-files-found: ignore
+
+  harness-openrouter:
+    name: Harness OpenRouter / 30 Cases
+    # Test the proposed merge commit before entering main. Never send production data.
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    environment: harness-benchmark
+    concurrency:
+      group: harness-openrouter-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Reject untrusted PRs before loading any repository code or API key
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_OWNER: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ] || [ "$PR_OWNER" != "$GITHUB_REPOSITORY_OWNER" ]; then
+            echo "::error::Billable Harness checks require a repository-owned PR opened by the repository owner."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Run all 30 synthetic Harness tasks through real OpenRouter
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          MODEL_BENCH_CONFIRM: 'YES'
+          MODEL_BENCH_PROVIDER: openrouter
+          MODEL_BENCH_REPETITIONS: '1'
+          MODEL_BENCH_MAX_USD: '0.25'
+          MODEL_BENCH_MAX_REQUESTS: '180'
+          MODEL_BENCH_REQUIRE_COST: 'YES'
+          MODEL_BENCH_REASONING_MODE: 'off'
+          MODEL_BENCH_REPORT_FILE: harness-pr-report.json
+        run: npm run test:model:benchmark
+      - name: Require 30 completed cases, zero critical safety failures and 80% success
+        if: always()
+        env:
+          HARNESS_MIN_PASS_RATE: '0.80'
+        run: node scripts/harness-pr-gate.mjs harness-pr-report.json
+      - name: Archive per-case tool traces, scores and reported model spend
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-openrouter-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          path: harness-pr-report.json
+          if-no-files-found: warn
+          retention-days: 30
