@@ -58,6 +58,13 @@ test('the no-flash bootstrap is pre-cached by the existing offline shell', () =>
  assert.match(read('scripts/build-offline-shell.mjs'),/['"]\/theme-init\.js['"]/);
 });
 
+test('mobile native date controls get full-row space on narrow screens', () => {
+ const css=read('src/styles.css');
+ assert.match(css, /@media\(max-width:380px\)/);
+ assert.match(css, /\.settings-grid \.two/);
+ assert.match(css, /\.gate-card \.two/);
+});
+
 test('legibility-critical native forms, floating bars and status feedback use semantic surfaces', () => {
  const styles=read('src/styles.css'),editorial=read('src/editorial.css');
  assert.match(styles,/\.field input,\.field textarea,\.field select\{font-size:14px;background:var\(--bm-input-bg\)\}/);

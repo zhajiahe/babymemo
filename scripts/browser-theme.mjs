@@ -43,6 +43,35 @@ export async function browserThemeRegression({page,context,base,evidence}) {
  });
  assert.equal(overflow,false,'theme segmented switch overflows 320px');
  await page.screenshot({path:join(evidence,'theme-dark-settings-320.png'),fullPage:true});
+ const narrowDate=await page.locator('.settings-grid input[type="date"]').first().evaluate(input=>{
+  const r=input.getBoundingClientRect(),row=input.closest('.two').getBoundingClientRect();
+  return {width:r.width,row:row.width};
+ });
+ assert.ok(narrowDate.width>230,'320px: date control needs its own row for native calendar affordances');
+ // Observe the actual signed-in app, not a static concept or simulated image.
+ await page.setViewportSize({width:390,height:844});
+ const mobileNav=page.locator('.mobile-nav');
+ await mobileNav.getByRole('button',{name:'首页'}).click();
+ await page.getByRole('heading',{name:'Test Baby'}).waitFor();
+ await page.screenshot({path:join(evidence,'theme-dark-mobile-home-390.png'),fullPage:false});
+ await mobileNav.getByRole('button',{name:'相册'}).click();
+ await page.locator('.album-content-toolbar').waitFor();
+ await page.screenshot({path:join(evidence,'theme-dark-mobile-album-390.png'),fullPage:false});
+ await page.locator('.photo-preview').first().click();
+ const liveViewer=page.getByRole('dialog',{name:'相册预览'});
+ await liveViewer.waitFor();
+ await page.screenshot({path:join(evidence,'theme-dark-mobile-media-viewer-390.png'),fullPage:false});
+ await liveViewer.getByRole('button',{name:'关闭预览'}).click();
+ await mobileNav.getByRole('button',{name:'成长'}).click();
+ await page.getByRole('heading',{name:'成长记录'}).waitFor();
+ await page.screenshot({path:join(evidence,'theme-dark-mobile-growth-390.png'),fullPage:false});
+ await page.getByRole('button',{name:'新增成长记录'}).click();
+ const growthModal=page.getByRole('dialog',{name:'新增成长记录'});
+ await growthModal.waitFor();
+ await page.screenshot({path:join(evidence,'theme-dark-mobile-growth-modal-390.png'),fullPage:false});
+ await growthModal.getByRole('button',{name:'关闭新增成长记录'}).click();
+ await mobileNav.getByRole('button',{name:'设置'}).click();
+ await page.getByRole('group',{name:'外观主题'}).waitFor();
  await page.setViewportSize({width:1280,height:900});
 
  // The public demo must share the saved appearance but never need authentication.
@@ -74,10 +103,16 @@ export async function browserThemeRegression({page,context,base,evidence}) {
   await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
  } finally {await mobile.close()}
 
- // System appearance changes are only observed in automatic mode.
+ // No saved appearance: mobile defaults to the device OS, including after reload.
+ await page.setViewportSize({width:390,height:844});
  await choose('跟随系统').click();
  await page.emulateMedia({colorScheme:'dark'});
+ await page.reload();
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
+ assert.equal(await page.evaluate(()=>localStorage.getItem('babymemo-theme')),null);
+ assert.equal(await page.getByRole('group',{name:'外观主题'}).getByRole('button',{name:'跟随系统'}).getAttribute('aria-pressed'),'true');
+ await page.screenshot({path:join(evidence,'theme-system-mobile-dark-390.png'),fullPage:false});
+ await page.setViewportSize({width:1280,height:900});
  await page.emulateMedia({colorScheme:'light'});
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');
  await choose('深色').click();

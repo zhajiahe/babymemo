@@ -218,6 +218,15 @@ input[type="date"],input[type="time"] { min-width:0; max-width:100%; }
 .record-filter-fields .field { width:100%; min-width:0; }
 @media(max-width:650px) { .two { grid-template-columns:repeat(2,minmax(0,1fr)); } .two .field { min-width:0; } .two input[type="date"],.two input[type="time"] { min-width:0; width:100%; max-width:100%; } }
 
+/* Narrow phone widths cannot fit the full locale-dependent date label and
+   native calendar indicator into a 140px column. Stack profile fields instead. */
+@media(max-width:380px) {
+ .settings-grid .two,
+ .gate-card .two { grid-template-columns:minmax(0,1fr); }
+ .settings-grid .two .field input[type="date"],
+ .gate-card .two .field input[type="date"] { min-width:0; width:100%; }
+}
+
 /* Uniform, readable video indicators in the home feed. */
 .home-video-badge,.home-thumb-video{display:inline-flex;align-items:center;justify-content:center;gap:5px;pointer-events:none}
 .home-thumb-video svg,.home-video-badge svg{display:block}
