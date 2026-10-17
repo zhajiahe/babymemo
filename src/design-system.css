@@ -25,6 +25,20 @@
   --bm-focus-ring: #245F91;
   --bm-success: #246C4D;
   --bm-error: #9B423E;
+  --bm-gate-intro: #EAF4FC;
+  --bm-empty-photos: #EEF5FB;
+  --bm-glass-top: rgba(247,250,253,.88);
+  --bm-glass-bottom: rgba(255,255,255,.94);
+  --bm-soft-success: #E8F7EE;
+  --bm-success-border: #C7E4D5;
+  --bm-error-soft: #FFF1ED;
+  --bm-error-border: #F1CDCD;
+  --bm-avatar-bg: #ECD8D2;
+  --bm-avatar-ink: #BE725D;
+  --bm-toast-bg: #263647;
+  --bm-toast-ink: #FFFFFF;
+  --bm-status-online: #67BC8E;
+  --bm-status-online-ring: #E3F4E9;
 
   --bm-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif;
   --bm-font-story: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif;
@@ -58,6 +72,52 @@
   --bm-duration-fast: 140ms;
   --bm-duration-normal: 200ms;
   --bm-ease-out: cubic-bezier(.2, .8, .2, 1);
+}
+
+/* Dark mode uses semantic colors, never filters: photos and video remain untouched. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bm-page: #101820;
+  --bm-surface: #192630;
+  --bm-surface-alt: #15212B;
+  --bm-surface-soft: #233440;
+  --bm-story-surface: #1C2A34;
+  --bm-photo-bg: #263744;
+  --bm-input-bg: #1C2B36;
+  --bm-ink: #EDF2F5;
+  --bm-muted: #B6C6D1;
+  --bm-brand: #97CCF5;
+  --bm-brand-hover: #C1E5FF;
+  --bm-brand-soft: #254256;
+  --bm-on-brand: #102332;
+  --bm-border: #405360;
+  --bm-border-soft: #344653;
+  --bm-focus: #A9D9FF;
+  --bm-focus-ring: #A9D9FF;
+  --bm-success: #8BE1AE;
+  --bm-error: #FFB3A9;
+  --bm-shadow-card: 0 3px 16px rgba(0,0,0,.18);
+  --bm-shadow-raised: 0 16px 48px rgba(0,0,0,.42);
+  --bm-chart-line: #F2AB90;
+  --bm-chart-grid: #405360;
+  --bm-chart-axis: #BED0DA;
+  --bm-chart-dot: #F2AB90;
+  --bm-chart-area: #342E34;
+  --bm-danger-soft: #442C35;
+  --bm-gate-intro: #1B3243;
+  --bm-empty-photos: #20384B;
+  --bm-glass-top: rgba(21,33,43,.93);
+  --bm-glass-bottom: rgba(25,38,48,.95);
+  --bm-soft-success: #213C32;
+  --bm-success-border: #416F58;
+  --bm-error-soft: #422E35;
+  --bm-error-border: #805258;
+  --bm-avatar-bg: #493632;
+  --bm-avatar-ink: #F7B89F;
+  --bm-toast-bg: #345062;
+  --bm-toast-ink: #FFFFFF;
+  --bm-status-online: #8BE1AE;
+  --bm-status-online-ring: #294838;
 }
 
 /* Keyboard, pointer, disabled and reduced-motion behavior is global. */
@@ -128,6 +188,22 @@
   color: var(--bm-brand);
 }
 .bm-segmented-icon { display: inline-flex; align-items: center; }
+
+/* The same accessible theme control works in login, settings, and read-only demos. */
+.theme-setting { min-width:0; }
+.theme-switch { width:fit-content; }
+.theme-switch button { flex:1 1 auto; }
+.theme-help { margin:10px 0 0; line-height:1.65; }
+.theme-setting--compact .theme-switch button { padding:8px 11px; }
+.gate-theme-selector { display:flex;justify-content:flex-end;margin:0 0 18px; }
+.appearance-settings .section-title { margin-bottom:12px; }
+.demo-theme-card { grid-column:1/-1; }
+.mobile-demo-header .theme-setting { margin-left:auto; }
+@media (max-width:480px) {
+ .theme-switch { display:flex; width:100%; }
+ .theme-switch button { padding-inline:8px; font-size:13px; }
+ .theme-setting--compact .theme-switch button { padding-inline:7px; }
+}
 
 @media (max-width: 380px) {
   .bm-segmented button { padding-inline: 11px; font-size: 13px; }

@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import {ExternalLink,Monitor,Smartphone} from 'lucide-react';
 import Demo from './Demo';
+import {ThemeSelector} from '../components/ThemeSelector';
 
 // Desktop: a real interactive 390px browser viewport. On phones: render the
 // shared read-only Demo directly, avoiding nested touch scroll and iframe traps.
@@ -16,7 +17,7 @@ export default function MobileDemo(){
  return <main className="mobile-demo-shell">
   <header className="mobile-demo-header">
    <a className="mobile-demo-brand" href="/demo" aria-label="返回 BabyMemo 网页 Demo"><span className="mobile-demo-mark"><Smartphone size={20}/></span><span>BabyMemo <small>移动端体验</small></span></a>
-   <nav className="mobile-demo-links" aria-label="切换演示版本">
+   <ThemeSelector compact/><nav className="mobile-demo-links" aria-label="切换演示版本">
     <a href="/demo"><Monitor size={16}/> 网页版</a>
     <a href="/demo/mobile" aria-current="page"><Smartphone size={16}/> 移动版</a>
    </nav>

@@ -4,6 +4,7 @@ import {
   Images, Play, Plus, Settings2, ShieldCheck, TrendingUp, X
 } from 'lucide-react';
 import {Logo,Button,SegmentedControl} from '../components/ui';
+import {ThemeSelector} from '../components/ThemeSelector';
 import {GrowthChart} from '../features/growth/RecordView';
 import type {RecordItem} from '../lib/client';
 
@@ -141,7 +142,7 @@ export default function Demo(){
     </>}
     {active==='growth'&&<div className="demo-growth"><GrowthChart items={growth}/><section className="card"><h2>测量历史</h2><p className="muted">每一次变化，都有迹可循。</p>{growth.slice().reverse().map(record=><div className="demo-history-row" key={record.id}><time dateTime={record.day}>{record.day}</time><span>体重 {record.weight} kg</span><span>身高 {record.height} cm</span></div>)}</section></div>}
     {active==='moments'&&<section className="demo-moments"><div className="demo-moments-intro">记录那些不想忘记的第一次，和每一个平凡又珍贵的日子。</div>{moments.map(moment=><article className="card demo-moment" key={moment.day}><time dateTime={moment.day}>{moment.day}</time><h2>{moment.title}</h2><p>{moment.description}</p></article>)}</section>}
-    {active==='settings'&&<div className="demo-settings"><section className="card"><h2>家庭空间</h2><p className="muted">我们的温暖小家</p><div className="demo-history-row"><span>宝宝</span><strong>小星星</strong></div><div className="demo-history-row"><span>家庭成员</span><strong>仅受邀家人</strong></div><div className="demo-history-row"><span>照片与日记</span><strong>私密保存</strong></div></section><section className="card demo-setting-note"><ShieldCheck size={22}/><h2>只属于家人的成长记录</h2><p>真实 BabyMemo 还支持微信记录、离线同步与家庭档案导出。演示仅展示只读界面，不会保存或修改数据。</p><a href="https://github.com/zhajiahe/babymemo" target="_blank" rel="noopener noreferrer">查看产品与部署说明 ↗</a></section></div>}
+    {active==='settings'&&<div className="demo-settings"><section className="card demo-theme-card"><h2>外观主题</h2><ThemeSelector/></section><section className="card"><h2>家庭空间</h2><p className="muted">我们的温暖小家</p><div className="demo-history-row"><span>宝宝</span><strong>小星星</strong></div><div className="demo-history-row"><span>家庭成员</span><strong>仅受邀家人</strong></div><div className="demo-history-row"><span>照片与日记</span><strong>私密保存</strong></div></section><section className="card demo-setting-note"><ShieldCheck size={22}/><h2>只属于家人的成长记录</h2><p>真实 BabyMemo 还支持微信记录、离线同步与家庭档案导出。演示仅展示只读界面，不会保存或修改数据。</p><a href="https://github.com/zhajiahe/babymemo" target="_blank" rel="noopener noreferrer">查看产品与部署说明 ↗</a></section></div>}
    </div>
   </main>
   {selected!==null&&<PhotoViewer index={selected} onClose={()=>setSelected(null)} onNavigate={setSelected}/>}
