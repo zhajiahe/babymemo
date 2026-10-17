@@ -54,6 +54,10 @@ test('all entry points apply theme before Vite, share tokens and expose a workin
  assert.match(read('src/App.tsx'),/<ThemeSelector compact\/>/);
 });
 
+test('the no-flash bootstrap is pre-cached by the existing offline shell', () => {
+ assert.match(read('scripts/build-offline-shell.mjs'),/['"]\/theme-init\\.js['"]/);
+});
+
 test('legibility-critical native forms, floating bars and status feedback use semantic surfaces', () => {
  const styles=read('src/styles.css'),editorial=read('src/editorial.css');
  assert.match(styles,/\.field input,\.field textarea,\.field select\{font-size:14px;background:var\(--bm-input-bg\)\}/);

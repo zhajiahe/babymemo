@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import ts from 'typescript';
 const target=process.argv[2]||'dist';
 if(!existsSync(target+'/index.html'))throw Error('Build the app before generating the offline shell');
-const assets=['/index.html','/offline-store.mjs','/private-media-cache.mjs','/site.webmanifest','/brand/mark.svg','/brand/wordmark.svg','/icon-192.png','/icon-512.png','/icon-maskable-512.png','/apple-touch-icon.png','/favicon.svg','/favicon.ico',...readdirSync(target+'/assets').map(name=>'/assets/'+name)];
+const assets=['/index.html','/theme-init.js','/offline-store.mjs','/private-media-cache.mjs','/site.webmanifest','/brand/mark.svg','/brand/wordmark.svg','/icon-192.png','/icon-512.png','/icon-maskable-512.png','/apple-touch-icon.png','/favicon.svg','/favicon.ico',...readdirSync(target+'/assets').map(name=>'/assets/'+name)];
 // The same strictly checked TS implementation ships to both Vite and the service worker.
 const typedStore=readFileSync('src/offline-store.ts','utf8');
 const storeJS=ts.transpileModule(typedStore,{fileName:'offline-store.ts',compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
