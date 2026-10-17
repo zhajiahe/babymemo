@@ -8,6 +8,7 @@ import {RecordView,GrowthChart} from './features/growth/RecordView';
 import {ageLabel} from './lib/age.mjs';
 import {Album} from './features/album/Album';
 import {Settings} from './features/settings/Settings';
+import {ThemeSelector} from './components/ThemeSelector';
 import { useEffect, useState, useRef, type FormEvent, type ReactNode } from 'react';
 import { Button, Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
 import { MediaViewer, type MediaItem } from './components/MediaViewer';
@@ -26,7 +27,7 @@ function Gate({onReady}:{onReady:()=>void}){
   catch(e){setError(e instanceof Error?e.message:'操作失败');}finally{setBusy(false);}
  }
  return <div className="gate"><div className="gate-intro"><Logo/><h1>一家人的成长，<br/>都记在这里。</h1><p>照片、成长记录和那些第一次。<br/>留下一份只属于家人的日记。</p><a className="demo-gate-link" href="/demo.html">先看看 BabyMemo 长什么样 <ChevronRight size={17}/></a></div>
- <div className="gate-panel"><div className="gate-card"><div className="eyebrow">{mode==='setup'?'首次设置':'家庭登录'}</div><h2>{mode==='setup'?'创建家庭空间':'登录 BabyMemo'}</h2><p className="muted">{mode==='setup'?'完成以下必填信息后，才会开放记录功能。':'使用你初始化时设置的家庭账号登录。'}</p>
+ <div className="gate-panel"><div className="gate-card"><div className="gate-theme-selector"><ThemeSelector compact/></div><div className="eyebrow">{mode==='setup'?'首次设置':'家庭登录'}</div><h2>{mode==='setup'?'创建家庭空间':'登录 BabyMemo'}</h2><p className="muted">{mode==='setup'?'完成以下必填信息后，才会开放记录功能。':'使用你初始化时设置的家庭账号登录。'}</p>
  {mode==='loading'?<div className="skeleton">正在检查服务状态…</div>:mode==='unavailable'?<div className="stack"><div className="error" role="alert">{error}</div><Button variant="secondary" onClick={()=>location.reload()}><RefreshCw size={15}/>重新检查</Button></div>:<form onSubmit={submit} className="stack">
  {mode==='setup'&&<><div className="setup-check">{[['会话密钥',ready.sessionConfigured],['加密密钥',ready.encryptionConfigured]].map(([label,ok])=><span key={String(label)} className={ok?'good':'bad'}>{ok?<Check size={13}/>:<WifiOff size={13}/>} {label}</span>)}</div><p className="setup-security-note">首次访问未初始化实例的人可以创建管理员。请部署后立即完成初始化；如需限制访问，请提前为站点启用 Cloudflare Access。</p></>}
  <>{mode==='setup'&&<Field label="家庭名称（必填）"><input required maxLength={80} value={form.familyName} onChange={e=>setForm({...form,familyName:e.target.value})} placeholder="例如：我们的温暖小家"/></Field>}<Field label={mode==='setup'?'管理员登录名':'管理员登录名'}><input required value={form.ownerName} autoComplete="username" onChange={e=>setForm({...form,ownerName:e.target.value})} placeholder="例如：爸爸 / 妈妈"/></Field>

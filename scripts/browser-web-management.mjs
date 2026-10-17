@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {browserThemeRegression} from './browser-theme.mjs';
 export async function browserWebManagement({page,context,base,evidence,step}){
  const nav=async label=>{await page.locator('.sidebar .nav-link').filter({hasText:label}).click()};
  await page.setViewportSize({width:1280,height:900});await page.reload();await nav('设置');
+ await step('Theme: system preference, reload, tabs, iframe and 320px viewport',async()=>{await browserThemeRegression({page,context,base,evidence})});
  await page.locator('.settings-baby-switch select').selectOption({label:'Test Baby'});
  const babyId=await page.locator('.settings-baby-switch select').inputValue();
  const requestHeaders={Origin:base,Cookie:(await context.cookies()).map(cookie=>cookie.name+'='+cookie.value).join(';')};
