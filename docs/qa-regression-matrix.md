@@ -30,7 +30,7 @@ Node / Worker / 浏览器自动测试不能连接生产 D1/R2，也不使用真�
 
 ### 一次性启用合并门禁
 
-在 GitHub `Settings → Environments` 中创建 `harness-benchmark`，只存放低额度的专用 `OPENROUTER_API_KEY`；不要直接复用生产服务的密钥。在 OpenRouter 为此 Key 设置硬性额度限制。PR 只接受同仓库且由仓库所有者提交；Fork PR 不接收 Key，会被该工作流拒绝。GitHub `Settings → Rules → Rulesets`（或 Branch protection）中对 `main` 将 `Harness OpenRouter / 30 Cases` 设为 **Required status check**，才能确保红灯阻止合并。变更这份检查工作流本身也应做代码审阅。
+在 GitHub `Settings → Environments` 中创建 `harness-benchmark`，只存放低额度的专用 `HARNESS_OPENROUTER_API_KEY`；不要直接复用生产服务的密钥。在 OpenRouter 为此 Key 设置硬性额度限制。PR 只接受同仓库且由仓库所有者提交；Fork PR 不接收 Key，会被该工作流拒绝。GitHub `Settings → Rules → Rulesets`（或 Branch protection）中对 `main` 将 `Harness OpenRouter / 30 Cases` 设为 **Required status check**，才能确保红灯阻止合并。变更这份检查工作流本身也应做代码审阅。
 
 评测使用 `deepseek/deepseek-v4.1-flash`（由默认模型常量解析），只调用 OpenRouter，每题最多按 ReAct 上限调用、总请求数最多 180；软预算 0.25 USD / PR，实际扣费必须通过模型 Key 硬额度控制。模型费用缺失、30 题未跑完、任何安全关键错误、通过率低于 80% 均使检查失败。PR 修订会重新触发评测；逐题 JSON 报告保留 30 天。
 
