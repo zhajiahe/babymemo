@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Manual ONLY: thirty V3 virtual-family tasks, exact BabyMemo tool schema,
-// same prompts/observations/scoring for Qwen Workers AI and Muse OpenRouter.
+// Thirty virtual-family tasks, exact BabyMemo tool schema. Live calls run only
+// with an explicit confirmation flag (set by the approved PR benchmark job).
+// The default provider is OpenRouter; manual comparisons may select Workers AI.
 // No production WeChat, D1, R2, personal messages or real tool side effects.
 import {writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -14,7 +15,7 @@ import {diagnosticEvent,safeBenchPreview,benchmarkFailureKind,isFatalBenchmarkEr
 import {MODEL_BENCH_CASES,BENCHMARK_DATE,BENCHMARK_ID,benchmarkMessages,syntheticObservation,validateBenchmarkTool,scoreModelCase,classifyBenchmarkIssues,aggregateBenchmark} from './model-benchmark-cases.mjs';
 
 if(process.env.MODEL_BENCH_CONFIRM!=='YES')throw Error('MANUAL_CONFIRMATION_REQUIRED');
-const provider=process.env.MODEL_BENCH_PROVIDER||'both';
+const provider=process.env.MODEL_BENCH_PROVIDER||'openrouter';
 if(!['workers-ai','openrouter','both'].includes(provider))throw Error('INVALID_PROVIDER');
 const repetitions=Number(process.env.MODEL_BENCH_REPETITIONS||1);
 if(!Number.isInteger(repetitions)||repetitions<1||repetitions>3)throw Error('REPETITIONS_OUT_OF_RANGE');
@@ -33,7 +34,11 @@ if(selected.includes('workers-ai')&&!process.env.CLOUDFLARE_AI_API_TOKEN)console
 if(selected.includes('workers-ai')&&(!accountId||!apiToken))throw Error('WORKERS_AI_CREDENTIALS_MISSING');
 if(selected.includes('openrouter')&&(!openRouterKey||!openRouterKey.startsWith('sk-or-')))throw Error('OPENROUTER_KEY_MISSING');
 
-const spent={neurons:0,usd:0,requests:0},maximumRequests=repetitions*MODEL_BENCH_CASES.length*6*selected.length;
+const spent={neurons:0,usd:0,requests:0};
+const absoluteMaxRequests=repetitions*MODEL_BENCH_CASES.length*6*selected.length;
+const maximumRequests=process.env.MODEL_BENCH_MAX_REQUESTS===undefined?absoluteMaxRequests:Number(process.env.MODEL_BENCH_MAX_REQUESTS);
+if(!Number.isInteger(maximumRequests)||maximumRequests<1||maximumRequests>absoluteMaxRequests)throw Error('INVALID_BENCHMARK_REQUEST_LIMIT');
+const requireCost=process.env.MODEL_BENCH_REQUIRE_COST==='YES';
 const log=(stage,details)=>console.log(diagnosticEvent(stage,details));
 async function request(provider,messages,tools,maxTokens=1200,meta={}){
  const model=provider==='workers-ai'?DEFAULT_QWEN_MODEL:openRouterModel;
@@ -76,6 +81,7 @@ async function request(provider,messages,tools,maxTokens=1200,meta={}){
  // OpenRouter cost is USD when present. Do not invent billed dollars when absent.
  const cost=typeof usage.cost==='number'&&Number.isFinite(usage.cost)?usage.cost:
    typeof response?.total_cost==='number'&&Number.isFinite(response.total_cost)?response.total_cost:null;
+ if(cost===null&&requireCost)throw Error('OPENROUTER_COST_UNAVAILABLE');
  if(cost!==null)spent.usd+=cost;
  const choice=response?.choices?.[0],message=choice?.message;
  const applied=response?._babymemo_request||{};
