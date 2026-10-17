@@ -92,7 +92,9 @@ jobs:
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 50
-    environment: harness-benchmark
+    # Reuse the same production Environment Secret used by deploy.yml.
+    # The job only receives OPENROUTER_API_KEY; no Cloudflare credentials are passed.
+    environment: production
     concurrency:
       group: harness-openrouter-pr-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -115,7 +117,7 @@ jobs:
       - run: npm install --no-audit --no-fund
       - name: Run all 30 synthetic Harness tasks through real OpenRouter
         env:
-          OPENROUTER_API_KEY: ${{ secrets.HARNESS_OPENROUTER_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           MODEL_BENCH_CONFIRM: 'YES'
           MODEL_BENCH_PROVIDER: openrouter
           MODEL_BENCH_REPETITIONS: '1'
