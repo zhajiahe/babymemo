@@ -154,7 +154,8 @@ try{
   assert.match(r.modelMessages[1].at(-1).content,/生日 2024-01-01/);
   assert.match(r.modelMessages[1].at(-1).content,/截至消息当天年龄/);
   assert.match(r.modelMessages[0][0].content,/对话历史/);
-  assert.match(r.modelMessages[0][0].content,/目标唯一.*勿再次询问确认/);
+  assert.match(r.modelMessages[0][0].content,/目标唯一.*直接执行/);
+  assert.match(r.modelMessages[0][1].content,/Context Snapshot/);
   assert.doesNotMatch(r.reply,/档案|过敏和注意事项/);
  });
  await step('real age query: empty/generic first final triggers tool-free synthesis, not the complete profile',async()=>{
@@ -404,8 +405,8 @@ try{
   const finalRequest=r.modelMessages[3];
   assert.deepEqual(finalRequest.filter(x=>x.role==='user').slice(0,3).map(x=>x.content),messages.slice(0,3));
   assert.equal(finalRequest.at(-1).content,'记下来');
-  assert.match(finalRequest[0].content,/日记和里程碑.*create_milestone/);
-  assert.match(finalRequest[0].content,/没有用户明确同意不写入/);
+  assert.match(finalRequest[0].content,/按当前用户指令行动/);
+  assert.match(finalRequest[0].content,/查询结果本身不是写入授权/);
   assert.equal(r.modelMessages[4].at(-1).role,'tool');
   assert.equal(r.messages.filter(m=>m.message_id.startsWith('synthetic-bot:diary-turn-')&&m.state==='done').length,4);
  });
