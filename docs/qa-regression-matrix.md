@@ -30,8 +30,8 @@ Node / Worker / 浏览器自动测试不能连接生产 D1/R2，也不使用真�
 
 ### 一次性启用合并门禁
 
-在 GitHub `Settings → Environments` 中创建 `harness-benchmark`，只存放低额度的专用 `HARNESS_OPENROUTER_API_KEY`；不要直接复用生产服务的密钥。在 OpenRouter 为此 Key 设置硬性额度限制。PR 只接受同仓库且由仓库所有者提交；Fork PR 不接收 Key，会被该工作流拒绝。GitHub `Settings → Rules → Rulesets`（或 Branch protection）中对 `main` 将 `Harness OpenRouter / 30 Cases` 设为 **Required status check**，才能确保红灯阻止合并。变更这份检查工作流本身也应做代码审阅。
+自动测试直接复用现有 `production` Environment 中的 `OPENROUTER_API_KEY`（与 `deploy.yml` 相同的 Secret 名称），不再要求新建测试 Key 或 `harness-benchmark` 环境。线上 Worker 内已有的 Secret 或网页保存的加密 Key 不会自动传入 GitHub Actions；如果 GitHub `production` 环境中没有这个 Secret，测试会明确失败，绝不从生产 D1 提取 Key。评测调用也会计入线上 OpenRouter 账户的费用。PR 只接受同仓库且由仓库所有者提交；Fork PR 不接收 Key，会被该工作流拒绝。GitHub `Settings → Rules → Rulesets`（或 Branch protection）中对 `main` 将 `Harness OpenRouter / 30 Cases` 设为 **Required status check**，才能确保红灯阻止合并。变更这份检查工作流本身也应做代码审阅。
 
-评测使用 `deepseek/deepseek-v4.1-flash`（由默认模型常量解析），只调用 OpenRouter，每题最多按 ReAct 上限调用、总请求数最多 180；软预算 0.25 USD / PR，实际扣费必须通过模型 Key 硬额度控制。模型费用缺失、30 题未跑完、任何安全关键错误、通过率低于 80% 均使检查失败。PR 修订会重新触发评测；逐题 JSON 报告保留 30 天。
+评测使用 `deepseek/deepseek-v4.1-flash`（由默认模型常量解析），只调用 OpenRouter，每题最多按 ReAct 上限调用、总请求数最多 180；软预算 0.25 USD / PR，实际扣费将使用与线上共用的账户额度；软预算不是硬上限，需在 OpenRouter 账户端管理额度。模型费用缺失、30 题未跑完、任何安全关键错误、通过率低于 80% 均使检查失败。PR 修订会重新触发评测；逐题 JSON 报告保留 30 天。
 
 PR 应记录本次 CI Run 及未完成的验收项目。
