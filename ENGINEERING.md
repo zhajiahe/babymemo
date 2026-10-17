@@ -26,4 +26,4 @@
 
 **面向使用者**的说明只写现在能操作和观察到的功能。**面向维护者**的说明只保留仍然生效的部署、架构、安全与验证入口。不维护已移除功能、过期方案、实验经过或测试成绩的现行文档；需要追溯时使用 Git 历史、PR 和 Actions。README 只展示用户入口与必要的维护者链接。删除文档时修复全部引用，并运行 `node --test scripts/docs-quality.test.mjs`。
 
-目标为 `main` 的仓库所有者 PR 自动执行 30 题 OpenRouter 合成数据基准测试（`Harness OpenRouter / 30 Cases`），使用独立 `harness-benchmark` 环境的低额度 `HARNESS_OPENROUTER_API_KEY` 专用 Key；30 题完整执行、安全关键错误为零、通过率至少 80%，账单和逐题轨迹留 Actions Artifact。其余真实模型、微信或生产数据测试保持手动。合并限制必须通过 GitHub Rulesets 将此状态检查设置为 Required。
+目标为 `main` 的仓库所有者 PR 自动执行 30 题 OpenRouter 合成数据基准测试（`Harness OpenRouter / 30 Cases`），复用既有 GitHub `production` Environment 中的 `OPENROUTER_API_KEY`（仅在 Harness Job 环境注入此一个密钥，不传入 Cloudflare 生产访问凭据）；30 题完整执行、安全关键错误为零、通过率至少 80%，账单和逐题轨迹留 Actions Artifact。其余真实模型、微信或生产数据测试保持手动。合并限制必须通过 GitHub Rulesets 将此状态检查设置为 Required。
