@@ -55,7 +55,7 @@ test('all entry points apply theme before Vite, share tokens and expose a workin
 });
 
 test('the no-flash bootstrap is pre-cached by the existing offline shell', () => {
- assert.match(read('scripts/build-offline-shell.mjs'),/['"]\/theme-init\\.js['"]/);
+ assert.match(read('scripts/build-offline-shell.mjs'),/['"]\/theme-init\.js['"]/);
 });
 
 test('legibility-critical native forms, floating bars and status feedback use semantic surfaces', () => {
