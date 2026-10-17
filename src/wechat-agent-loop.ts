@@ -5,7 +5,7 @@ export interface AgentDecision {role:'assistant';content:string|null;tool_calls:
 export interface AgentLoopOptions {
  messages:any[];tools:any[];
  complete:(options:{messages:any[];tools:any[];round:number})=>Promise<any>;
- execute:(call:AgentDecision['tool_calls'][number],stepOffset:number,round:number)=>Promise<string|{content:string;halt?:boolean;committed?:boolean}>|string|{content:string;halt?:boolean;committed?:boolean};
+ execute:(call:AgentDecision['tool_calls'][number],stepOffset:number,round:number)=>Promise<string|{content:string;halt?:boolean;committed?:boolean;modelObservation?:string}>|string|{content:string;halt?:boolean;committed?:boolean;modelObservation?:string};
  finalize?:(options:{messages:any[];observations:Array<{name:string;content:string}>;reason:string;committedKinds:Set<string>;failedWrite:boolean})=>Promise<any>;
  loadFinalAnswer?:()=>Promise<string|null>;saveFinalAnswer?:(answer:string)=>Promise<void>;
  loadDecision?:(round:number)=>Promise<AgentDecision|null>;saveDecision?:(round:number,assistant:AgentDecision)=>Promise<void>;
@@ -161,7 +161,8 @@ export async function runWechatAgentLoop({
    // The model may still use its complete JSON on the following ReAct round.
    if(call.function.name!=='get_runtime_context')results.push(result);
    observations.push({name:call.function.name,content:result});
-   transcript.push({role:'tool',tool_call_id:call.id,content:result.slice(0,3000)});
+   const observed=typeof outcome==='object'&&typeof outcome?.modelObservation==='string'?outcome.modelObservation:result;
+   transcript.push({role:'tool',tool_call_id:call.id,content:observed.slice(0,3000)});
    if(halt)return finishAfterTools('tool_rejected');
   }
  }

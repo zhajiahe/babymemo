@@ -12,7 +12,7 @@ import {qwenRequest,DEFAULT_QWEN_MODEL} from '../src/qwen-workers-ai.mjs';
 import {openRouterCompletion} from '../src/openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from '../src/openrouter-model.mjs';
 import {diagnosticEvent,safeBenchPreview,benchmarkFailureKind,isFatalBenchmarkError,benchmarkMarkdownReport} from './model-benchmark-logging.mjs';
-import {MODEL_BENCH_CASES,BENCHMARK_DATE,BENCHMARK_ID,benchmarkMessages,syntheticObservation,validateBenchmarkTool,scoreModelCase,classifyBenchmarkIssues,aggregateBenchmark} from './model-benchmark-cases.mjs';
+import {MODEL_BENCH_CASES,BENCHMARK_DATE,BENCHMARK_ID,benchmarkMessages,benchmarkSnapshot,syntheticObservation,validateBenchmarkTool,scoreModelCase,classifyBenchmarkIssues,aggregateBenchmark} from './model-benchmark-cases.mjs';
 
 if(process.env.MODEL_BENCH_CONFIRM!=='YES')throw Error('MANUAL_CONFIRMATION_REQUIRED');
 const provider=process.env.MODEL_BENCH_PROVIDER||'openrouter';
@@ -135,7 +135,8 @@ async function evaluate(modelProvider,item,iteration){
     const committed=mutating&&item.observationCommitted!==false&&/^已(?:保存|更新|将|恢复)/.test(observation);
     // Mirror production: an uncommitted mutation halts further writes rather
     // than letting another model round turn a failed operation into success.
-    return {content:observation,committed,halt:mutating&&!committed};
+    return {content:observation,modelObservation:'[合成的最新 Context Snapshot]\\n'+JSON.stringify(benchmarkSnapshot(item))+'\\n[工具结果]\\n'+observation,
+     committed,halt:mutating&&!committed};
    }
   });
  }catch(e){error=e instanceof Error?e.message:'UNKNOWN_ERROR'}
@@ -185,7 +186,7 @@ const caseSetHash=createHash('sha256').update(JSON.stringify({cases:MODEL_BENCH_
  messages:MODEL_BENCH_CASES.map(benchmarkMessages),tools:wechatTools})).digest('hex').slice(0,20);
 const report={benchmark:BENCHMARK_ID,timestamp:new Date().toISOString(),
  setup:{tasksPerModel:MODEL_BENCH_CASES.length,repetitions,caseSetHash,
-  promptSource:'src/wechat-prompt.ts',syntheticToolObservations:true,
+  promptSource:'src/wechat-prompt.ts',syntheticToolObservations:true,syntheticContextSnapshotSchemaVersion:1,
   identicalPromptsSchemasObservationsScoring:true,
   providerProductionTemperatures:{'workers-ai':1,'openrouter':0},
   requestedReasoning:{'workers-ai':'off',openrouter:effectiveReasoning},

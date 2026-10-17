@@ -99,12 +99,12 @@ export async function persistWeChatMedia(env:Env,raw:RawMessage,baby:BabyContext
   }
   const indexStartedAt=performance.now();
   if(existing){
-   // Apply EXIF when the provisional reception date is unchanged; description-only edits must not block EXIF.
-   // Descriptions, titles and dates edited during the transfer are preserved.
+   // Only apply inferred EXIF dates if no explicit date edit was committed during upload.
+   // Description-only edits must not block EXIF; an explicit date equal to the provisional day still wins.
    const updated=await env.DB.prepare(
-    "UPDATE media SET mime=?,size=?,thumbnail_ready=?,day=CASE WHEN day=? THEN ? ELSE day END,upload_state='ready' "+
+    "UPDATE media SET mime=?,size=?,thumbnail_ready=?,day=CASE WHEN day=? AND NOT EXISTS (SELECT 1 FROM wechat_operation_log WHERE kind='media' AND baby_id=? AND record_id=? AND action IN ('update_day','update_recent_media_day')) THEN ? ELSE day END,upload_state='ready' "+
     "WHERE id=? AND baby_id=? AND source_message_id=? AND upload_state='processing' AND deleted_at IS NULL AND purge_token IS NULL"
-   ).bind(mime,size,thumbReady,localDay(raw,baby),day,id,baby.id,sourceId).run();
+   ).bind(mime,size,thumbReady,localDay(raw,baby),baby.id,id,day,id,baby.id,sourceId).run();
    if(!updated.meta.changes)throw Error('WECHAT_MEDIA_INDEX_FAILED');
   }else{
    await env.DB.prepare("INSERT OR IGNORE INTO media(id,baby_id,day,title,description,object_key,mime,size,created_at,thumbnail_ready,source_message_id,upload_state) VALUES(?,?,?,?,?,?,?,?,?,?,?,'ready')")

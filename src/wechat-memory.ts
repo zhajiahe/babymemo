@@ -2,7 +2,7 @@
 export type MemoMediaReference={id:string;kind:'image'|'video';fileName?:string};
 export type MemoTurn={user:string;reply:string;babyId:string;media?:MemoMediaReference[]};
 export type ExpiringMemo=Record<string,unknown>&{expiresAt:number};
-export type ConversationMemo={botId:string;userId:string;turns:MemoTurn[];babyId:string;pending:ExpiringMemo|null;lastQuery:ExpiringMemo|null;lastMedia:ExpiringMemo|null;lastOperation:ExpiringMemo|null;pendingMedia:ExpiringMemo|null;expiresAt?:number};
+export type ConversationMemo={botId:string;userId:string;turns:MemoTurn[];babyId:string;pending:ExpiringMemo|null;lastQuery:ExpiringMemo|null;lastMedia:ExpiringMemo|null;lastOperation:ExpiringMemo|null;pendingMedia:ExpiringMemo|null;invalidReferences?:ExpiringMemo|null;expiresAt?:number};
 // 20 turns may be stored, but only recent complete turns fitting the prompt budget are sent.
 // This is not long-term recall. Keep the existing expiry and structured action references.
 export const CONTEXT_TTL_MS=20*60*1000;
@@ -49,7 +49,8 @@ export function getActiveThread(saved:ConversationMemo|null|undefined,botId:stri
   lastQuery:within(saved.lastQuery)?copy(saved.lastQuery):null,
   lastMedia:within(saved.lastMedia)?copy(saved.lastMedia):null,
   lastOperation:within(saved.lastOperation)?copy(saved.lastOperation):null,
-  pendingMedia:within(saved.pendingMedia)?copy(saved.pendingMedia):null};
+  pendingMedia:within(saved.pendingMedia)?copy(saved.pendingMedia):null,
+  invalidReferences:within(saved.invalidReferences??null)?copy(saved.invalidReferences??null):null};
 }
 export function appendTurn(thread:ConversationMemo,user:string,reply:string,babyId:string,now:number=Date.now(),media:MemoMediaReference[]=[]):ConversationMemo{
  const refs=safeMediaRefs(media);
@@ -58,7 +59,7 @@ export function appendTurn(thread:ConversationMemo,user:string,reply:string,baby
   turns:[...(thread.turns||[]),{user:bounded(user,600),reply:bounded(reply,1200),babyId:bounded(babyId,80),...(refs.length?{media:refs}:{})}].slice(-MAX_CONTEXT_TURNS),
   pending:thread.pending||null,lastQuery:thread.lastQuery||null,
   lastMedia:thread.lastMedia||null,lastOperation:thread.lastOperation||null,
-  pendingMedia:thread.pendingMedia||null};
+  pendingMedia:thread.pendingMedia||null,invalidReferences:thread.invalidReferences||null};
 }
 export function isClearContext(text:string){return /^(清除(?:会话|上下文|记忆)|忘记(?:刚才|上下文)|重置(?:对话|会话)|新话题)[。!！]?$/.test(text.trim())}
 export function recordQuery(thread:ConversationMemo,babyId:string,kind:string,ids:string[],now:number=Date.now(),sourceMessageId=''){
