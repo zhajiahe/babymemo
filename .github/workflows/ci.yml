@@ -115,7 +115,7 @@ jobs:
       - run: npm install --no-audit --no-fund
       - name: Run all 30 synthetic Harness tasks through real OpenRouter
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.HARNESS_OPENROUTER_API_KEY }}
           MODEL_BENCH_CONFIRM: 'YES'
           MODEL_BENCH_PROVIDER: openrouter
           MODEL_BENCH_REPETITIONS: '1'
