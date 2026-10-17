@@ -203,6 +203,7 @@
  .theme-switch { display:flex; width:100%; }
  .theme-switch button { padding-inline:8px; font-size:13px; }
  .theme-setting--compact .theme-switch button { padding-inline:7px; }
+ .theme-switch .bm-segmented-icon { display:none; }
 }
 
 @media (max-width: 380px) {
