@@ -762,6 +762,29 @@ async function browserE2e(){
             await preview.screenshot({path:join(evidence,'design-system-demo-album-'+width+'.png'),fullPage:true});
           }
         }
+        // Demo settings must follow the same IA as the live app, without API calls.
+        await preview.setViewportSize({width:1280,height:844});
+        await preview.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
+        const sections=preview.getByRole('navigation',{name:'设置分类'});
+        assert.equal(await sections.locator('button').count(),5);
+        await sections.getByRole('button',{name:/成长报告/}).click();
+        await preview.getByRole('heading',{name:'家庭成长周报与月报'}).waitFor();
+        const sample=preview.locator('.demo-wechat-report');
+        assert.match(await sample.innerText(),/成长瞬间/);
+        await preview.getByRole('group',{name:'示例报告类型'}).getByRole('button',{name:'月报'}).click();
+        assert.match(await sample.innerText(),/10 月 1 日/);
+        assert.equal(await preview.getByRole('group',{name:'示例报告类型'}).getByRole('button',{name:'月报'}).getAttribute('aria-pressed'),'true');
+        await preview.screenshot({path:join(evidence,'demo-settings-reports-1280.png'),fullPage:false});
+        for(const width of [320,390,768]){
+          await preview.setViewportSize({width,height:844});
+          const overflow=await preview.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);
+          assert.equal(overflow,false,'Demo settings overflow at '+width);
+          if(width===390)await preview.screenshot({path:join(evidence,'demo-settings-reports-390.png'),fullPage:false});
+        }
+        await sections.getByRole('button',{name:/微信成员/}).click();
+        await preview.getByRole('heading',{name:'微信操作'}).waitFor();
+        await sections.getByRole('button',{name:/宝宝与外观/}).click();
+        await preview.getByRole('group',{name:'外观主题'}).waitFor();
         await preview.setViewportSize({width:375,height:812});
         await preview.locator('.mobile-nav').getByRole('button',{name:'成长'}).click();
         await preview.getByRole('heading',{name:'成长记录'}).waitFor();
@@ -802,6 +825,12 @@ async function browserE2e(){
         await preview.locator('.photo-item').first().waitFor();
         assert.equal(await preview.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'mobile demo must not overflow at 390px');
         await preview.screenshot({path:join(evidence,'mobile-demo-phone.png'),fullPage:true});
+        await preview.locator('.mobile-nav').getByRole('button',{name:'设置'}).click();
+        await preview.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/成长报告/}).click();
+        await preview.getByRole('group',{name:'示例报告类型'}).getByRole('button',{name:'周报'}).click();
+        await preview.getByRole('group',{name:'示例报告类型'}).getByRole('button',{name:'月报'}).click();
+        await preview.screenshot({path:join(evidence,'mobile-demo-report-phone.png'),fullPage:false});
+        assert.equal(await preview.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'mobile report demo must not overflow');
         assert.deepEqual(requests,[],'Demo must never call private API');
       }finally{await preview.close()}
     });
