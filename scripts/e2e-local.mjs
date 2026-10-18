@@ -781,6 +781,9 @@ async function browserE2e(){
           assert.equal(overflow,false,'Demo settings overflow at '+width);
           if(width===390)await preview.screenshot({path:join(evidence,'demo-settings-reports-390.png'),fullPage:false});
         }
+        // Entering phone viewport from a desktop-selected section shows its detail.
+        // Return to the mobile root before selecting another category.
+        await preview.locator('.settings-mobile-back').click();
         await sections.getByRole('button',{name:/微信成员/}).click();
         await preview.getByRole('heading',{name:'微信操作'}).waitFor();
         await preview.locator('.settings-mobile-back').click();
