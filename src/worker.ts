@@ -19,6 +19,7 @@ import {previousMutation,commitMutation} from './web-mutations';
 import {purgeDeletedMedia,retentionCutoff} from './media-retention.mjs';
 export { WechatSession } from './wechat';
 import {runWechatCronPolling} from './wechat-cron-pilot';
+import {familyReportSettings,saveFamilyReportConfig,runFamilyReportCron} from './family-reports';
 
 const app = new Hono<ApplicationEnv>();
 const fail = (c: any, status:number, error:string) => c.json({error},status);
@@ -525,6 +526,20 @@ app.get('/api/export/full',async c=>{
  try{return new Response(await completeFamilyExport(c.env),{headers:{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="babymemo-family-'+now().slice(0,10)+'.zip"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}})}
  catch{return fail(c,409,'EXPORT_OBJECT_UNAVAILABLE')}
 });
+// Reports are opt-in: schedule and recipients can only be changed by a signed-in administrator.
+app.get('/api/settings/family-reports',async c=>c.json(await familyReportSettings(c.env)));
+app.put('/api/settings/family-reports',async c=>{
+ try{return c.json({ok:true,config:await saveFamilyReportConfig(c.env,await json(c.req.raw))})}
+ catch{return fail(c,400,'INVALID_REPORT_SETTINGS')}
+});
+app.put('/api/settings/family-reports/members/:id',async c=>{
+ try{
+  const v=await json(c.req.raw),id=c.req.param('id');
+  if(typeof v.subscribed!=='boolean')return fail(c,400,'INVALID_REPORT_SUBSCRIPTION');
+  const changed=await c.env.DB.prepare('UPDATE wechat_connections SET report_subscribed=?,updated_at=? WHERE id=?').bind(v.subscribed?1:0,now(),id).run();
+  return changed.meta.changes?c.json({ok:true}):fail(c,404,'WECHAT_CONNECTION_NOT_FOUND');
+ }catch{return fail(c,400,'INVALID_REPORT_SUBSCRIPTION')}
+});
 app.post('/api/settings/password',async c=>{
   try{
     const v=await json(c.req.raw);
@@ -642,7 +657,7 @@ app.post('/api/settings/wechat/connections/:id/:action',async c=>{
   if(!connection)return fail(c,404,'WECHAT_CONNECTION_NOT_FOUND');
   if(action==='start'&&(await setting(c.env,'ai_provider')||DEFAULT_AI_PROVIDER)==='openrouter'&&!deployedOpenRouterKey(c.env)&&!await setting(c.env,'openrouter_key'))return fail(c,409,'OPENROUTER_NOT_CONFIGURED');
   const enabled=action==='start'?1:0;
-  await c.env.DB.prepare('UPDATE wechat_connections SET enabled=?,updated_at=? WHERE id=?').bind(enabled,now(),id).run();
+  await c.env.DB.prepare('UPDATE wechat_connections SET enabled=?,context_cipher=NULL,context_updated_at=NULL,updated_at=? WHERE id=?').bind(enabled,now(),id).run();
   const response=await workerBot(c.env,id).fetch('https://bot.internal/'+action,{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({connectionId:id})});
   if(!response.ok){
@@ -684,6 +699,10 @@ app.onError((e,c)=>{
 export default {
   fetch: app.fetch.bind(app),
   async scheduled(event:ScheduledController,env:Env,ctx:ExecutionContext){
+    if(event.cron==='0 * * * *'){
+      ctx.waitUntil(runFamilyReportCron(env));
+      return;
+    }
     if(event.cron==='* * * * *'){
       ctx.waitUntil(runWechatCronPolling(env));
       return;
