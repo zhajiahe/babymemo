@@ -27,6 +27,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  const [activeSection,setActiveSection]=useState<SettingsSection>('profile');
  const [mobileDetail,setMobileDetail]=useState(false);
  const selectedSection=SETTINGS_SECTIONS.find(section=>section.id===activeSection)!;
+ useEffect(()=>{if(window.matchMedia('(max-width: 800px)').matches)window.scrollTo({top:0})},[mobileDetail,activeSection]);
  const [provider,setProvider]=useState<'workers-ai'|'openrouter'>(state.ai?.provider||'workers-ai');
  const [model,setModel]=useState(state.openrouter.model),[apiKey,setApiKey]=useState(''),[saving,setSaving]=useState(false);
  const [testingModel,setTestingModel]=useState(false),[aiProbe,setAiProbe]=useState<{provider:string;ok:boolean;message:string}|null>(null);
