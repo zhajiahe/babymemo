@@ -129,7 +129,7 @@ async function deliver(env:Env,report:Report){
    await sendWechatFamilyReport(env,member.id,report.body,row.client_id);
    await env.DB.prepare("UPDATE family_report_deliveries SET state='sent',error_code=NULL,updated_at=? WHERE kind=? AND period_start=? AND connection_id=?").bind(now(),report.kind,report.period_start,member.id).run();
   }catch(e){
-   const reason=errorCode(e),wait=reason==='WECHAT_SEND_REJECTED'||reason==='WECHAT_CONTEXT_REQUIRED';
+   const reason=errorCode(e),wait=['WECHAT_SEND_REJECTED','WECHAT_CONTEXT_REQUIRED','WECHAT_STALE_TOKEN','WECHAT_PROTOCOL_ERROR'].includes(reason);
    await env.DB.prepare('UPDATE family_report_deliveries SET state=?,error_code=?,updated_at=? WHERE kind=? AND period_start=? AND connection_id=?').bind(row.attempts+1>=3?'failed':wait?'waiting_context':'retry',reason,now(),report.kind,report.period_start,member.id).run();
   }
  }
