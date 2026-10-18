@@ -3,7 +3,7 @@ import {downloadFamilyArchive} from '../../export-download';
 import {useEffect,useState,useSyncExternalStore,type FormEvent} from 'react';
 import {Button,Card,Field,Primary,ModalDialog} from '../../components/ui';
 import {ThemeSelector} from '../../components/ThemeSelector';
-import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi,BrainCircuit} from 'lucide-react';
+import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi,BrainCircuit,ChevronRight,SlidersHorizontal,CalendarHeart,HardDriveDownload,UsersRound} from 'lucide-react';
 import {api,post,today,type BabyInfo,type State,type WechatRunStatus} from '../../lib/client';
 import {DEFAULT_OPENROUTER_MODEL,OPENROUTER_MODEL_PRESETS,openRouterModelDescription} from '../../openrouter-model.mjs';
 import {wechatStatusView,wechatStatusTime} from '../../wechat-status.mjs';
@@ -13,9 +13,19 @@ type FamilyReportSettings={weekly:boolean;monthly:boolean;hour:number;timeZone:s
  members:{id:string;label:string;enabled:boolean;subscribed:boolean;hasContext:boolean;lastContextAt:string|null}[];
  reports:{kind:'week'|'month';period_start:string;period_end:string;recipients:number;sent:number;failed:number;waiting:number}[]};
 
+type SettingsSection='profile'|'wechat'|'reports'|'ai'|'storage';
+const SETTINGS_SECTIONS:{id:SettingsSection;label:string;description:string;icon:typeof Baby}[]=[
+ {id:'profile',label:'宝宝与外观',description:'档案、主题',icon:Baby},
+ {id:'wechat',label:'微信成员',description:'连接与收图',icon:UsersRound},
+ {id:'reports',label:'成长报告',description:'周报、月报',icon:CalendarHeart},
+ {id:'ai',label:'AI 模型',description:'模型设置',icon:BrainCircuit},
+ {id:'storage',label:'数据与安全',description:'备份与维护',icon:HardDriveDownload}
+];
 function babyDraft(baby:BabyInfo){try{return JSON.parse(localStorage.getItem('babymemo-draft-baby-'+baby.id)||'null')||baby}catch{return baby}}
 
 export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected}:{state:State;baby:BabyInfo;changed:()=>void;notify:(s:string)=>void;onBabyCreated:(id:string)=>void;onBabySelected:(id:string)=>void}){
+ const [activeSection,setActiveSection]=useState<SettingsSection>('profile');
+ const selectedSection=SETTINGS_SECTIONS.find(section=>section.id===activeSection)!;
  const [provider,setProvider]=useState<'workers-ai'|'openrouter'>(state.ai?.provider||'workers-ai');
  const [model,setModel]=useState(state.openrouter.model),[apiKey,setApiKey]=useState(''),[saving,setSaving]=useState(false);
  const [testingModel,setTestingModel]=useState(false),[aiProbe,setAiProbe]=useState<{provider:string;ok:boolean;message:string}|null>(null);
@@ -196,7 +206,19 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   }finally{setTestingModel(false)}
  }
  async function inspect(id:string){setInspectedMember(id);try{const status=await api<WechatRunStatus>('/api/settings/wechat/connections/'+encodeURIComponent(id)+'/status');setRunStatuses(current=>({...current,[id]:status}))}catch{notify('暂时无法读取微信状态，请稍后重试')}}
- return <div className="settings-grid"><Card className="span-2 appearance-settings"><div className="section-title"><h3>外观主题</h3></div><ThemeSelector/></Card><Card><div className="section-title"><h3>宝宝资料</h3><Baby size={20}/></div><div className="settings-baby-switch"><Field label="当前查看的宝宝"><select aria-label="选择宝宝" value={baby.id} onChange={e=>onBabySelected(e.target.value)}>{state.babies.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><p className="muted small">仅在设置中切换宝宝，其他页面自动展示所选宝宝的记录。</p></div><div className="baby-avatar-control">{baby.avatar_key?<img className="baby-portrait" src={'/api/babies/'+baby.id+'/avatar?v='+encodeURIComponent(baby.updated_at||'')} alt={baby.name+'的头像'}/>:<Baby size={40}/>}<label className="secondary">{avatarBusy?'处理头像…':'更换头像'}<input type="file" accept="image/*" disabled={avatarBusy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void avatar(file)}}/></label>{baby.avatar_key&&<button type="button" className="text-btn" disabled={avatarBusy} onClick={()=>void api('/api/babies/'+baby.id+'/avatar',{method:'DELETE',body:JSON.stringify({expectedUpdatedAt:baby.updated_at||''})}).then(()=>{changed();notify('头像已移除')}).catch(e=>notify(e.message))}>移除头像</button>}</div><form className="stack" onSubmit={saveBaby}><Field label="宝宝昵称"><input value={name} required onChange={e=>{setDirty(true);setName(e.target.value)}}/></Field><div className="two"><Field label="出生日期"><input type="date" value={birthday} required onChange={e=>{setDirty(true);setBirthday(e.target.value)}}/></Field><Field label="出生时间（可后补）"><input type="time" value={birthTime} onChange={e=>{setDirty(true);setBirthTime(e.target.value)}}/></Field></div><Field label="过敏与注意事项"><textarea rows={3} value={allergies} onChange={e=>{setDirty(true);setAllergies(e.target.value)}}/></Field><div className="two"><Field label="性别"><select value={gender} onChange={e=>{setDirty(true);setGender(e.target.value)}}><option value="girl">女孩</option><option value="boy">男孩</option><option value="other">暂不填写</option></select></Field><Field label="宝宝时区"><select value={timeZone} onChange={e=>{setDirty(true);setTimeZone(e.target.value)}}>{Array.from(new Set([timeZone,'Asia/Shanghai','Asia/Tokyo','America/Los_Angeles','UTC'])).map(zone=><option value={zone} key={zone}>{zone}</option>)}</select></Field></div><Field label="档案备注"><textarea rows={3} maxLength={4000} value={notes} onChange={e=>{setDirty(true);setNotes(e.target.value)}}/></Field><Primary disabled={babyBusy}>{babyBusy?'正在保存…':'保存资料'} <Check size={16}/></Primary></form>
+ return <div className="settings-layout">
+ <nav className="settings-categories" aria-label="设置分类">
+  {SETTINGS_SECTIONS.map(section=>{const Icon=section.icon;return <button id={'settings-nav-'+section.id} type="button" key={section.id} className={'settings-category'+(activeSection===section.id?' is-active':'')} aria-current={activeSection===section.id?'page':undefined} onClick={()=>setActiveSection(section.id)}>
+   <span className="settings-category-icon"><Icon size={19} aria-hidden="true"/></span>
+   <span className="settings-category-label"><strong>{section.label}</strong><small>{section.description}</small></span>
+   <ChevronRight size={16} className="settings-category-chevron" aria-hidden="true"/>
+  </button>})}
+ </nav>
+ <section className="settings-main" aria-labelledby="settings-section-title">
+  <div className="settings-main-heading"><span className="settings-main-eyebrow">SETTINGS</span><h2 id="settings-section-title">{selectedSection.label}</h2><p>{selectedSection.description}</p></div>
+  <div className="settings-grid">
+  {activeSection==='profile'&&<>
+  <Card className="span-2 appearance-settings"><div className="section-title"><h3>外观主题</h3></div><ThemeSelector/></Card><Card><div className="section-title"><h3>宝宝资料</h3><Baby size={20}/></div><div className="settings-baby-switch"><Field label="当前查看的宝宝"><select aria-label="选择宝宝" value={baby.id} onChange={e=>onBabySelected(e.target.value)}>{state.babies.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><p className="muted small">切换后，其他页面会同步显示这位宝宝。</p></div><div className="baby-avatar-control">{baby.avatar_key?<img className="baby-portrait" src={'/api/babies/'+baby.id+'/avatar?v='+encodeURIComponent(baby.updated_at||'')} alt={baby.name+'的头像'}/>:<Baby size={40}/>}<label className="secondary">{avatarBusy?'处理头像…':'更换头像'}<input type="file" accept="image/*" disabled={avatarBusy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void avatar(file)}}/></label>{baby.avatar_key&&<button type="button" className="text-btn" disabled={avatarBusy} onClick={()=>void api('/api/babies/'+baby.id+'/avatar',{method:'DELETE',body:JSON.stringify({expectedUpdatedAt:baby.updated_at||''})}).then(()=>{changed();notify('头像已移除')}).catch(e=>notify(e.message))}>移除头像</button>}</div><form className="stack" onSubmit={saveBaby}><Field label="宝宝昵称"><input value={name} required onChange={e=>{setDirty(true);setName(e.target.value)}}/></Field><div className="two"><Field label="出生日期"><input type="date" value={birthday} required onChange={e=>{setDirty(true);setBirthday(e.target.value)}}/></Field><Field label="出生时间（可后补）"><input type="time" value={birthTime} onChange={e=>{setDirty(true);setBirthTime(e.target.value)}}/></Field></div><Field label="过敏与注意事项"><textarea rows={3} value={allergies} onChange={e=>{setDirty(true);setAllergies(e.target.value)}}/></Field><div className="two"><Field label="性别"><select value={gender} onChange={e=>{setDirty(true);setGender(e.target.value)}}><option value="girl">女孩</option><option value="boy">男孩</option><option value="other">暂不填写</option></select></Field><Field label="宝宝时区"><select value={timeZone} onChange={e=>{setDirty(true);setTimeZone(e.target.value)}}>{Array.from(new Set([timeZone,'Asia/Shanghai','Asia/Tokyo','America/Los_Angeles','UTC'])).map(zone=><option value={zone} key={zone}>{zone}</option>)}</select></Field></div><Field label="档案备注"><textarea rows={3} maxLength={4000} value={notes} onChange={e=>{setDirty(true);setNotes(e.target.value)}}/></Field><Primary disabled={babyBusy}>{babyBusy?'正在保存…':'保存资料'} <Check size={16}/></Primary></form>
  <div className="baby-create-section"><div className="section-title"><div><h3>家庭成员 · 宝宝</h3><p className="muted small">空间：{state.familyName||'家庭空间'} · 当前家庭有 {state.babies.length} 位宝宝，可切换查看各自的照片与成长记录。</p></div></div>
  <Button type="button" variant="secondary" className="full" onClick={()=>{setCreateError('');setShowNewBaby(true)}} aria-haspopup="dialog"><Plus size={16}/>新增宝宝</Button>
  <ModalDialog open={showNewBaby} onClose={()=>{setShowNewBaby(false);setCreateError('')}} busy={creatingBaby} title="新增宝宝">
@@ -208,10 +230,15 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   {createError&&<div className="error" role="alert">{createError}</div>}
   <div className="bm-modal-actions"><Button variant="secondary" type="button" disabled={creatingBaby} onClick={()=>setShowNewBaby(false)}>稍后再说</Button><Primary disabled={creatingBaby}>{creatingBaby?'正在创建…':'创建并切换到新宝宝'} <Plus size={16}/></Primary></div>
  </form>
- </ModalDialog><button className="text-btn" disabled={state.babies.length<2} onClick={()=>void archiveBaby()}>移出当前宝宝（记录保留）</button><Button variant="secondary" onClick={()=>void loadArchived()}>查看移出的宝宝</Button>{archived.map(item=><div className="row-between" key={item.id}><span>{item.name}</span><Button variant="secondary" onClick={()=>void post('/api/babies/'+item.id+'/restore',{}).then(()=>{changed();void loadArchived()}).catch(e=>notify(e.message))}>恢复宝宝</Button></div>)}</div></Card>
+ </ModalDialog>
+ <details className="settings-subsection"><summary>管理其他宝宝档案 <ChevronRight size={16}/></summary><div className="settings-subsection-body">
+ <button className="text-btn" disabled={state.babies.length<2} onClick={()=>void archiveBaby()}>移出当前宝宝（记录保留）</button><Button variant="secondary" onClick={()=>void loadArchived()}>查看移出的宝宝</Button>{archived.map(item=><div className="row-between" key={item.id}><span>{item.name}</span><Button variant="secondary" onClick={()=>void post('/api/babies/'+item.id+'/restore',{}).then(()=>{changed();void loadArchived()}).catch(e=>notify(e.message))}>恢复宝宝</Button></div>)}
+ </div></details></div></Card>
+ </>}
+ {activeSection==='storage'&&<>
  <Card className="span-2 thumbnail-repair-card">
   <div className="section-title"><h3>相册封面维护</h3><RefreshCw size={20}/></div>
-  <p className="muted small">一键扫描家庭内所有宝宝缺失的照片和视频封面。浏览其他页面时继续处理，逐项保存进度；关闭应用或 iPhone 冻结页面后会暂停，重新打开并登录后自动继续。视频截帧依赖当前设备解码能力，并非服务器离线转码。</p>
+  <p className="muted small">扫描并修复缺失的照片、视频封面。关闭页面会暂停，下次打开可继续。</p><details className="settings-help"><summary>修复说明</summary><p className="muted small">后台逐项保存进度；视频截帧依赖当前设备解码能力，并非服务器离线转码。</p></details>
   <div className="thumbnail-repair-actions">
     <Button type="button" variant="secondary" disabled={!navigator.onLine||coverRepair.phase==='running'}
       onClick={()=>startThumbnailRepair(state.babies.map(item=>item.id))}>
@@ -227,10 +254,12 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
     {coverRepair.phase==='completed'&&coverRepair.failed>0&&<span className="muted">无法在此设备解码的文件仍保留原件，可在相册预览里手动补封面；再次执行只扫描仍缺少封面的项目。</span>}
   </div>}
  </Card>
- <Card><div className="section-title"><h3>家庭数据与回收站</h3><ShieldCheck size={20}/></div><p className="muted small">删除的记录和媒体保留 30 天，可在到期前恢复；定时清理由服务器执行。完整导出包含宝宝资料、头像、记录、关联关系和媒体原件；JSON可单独导出。离线内容保存在此设备，主动退出会清除本机数据。</p><Button type="button" variant="primary" className="full" disabled={exportBusy||!navigator.onLine} onClick={()=>{setExportBusy(true);void downloadFamilyArchive().then(()=>notify('家庭档案已生成，请在下载中查看')).catch(e=>notify(e instanceof Error?e.message:'导出失败')).finally(()=>setExportBusy(false))}}>{exportBusy?'正在导出家庭档案…':'下载完整家庭档案 ZIP'}</Button><a className="secondary full" href="/api/export/records" download="babymemo-records.json"><CloudUpload size={16}/> 导出记录 JSON</a><Button variant="secondary" className="full" onClick={()=>void loadTrash()} disabled={trashBusy}>{trashBusy?'读取中…':'查看回收站'}</Button>
+ <Card><div className="section-title"><h3>家庭数据与回收站</h3><ShieldCheck size={20}/></div><p className="muted small">导出完整家庭档案，或恢复 30 天内删除的记录。</p><details className="settings-help"><summary>数据保存说明</summary><p className="muted small">完整导出包含宝宝资料、头像、记录、媒体原件和关联关系。离线内容保存在当前设备，主动退出会清理本机缓存。</p></details><Button type="button" variant="primary" className="full" disabled={exportBusy||!navigator.onLine} onClick={()=>{setExportBusy(true);void downloadFamilyArchive().then(()=>notify('家庭档案已生成，请在下载中查看')).catch(e=>notify(e instanceof Error?e.message:'导出失败')).finally(()=>setExportBusy(false))}}>{exportBusy?'正在导出家庭档案…':'下载完整家庭档案 ZIP'}</Button><a className="secondary full" href="/api/export/records" download="babymemo-records.json"><CloudUpload size={16}/> 导出记录 JSON</a><Button variant="secondary" className="full" onClick={()=>void loadTrash()} disabled={trashBusy}>{trashBusy?'读取中…':'查看回收站'}</Button>
  {trash&&<div className="trash-list">{(['growth','milestones','media'] as const).flatMap(kind=>trash[kind].map(entry=><div className="trash-item" key={kind+entry.id}><div><strong>{kind==='growth'?'成长测量':kind==='milestones'?'成长瞬间':'媒体'} · {kind==='media'?entry.day:'title' in entry?entry.title:entry.day}</strong><p className="muted small">{state.babies.find(b=>b.id===entry.baby_id)?.name||'宝宝'} · {entry.day} · 删除于 {entry.deleted_at.slice(0,10)}</p></div><Button variant="secondary" onClick={()=>void restore(kind,entry.id)}>恢复</Button></div>))}{!trash.growth.length&&!trash.milestones.length&&!trash.media.length&&<p className="muted small">回收站为空</p>}</div>}
  </Card>
- <Card><div className="section-title"><h3>账户安全</h3><ShieldCheck size={20}/></div><p className="muted small">修改家庭密码会注销所有设备的会话。支持至少 6 位的数字或混合密码，推荐使用更长的密码。</p><form className="stack" onSubmit={changePassword}><Field label="当前密码"><input type="password" autoComplete="current-password" required value={password.currentPassword} onChange={e=>setPassword({...password,currentPassword:e.target.value})}/></Field><Field label="新密码"><input type="password" autoComplete="new-password" required minLength={6} value={password.newPassword} onChange={e=>setPassword({...password,newPassword:e.target.value})}/></Field><Field label="确认新密码"><input type="password" autoComplete="new-password" required minLength={6} value={password.confirmPassword} onChange={e=>setPassword({...password,confirmPassword:e.target.value})}/></Field><Primary disabled={passwordBusy}>{passwordBusy?'正在更新…':'修改密码并退出所有设备'}</Primary></form></Card>
+ <Card className="span-2"><div className="section-title"><h3>账户安全</h3><ShieldCheck size={20}/></div><details className="settings-subsection"><summary>修改家庭密码 <ChevronRight size={16}/></summary><div className="settings-subsection-body"><p className="muted small">修改密码会注销所有设备。建议使用至少 6 位字符的长密码。</p><form className="stack" onSubmit={changePassword}><Field label="当前密码"><input type="password" autoComplete="current-password" required value={password.currentPassword} onChange={e=>setPassword({...password,currentPassword:e.target.value})}/></Field><Field label="新密码"><input type="password" autoComplete="new-password" required minLength={6} value={password.newPassword} onChange={e=>setPassword({...password,newPassword:e.target.value})}/></Field><Field label="确认新密码"><input type="password" autoComplete="new-password" required minLength={6} value={password.confirmPassword} onChange={e=>setPassword({...password,confirmPassword:e.target.value})}/></Field><Primary disabled={passwordBusy}>{passwordBusy?'正在更新…':'修改密码并退出所有设备'}</Primary></form></div></details></Card>
+ </>}
+ {activeSection==='ai'&&<>
  <Card className="span-2 settings-ai-card">
   <div className="section-title"><h3>微信 AI 模型</h3><BrainCircuit size={20}/></div>
   <div className="settings-ai-overview">
@@ -256,6 +285,8 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   </details>
   <p className="muted small settings-ai-note">模型接口测试只检查 AI 服务，不检查微信是否收到消息；测试本身可能产生少量 Neurons 或 OpenRouter 费用。</p>
  </Card>
+ </>}
+ {activeSection==='reports'&&<>
  <Card className="span-2 family-report-settings">
   <div className="section-title"><div><h3>家庭成长周报与月报</h3><p className="muted small">AI 根据成长瞬间、成长指标、照片与视频的文字记录生成报告，直接发送给家人的微信。</p></div><MessageCircle size={20}/></div>
   {!reportSettings?<p className="muted" role="status">正在读取成长报告设置…</p>:<div className="stack">
@@ -264,28 +295,30 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
    <Field label="发送时间（使用首位宝宝的时区）"><select aria-label="成长报告发送时间" value={reportSettings.hour} onChange={e=>setReportSettings(old=>old?{...old,hour:Number(e.target.value)}:old)}>{[8,12,20,21].map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}</select></Field>
    <p className="muted small">当前家庭时区：{reportSettings.timeZone}</p>
    <Button type="button" variant="primary" disabled={reportSaving} onClick={()=>void saveReportSettings()}>{reportSaving?'保存中…':'保存报告开关与时间'}</Button>
-   <section className="family-report-recipients"><strong>微信接收成员</strong><p className="muted small">仅推送给已启用、已勾选的微信成员。成员需要先给 BabyMemo 微信 Bot 发一条消息，以建立主动发送会话。</p>
+   <section className="family-report-recipients"><strong>微信接收成员</strong><p className="muted small">只有已订阅且启用的微信成员会收到推送。</p>
     {reportSettings.members.map(m=><label key={m.id} className="family-report-member"><span><strong>{m.label}</strong><small className="muted">{!m.enabled?'微信连接已暂停':!m.hasContext?'等待成员发送微信消息':'已建立微信会话（会话可能过期）'}</small></span><input aria-label={m.label+'接收成长报告'} type="checkbox" checked={m.subscribed} disabled={!!reportMemberBusy} onChange={e=>void changeReportMember(m.id,e.target.checked)}/></label>)}
     {!reportSettings.members.length&&<p className="muted small">尚未绑定微信家庭成员，请在下方添加。</p>}
    </section>
    <section className="family-report-test">
     <strong>立即测试微信推送</strong>
-    <p className="muted small">只发送给一位已绑定家人，不改变正式定时开关。测试周报覆盖最近 7 天，测试月报覆盖本月至今；两者均调用 AI 实时生成。</p>
+    <p className="muted small">选择一位家人试发 AI 周报或月报，不影响正式开关。</p>
     <Field label="测试接收人"><select aria-label="测试报告接收人" value={reportTestMember} onChange={e=>{setReportTestMember(e.target.value);setReportTestResult('')}}><option value="">选择一位微信成员</option>{reportSettings.members.filter(m=>m.enabled&&m.subscribed).map(m=><option key={m.id} value={m.id}>{m.label}{m.hasContext?'':'（需先发送微信消息）'}</option>)}</select></Field>
     <div className="family-report-test-actions">
      <Button type="button" variant="secondary" disabled={!reportTestMember||reportTestBusy} onClick={()=>void testFamilyReport('week')}>{reportTestBusy?'生成和发送中…':'发送测试周报'}</Button>
      <Button type="button" variant="secondary" disabled={!reportTestMember||reportTestBusy} onClick={()=>void testFamilyReport('month')}>{reportTestBusy?'生成和发送中…':'发送测试月报'}</Button>
     </div>
     {reportTestResult&&<p className="muted small" role="status" aria-live="polite">{reportTestResult}</p>}
-    <p className="muted small">同一成员每 10 分钟最多测试一次。不会写入正式周报记录；接口接受不代表微信客户端实际送达。</p>
+    <p className="muted small">每位成员 10 分钟限一次，需在微信确认实际送达。</p>
    </section>
    <section className="family-report-history"><strong>近期发送记录</strong>
     {reportSettings.reports.map(r=><div className="family-report-history-row" key={r.kind+r.period_start}><span>{r.kind==='week'?'周报':'月报'} · {r.period_start} — {r.period_end}</span><small className="muted">接口已接受 {r.sent||0}/{r.recipients||0} · 等待会话 {r.waiting||0} · 失败 {r.failed||0}</small></div>)}
     {!reportSettings.reports.length&&<p className="muted small">尚未生成成长报告。</p>}
    </section>
-   <p className="muted small">初始关闭。无新记录的周期不发送；微信 iLink 主动发送需要真实账号验证，接口接受不代表手机已收到。</p>
+   <p className="muted small">默认关闭；无新记录不发送。请用真实微信确认送达。</p>
   </div>}
  </Card>
+ </>}
+ {activeSection==='wechat'&&<>
  <Card className="span-2"><div className="section-title"><h3>微信操作</h3><MessageCircle size={20}/></div><p className="muted small">添加家庭成员的微信，直接发送照片、视频或成长记录。每位成员可以独立连接。</p><details className="settings-help"><summary>查看微信连接原理</summary><p className="muted small">通过 Cloudflare Durable Objects 轮询微信消息，默认由 Workers AI Qwen3.8（关闭思考）识别意图，再调用受限工具操作家庭数据；也支持切换 OpenRouter，无需 VPS。</p></details>
  <div className="wechat-row"><div className="wechat-status"><strong>微信消息接收 · 已绑定 {state.wechat.connections.length} 位 · 已启用 {state.wechat.connections.filter(x=>x.enabled).length} 位</strong><p className="muted small">最近确认运行 {healthyWechat} 位{warningWechat?' · 需关注 '+warningWechat+' 位':''}{checkedWechat.length<state.wechat.connections.length?' · 状态获取中':''}。启用不等于正在正常收消息。</p></div></div>
  <div className="wechat-photo-setting"><div><strong>微信照片/视频 → 自动存入相册</strong><details className="settings-help"><summary>照片与视频归档规则</summary><p className="muted small">给绑定的微信 Bot 发送照片或视频会直接存入私有 R2，无需 AI 分析。多宝宝家庭可以在消息文字中指定宝宝；每条最多 4 项，单文件不超过 50 MiB。</p></details></div><div className="wechat-photo-controls"><label className="field">默认收图宝宝<select aria-label="微信照片默认宝宝" value={photoBaby} onChange={e=>setPhotoBaby(e.target.value)}><option value="">未选择（多宝宝时需附带名字）</option>{state.babies.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label><Button variant="secondary" type="button" disabled={photoBabyBusy} onClick={()=>void savePhotoBaby()}>{photoBabyBusy?'保存中…':'保存默认宝宝'}</Button></div></div>
@@ -304,5 +337,9 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   <Button type="button" variant="secondary" onClick={()=>void pair()} disabled={!memberName.trim()}><MessageCircle size={16}/>扫码添加成员</Button></div>
  {qrImage&&<div className="qr-panel"><img src={qrImage} alt="微信扫码绑定二维码"/><strong>请让“{memberName}”本人用微信扫描二维码</strong><span>扫码后在手机确认绑定；二维码属于敏感凭据，请勿分享。有效期约 10 分钟。</span><p className="small">状态：{status}</p>{status==='need_verifycode'&&<Field label="微信显示的验证码"><input value={verifyCode} onChange={e=>setVerifyCode(e.target.value)}/></Field>}</div>}
  <details className="settings-help"><summary>微信指令示例与使用说明</summary><div className="wechat-examples"><strong>微信指令示例</strong><p>「小好今天体重 10.5kg」「查询小好最近 5 次测量」「修改小好 10 月 1 日体重为 10kg」「删除小好 10 月 1 日的里程碑」「查看小好回收站」</p><p className="hint">修改或删除需明确记录日期或查询结果中的编号；同日多条记录时必须用编号。删除内容可在 30 天内恢复。仅接受已启用、已绑定成员的微信私聊消息。不同成员的多轮会话互相隔离，记录与相册共享。</p></div></details>
- <p className="hint">微信 iLink 属于第三方协议适配；上线前还需真号验证账号授权、消息去重、权限及持续运行情况。</p></Card></div>;
+ <p className="hint">微信 iLink 属于第三方协议适配；上线前还需真号验证账号授权、消息去重、权限及持续运行情况。</p></Card>
+ </>}
+ </div>
+ </section>
+ </div>;
 }
