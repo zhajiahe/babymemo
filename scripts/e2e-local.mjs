@@ -172,6 +172,27 @@ async function e2e() {
     assert.match(login.headers.get('set-cookie')??'',/HttpOnly; Secure; SameSite=Lax/);
     assert.equal((await json('/api/state')).status,200);
   });
+  await step('family AI reports default off, require authenticated administrator and validate settings',async()=>{
+    assert.equal((await json('/api/settings/family-reports',{anonymous:true})).status,401);
+    const initial=await json('/api/settings/family-reports');
+    assert.equal(initial.status,200,JSON.stringify(initial.data));
+    assert.equal(initial.data.weekly,false);
+    assert.equal(initial.data.monthly,false);
+    assert.equal(initial.data.hour,20);
+    assert.deepEqual(initial.data.members,[]);
+    assert.equal((await json('/api/settings/family-reports',{method:'PUT',body:{weekly:'yes',monthly:false,hour:20}})).status,400);
+    assert.equal((await json('/api/settings/family-reports',{method:'PUT',body:{weekly:true,monthly:true,hour:3}})).status,400);
+    const changed=await json('/api/settings/family-reports',{method:'PUT',body:{weekly:true,monthly:true,hour:8}});
+    assert.equal(changed.status,200,JSON.stringify(changed.data));
+    assert.equal(changed.data.config.weekly,true);
+    assert.equal(changed.data.config.monthly,true);
+    assert.equal(changed.data.config.hour,8);
+    assert.equal((await json('/api/settings/family-reports/members/unknown',{method:'PUT',body:{subscribed:true}})).status,404);
+    assert.equal((await json('/api/settings/family-reports/members/unknown',{method:'PUT',body:{subscribed:'yes'}})).status,400);
+    const reset=await json('/api/settings/family-reports',{method:'PUT',body:{weekly:false,monthly:false,hour:20}});
+    assert.equal(reset.status,200);
+    assert.equal((await json('/api/settings/family-reports')).data.weekly,false);
+  });
   await step('old 7-day sessions upgrade once to renewable 180-day cookies',async()=>{
     sessionCookie=signedTestSession(Date.now()+7*86400000);
     const initial=await json('/api/state');

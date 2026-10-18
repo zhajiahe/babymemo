@@ -28,7 +28,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   let canceled=false;
   void api<FamilyReportSettings>('/api/settings/family-reports').then(x=>{if(!canceled)setReportSettings(x)}).catch(()=>{if(!canceled)notify('成长报告设置暂时无法读取')});
   return ()=>{canceled=true};
- },[state.wechat.connections.map(x=>x.id).join('|')]);
+ },[state.wechat.connections.map(x=>x.id+':'+x.enabled+':'+x.updatedAt).join('|')]);
  async function saveReportSettings(){
   if(!reportSettings||reportSaving)return;
   setReportSaving(true);

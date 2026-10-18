@@ -36,6 +36,10 @@ export async function saveFamilyReportConfig(env:Env,value:unknown){
   env.DB.prepare("INSERT INTO app_settings(name,value,updated_at) VALUES('family_report_monthly',?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind(String(v.monthly),at),
   env.DB.prepare("INSERT INTO app_settings(name,value,updated_at) VALUES('family_report_hour',?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind(String(v.hour),at)
  ]);
+ if(!v.weekly||!v.monthly){
+  await env.DB.prepare("UPDATE family_report_deliveries SET state='failed',error_code='REPORT_DISABLED',updated_at=? WHERE state IN ('pending','waiting_context','retry') AND kind=?").bind(now(),!v.weekly?'week':'month').run();
+  if(!v.weekly&&!v.monthly)await env.DB.prepare("UPDATE family_report_deliveries SET state='failed',error_code='REPORT_DISABLED',updated_at=? WHERE state IN ('pending','waiting_context','retry') AND kind='month'").bind(now()).run();
+ }
  return familyReportConfig(env);
 }
 type Growth={day:string;weight:number|null;height:number|null;head_circumference:number|null};
@@ -128,6 +132,9 @@ async function deliver(env:Env,report:Report){
 }
 export async function runFamilyReportCron(env:Env,at=new Date()):Promise<void>{
  const conf=await familyReportConfig(env);
+ // A message without a valid conversation cannot remain "waiting" forever.
+ const expired=new Date(at.getTime()-36*3600000).toISOString();
+ await env.DB.prepare("UPDATE family_report_deliveries SET state='failed',error_code='REPORT_WINDOW_EXPIRED',updated_at=? WHERE state IN ('pending','waiting_context','retry','sending') AND EXISTS (SELECT 1 FROM family_reports r WHERE r.kind=family_report_deliveries.kind AND r.period_start=family_report_deliveries.period_start AND r.created_at<?)").bind(now(),expired).run();
  if(!conf.weekly&&!conf.monthly)return;
  const due=scheduledReportPeriods(at,conf.timeZone,conf.hour).filter(p=>p.kind==='week'?conf.weekly:conf.monthly);
  for(const period of due){
