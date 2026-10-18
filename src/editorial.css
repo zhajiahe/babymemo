@@ -500,7 +500,7 @@ h1,h2,h3 { letter-spacing:normal; }
  .settings-categories{
   position:sticky;top:calc(54px + env(safe-area-inset-top));z-index:35;
   flex-direction:row;gap:6px;overflow-x:auto;overflow-y:hidden;
-  margin:0 -18px 17px;padding:8px 18px;
+  margin:0 -16px 17px;padding:8px 16px;
   border:0;border-bottom:1px solid var(--bm-border);border-radius:0;
   background:var(--bm-glass-top);
   -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
@@ -537,4 +537,9 @@ h1,h2,h3 { letter-spacing:normal; }
 @media(max-width:800px){
  .settings-wechat-add-panel{padding:13px}
  .settings-layout .settings-subsection-body{padding:12px}
+}
+
+/* Match page gutters: at <=480px the app uses 12px, not 16px. */
+@media(max-width:480px){
+ .settings-categories{margin-inline:-12px;padding-inline:12px}
 }
