@@ -99,7 +99,7 @@ function DemoSettings(){
  const [preview,setPreview]=useState<'week'|'month'>('week');
  const selected=demoSettingsSections.find(item=>item.id===section)!;
  return <div className={"settings-layout demo-settings-layout"+(mobileDetail?" mobile-detail":"")}>
-  <div className="settings-mobile-overview-header"><h2>设置</h2><p>选择要管理的内容 · 示例家庭</p></div>
+  <div className="settings-mobile-overview-header"><h2>家庭设置</h2><p>选择要管理的内容 · 示例家庭</p></div>
   <nav className="settings-categories" aria-label="设置分类">
    {demoSettingsSections.map(item=>{const Icon=item.icon;return <button type="button" key={item.id} className={'settings-category'+(section===item.id?' is-active':'')} aria-current={section===item.id?'page':undefined} onClick={()=>{setSection(item.id);setMobileDetail(true)}}>
     <span className="settings-category-icon"><Icon size={19} aria-hidden="true"/></span>
