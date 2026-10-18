@@ -24,6 +24,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  useEffect(()=>{setProvider(state.ai?.provider||'workers-ai');setAiProbe(null)},[state.ai?.provider]);
  const [photoBaby,setPhotoBaby]=useState(state.wechat.defaultBabyId||''),[photoBabyBusy,setPhotoBabyBusy]=useState(false);
  const [reportSettings,setReportSettings]=useState<FamilyReportSettings|null>(null),[reportSaving,setReportSaving]=useState(false),[reportMemberBusy,setReportMemberBusy]=useState('');
+ const [reportTestMember,setReportTestMember]=useState(''),[reportTestBusy,setReportTestBusy]=useState(false),[reportTestResult,setReportTestResult]=useState('');
  useEffect(()=>{
   let canceled=false;
   void api<FamilyReportSettings>('/api/settings/family-reports').then(x=>{if(!canceled)setReportSettings(x)}).catch(()=>{if(!canceled)notify('成长报告设置暂时无法读取')});
@@ -36,6 +37,19 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
    const result=await api<{config:{weekly:boolean;monthly:boolean;hour:number;timeZone:string}}>('/api/settings/family-reports',{method:'PUT',body:JSON.stringify({weekly:reportSettings.weekly,monthly:reportSettings.monthly,hour:reportSettings.hour})});
    setReportSettings(old=>old?{...old,...result.config}:old);notify('成长报告设置已保存');
   }catch(e){notify(e instanceof Error?e.message:'无法保存成长报告')}finally{setReportSaving(false)}
+ }
+ async function testFamilyReport(kind:'week'|'month'){
+  if(reportTestBusy||!reportTestMember)return;
+  setReportTestBusy(true);setReportTestResult('');
+  try{
+   const sent=await post<{accepted:boolean;periodStart:string;periodEnd:string}>('/api/settings/family-reports/test',{kind,connectionId:reportTestMember});
+   setReportTestResult((kind==='week'?'测试周报':'测试月报')+'已提交微信接口（'+sent.periodStart+' 至 '+sent.periodEnd+'）。请在收件人手机微信中确认是否收到。');
+   notify('测试消息已提交微信接口，需用手机确认实际送达');
+  }catch(e){
+   const reason=e instanceof Error?e.message:'测试发送失败';
+   setReportTestResult('测试未成功：'+reason);
+   notify('测试发送失败：'+reason);
+  }finally{setReportTestBusy(false)}
  }
  async function changeReportMember(id:string,subscribed:boolean){
   if(reportMemberBusy)return;setReportMemberBusy(id);
@@ -253,6 +267,17 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
    <section className="family-report-recipients"><strong>微信接收成员</strong><p className="muted small">仅推送给已启用、已勾选的微信成员。成员需要先给 BabyMemo 微信 Bot 发一条消息，以建立主动发送会话。</p>
     {reportSettings.members.map(m=><label key={m.id} className="family-report-member"><span><strong>{m.label}</strong><small className="muted">{!m.enabled?'微信连接已暂停':!m.hasContext?'等待成员发送微信消息':'已建立微信会话（会话可能过期）'}</small></span><input aria-label={m.label+'接收成长报告'} type="checkbox" checked={m.subscribed} disabled={!!reportMemberBusy} onChange={e=>void changeReportMember(m.id,e.target.checked)}/></label>)}
     {!reportSettings.members.length&&<p className="muted small">尚未绑定微信家庭成员，请在下方添加。</p>}
+   </section>
+   <section className="family-report-test">
+    <strong>立即测试微信推送</strong>
+    <p className="muted small">只发送给一位已绑定家人，不改变正式定时开关。测试周报覆盖最近 7 天，测试月报覆盖本月至今；两者均调用 AI 实时生成。</p>
+    <Field label="测试接收人"><select aria-label="测试报告接收人" value={reportTestMember} onChange={e=>{setReportTestMember(e.target.value);setReportTestResult('')}}><option value="">选择一位微信成员</option>{reportSettings.members.filter(m=>m.enabled&&m.subscribed).map(m=><option key={m.id} value={m.id}>{m.label}{m.hasContext?'':'（需先发送微信消息）'}</option>)}</select></Field>
+    <div className="family-report-test-actions">
+     <Button type="button" variant="secondary" disabled={!reportTestMember||reportTestBusy} onClick={()=>void testFamilyReport('week')}>{reportTestBusy?'生成和发送中…':'发送测试周报'}</Button>
+     <Button type="button" variant="secondary" disabled={!reportTestMember||reportTestBusy} onClick={()=>void testFamilyReport('month')}>{reportTestBusy?'生成和发送中…':'发送测试月报'}</Button>
+    </div>
+    {reportTestResult&&<p className="muted small" role="status" aria-live="polite">{reportTestResult}</p>}
+    <p className="muted small">同一成员每 10 分钟最多测试一次。不会写入正式周报记录；接口接受不代表微信客户端实际送达。</p>
    </section>
    <section className="family-report-history"><strong>近期发送记录</strong>
     {reportSettings.reports.map(r=><div className="family-report-history-row" key={r.kind+r.period_start}><span>{r.kind==='week'?'周报':'月报'} · {r.period_start} — {r.period_end}</span><small className="muted">接口已接受 {r.sent||0}/{r.recipients||0} · 等待会话 {r.waiting||0} · 失败 {r.failed||0}</small></div>)}

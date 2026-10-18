@@ -189,6 +189,10 @@ async function e2e() {
     assert.equal(changed.data.config.hour,8);
     assert.equal((await json('/api/settings/family-reports/members/unknown',{method:'PUT',body:{subscribed:true}})).status,404);
     assert.equal((await json('/api/settings/family-reports/members/unknown',{method:'PUT',body:{subscribed:'yes'}})).status,400);
+    assert.equal((await json('/api/settings/family-reports/test',{method:'POST',body:{kind:'week',connectionId:'legacy'},anonymous:true})).status,401);
+    assert.equal((await json('/api/settings/family-reports/test',{method:'POST',body:{kind:'year',connectionId:'legacy'}})).status,400);
+    assert.equal((await json('/api/settings/family-reports/test',{method:'POST',body:{kind:'week',connectionId:'legacy'}})).status,404);
+    assert.equal((await json('/api/settings/family-reports/test',{method:'POST',body:{kind:'month',connectionId:'invalid'}})).status,400);
     const reset=await json('/api/settings/family-reports',{method:'PUT',body:{weekly:false,monthly:false,hour:20}});
     assert.equal(reset.status,200);
     assert.equal((await json('/api/settings/family-reports')).data.weekly,false);

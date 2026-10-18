@@ -239,3 +239,7 @@ input[type="date"],input[type="time"] { min-width:0; max-width:100%; }
 .family-report-recipients,.family-report-history{padding-top:8px}
 .family-report-history-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 12px;padding:10px 0;border-bottom:1px solid var(--bm-border)}
 .family-report-toggle small,.family-report-member small{font-size:.85rem}
+
+.family-report-test{padding-top:8px;display:grid;gap:10px}
+.family-report-test-actions{display:flex;gap:10px;flex-wrap:wrap}
+.family-report-test-actions button{min-height:var(--bm-touch-min)}
