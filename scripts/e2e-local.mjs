@@ -1138,10 +1138,13 @@ async function browserE2e(){
         for(const [nav,heading] of views){
           await page.locator('.mobile-nav button[aria-label="'+nav+'"]').click();
           await page.getByRole('heading',{name:heading,exact:true}).waitFor({timeout:12000});
-          const result=await page.evaluate(()=>({
-            width:window.innerWidth,html:document.documentElement.scrollWidth,
-            body:document.body.scrollWidth
-          }));
+          const result=await page.evaluate(()=>{
+            const width=window.innerWidth,html=document.documentElement.scrollWidth,body=document.body.scrollWidth;
+            const offenders=html>width+1?[...document.querySelectorAll('body *')].filter(el=>{
+              const r=el.getBoundingClientRect();return r.width>0&&r.right>width+1;
+            }).slice(0,9).map(el=>({tag:el.tagName.toLowerCase(),className:typeof el.className==='string'?el.className.slice(0,90):'',right:Math.round(el.getBoundingClientRect().right)})):[];
+            return {width,html,body,offenders};
+          });
           assert.ok(Math.max(result.html,result.body)<=result.width+1,
             'Horizontal overflow on '+width+'px '+nav+': '+JSON.stringify(result));
           assert.equal(await page.locator('.topbar .space-name').isVisible(),true,'family name hidden at '+width+'px');
