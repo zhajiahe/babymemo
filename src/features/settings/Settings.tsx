@@ -9,6 +9,10 @@ import {DEFAULT_OPENROUTER_MODEL,OPENROUTER_MODEL_PRESETS,openRouterModelDescrip
 import {wechatStatusView,wechatStatusTime} from '../../wechat-status.mjs';
 import {getThumbnailRepairSnapshot,subscribeThumbnailRepair,startThumbnailRepair,pauseThumbnailRepair} from '../../thumbnail-repair';
 
+type FamilyReportSettings={weekly:boolean;monthly:boolean;hour:number;timeZone:string;
+ members:{id:string;label:string;enabled:boolean;subscribed:boolean;hasContext:boolean;lastContextAt:string|null}[];
+ reports:{kind:'week'|'month';period_start:string;period_end:string;recipients:number;sent:number;failed:number;waiting:number}[]};
+
 function babyDraft(baby:BabyInfo){try{return JSON.parse(localStorage.getItem('babymemo-draft-baby-'+baby.id)||'null')||baby}catch{return baby}}
 
 export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected}:{state:State;baby:BabyInfo;changed:()=>void;notify:(s:string)=>void;onBabyCreated:(id:string)=>void;onBabySelected:(id:string)=>void}){
@@ -19,6 +23,28 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  const activeModel=savedProvider==='workers-ai'?'Qwen3.8-27B':state.openrouter.model;
  useEffect(()=>{setProvider(state.ai?.provider||'workers-ai');setAiProbe(null)},[state.ai?.provider]);
  const [photoBaby,setPhotoBaby]=useState(state.wechat.defaultBabyId||''),[photoBabyBusy,setPhotoBabyBusy]=useState(false);
+ const [reportSettings,setReportSettings]=useState<FamilyReportSettings|null>(null),[reportSaving,setReportSaving]=useState(false),[reportMemberBusy,setReportMemberBusy]=useState('');
+ useEffect(()=>{
+  let canceled=false;
+  void api<FamilyReportSettings>('/api/settings/family-reports').then(x=>{if(!canceled)setReportSettings(x)}).catch(()=>{if(!canceled)notify('成长报告设置暂时无法读取')});
+  return ()=>{canceled=true};
+ },[state.wechat.connections.map(x=>x.id).join('|')]);
+ async function saveReportSettings(){
+  if(!reportSettings||reportSaving)return;
+  setReportSaving(true);
+  try{
+   const result=await api<{config:{weekly:boolean;monthly:boolean;hour:number;timeZone:string}}>('/api/settings/family-reports',{method:'PUT',body:JSON.stringify({weekly:reportSettings.weekly,monthly:reportSettings.monthly,hour:reportSettings.hour})});
+   setReportSettings(old=>old?{...old,...result.config}:old);notify('成长报告设置已保存');
+  }catch(e){notify(e instanceof Error?e.message:'无法保存成长报告')}finally{setReportSaving(false)}
+ }
+ async function changeReportMember(id:string,subscribed:boolean){
+  if(reportMemberBusy)return;setReportMemberBusy(id);
+  try{
+   await api('/api/settings/family-reports/members/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify({subscribed})});
+   setReportSettings(old=>old?{...old,members:old.members.map(m=>m.id===id?{...m,subscribed}:m)}:old);
+   notify(subscribed?'已允许该成员接收成长报告':'已停止向该成员发送报告');
+  }catch(e){notify(e instanceof Error?e.message:'订阅设置更新失败')}finally{setReportMemberBusy('')}
+ }
  useEffect(()=>{setPhotoBaby(state.wechat.defaultBabyId||'')},[state.wechat.defaultBabyId]);
  const draft=babyDraft(baby);
  const [name,setName]=useState(draft.name),[birthday,setBirthday]=useState(draft.birthday),[birthTime,setBirthTime]=useState(draft.birth_time||''),[allergies,setAllergies]=useState(draft.allergies);
@@ -215,6 +241,25 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
    </form>
   </details>
   <p className="muted small settings-ai-note">模型接口测试只检查 AI 服务，不检查微信是否收到消息；测试本身可能产生少量 Neurons 或 OpenRouter 费用。</p>
+ </Card>
+ <Card className="span-2 family-report-settings">
+  <div className="section-title"><div><h3>家庭成长周报与月报</h3><p className="muted small">AI 根据成长瞬间、成长指标、照片与视频的文字记录生成报告，直接发送给家人的微信。</p></div><MessageCircle size={20}/></div>
+  {!reportSettings?<p className="muted" role="status">正在读取成长报告设置…</p>:<div className="stack">
+   <label className="family-report-toggle"><span><strong>每周 AI 成长报告</strong><small className="muted">每周日发送当周回顾</small></span><input type="checkbox" role="switch" checked={reportSettings.weekly} onChange={e=>setReportSettings(old=>old?{...old,weekly:e.target.checked}:old)}/></label>
+   <label className="family-report-toggle"><span><strong>每月 AI 成长报告</strong><small className="muted">每月 1 日发送上月回顾</small></span><input type="checkbox" role="switch" checked={reportSettings.monthly} onChange={e=>setReportSettings(old=>old?{...old,monthly:e.target.checked}:old)}/></label>
+   <Field label="发送时间（使用首位宝宝的时区）"><select aria-label="成长报告发送时间" value={reportSettings.hour} onChange={e=>setReportSettings(old=>old?{...old,hour:Number(e.target.value)}:old)}>{[8,12,20,21].map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}</select></Field>
+   <p className="muted small">当前家庭时区：{reportSettings.timeZone}</p>
+   <Button type="button" variant="primary" disabled={reportSaving} onClick={()=>void saveReportSettings()}>{reportSaving?'保存中…':'保存报告开关与时间'}</Button>
+   <section className="family-report-recipients"><strong>微信接收成员</strong><p className="muted small">仅推送给已启用、已勾选的微信成员。成员需要先给 BabyMemo 微信 Bot 发一条消息，以建立主动发送会话。</p>
+    {reportSettings.members.map(m=><label key={m.id} className="family-report-member"><span><strong>{m.label}</strong><small className="muted">{!m.enabled?'微信连接已暂停':!m.hasContext?'等待成员发送微信消息':'已建立微信会话（会话可能过期）'}</small></span><input aria-label={m.label+'接收成长报告'} type="checkbox" checked={m.subscribed} disabled={!!reportMemberBusy} onChange={e=>void changeReportMember(m.id,e.target.checked)}/></label>)}
+    {!reportSettings.members.length&&<p className="muted small">尚未绑定微信家庭成员，请在下方添加。</p>}
+   </section>
+   <section className="family-report-history"><strong>近期发送记录</strong>
+    {reportSettings.reports.map(r=><div className="family-report-history-row" key={r.kind+r.period_start}><span>{r.kind==='week'?'周报':'月报'} · {r.period_start} — {r.period_end}</span><small className="muted">接口已接受 {r.sent||0}/{r.recipients||0} · 等待会话 {r.waiting||0} · 失败 {r.failed||0}</small></div>)}
+    {!reportSettings.reports.length&&<p className="muted small">尚未生成成长报告。</p>}
+   </section>
+   <p className="muted small">初始关闭。无新记录的周期不发送；微信 iLink 主动发送需要真实账号验证，接口接受不代表手机已收到。</p>
+  </div>}
  </Card>
  <Card className="span-2"><div className="section-title"><h3>微信操作</h3><MessageCircle size={20}/></div><p className="muted small">添加家庭成员的微信，直接发送照片、视频或成长记录。每位成员可以独立连接。</p><details className="settings-help"><summary>查看微信连接原理</summary><p className="muted small">通过 Cloudflare Durable Objects 轮询微信消息，默认由 Workers AI Qwen3.8（关闭思考）识别意图，再调用受限工具操作家庭数据；也支持切换 OpenRouter，无需 VPS。</p></details>
  <div className="wechat-row"><div className="wechat-status"><strong>微信消息接收 · 已绑定 {state.wechat.connections.length} 位 · 已启用 {state.wechat.connections.filter(x=>x.enabled).length} 位</strong><p className="muted small">最近确认运行 {healthyWechat} 位{warningWechat?' · 需关注 '+warningWechat+' 位':''}{checkedWechat.length<state.wechat.connections.length?' · 状态获取中':''}。启用不等于正在正常收消息。</p></div></div>
