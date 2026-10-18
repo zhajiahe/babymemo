@@ -524,3 +524,17 @@ h1,h2,h3 { letter-spacing:normal; }
  .settings-category{padding-inline:11px}
  .settings-layout .settings-grid>.card{padding:16px 13px}
 }
+
+.settings-wechat-add-action{margin:13px 0}
+.settings-wechat-add-action button{min-height:44px}
+.settings-wechat-add-panel{
+ display:grid;gap:13px;margin:12px 0;padding:16px;
+ border:1px solid var(--bm-border);border-radius:12px;background:var(--bm-surface-alt);min-width:0
+}
+.settings-wechat-add-panel .qr-panel{max-width:100%}
+.settings-layout .family-report-recipients{margin-top:2px}
+.settings-layout .family-report-history{margin-top:2px}
+@media(max-width:800px){
+ .settings-wechat-add-panel{padding:13px}
+ .settings-layout .settings-subsection-body{padding:12px}
+}
