@@ -31,9 +31,16 @@ export async function browserWebManagement({page,context,base,evidence,step}){
    return {page:document.documentElement.scrollWidth,window:window.innerWidth,scrolling:nav.scrollWidth>nav.clientWidth};
   });
   assert.equal(geometry.page>geometry.window+1,false,'settings must not overflow 320px page');
-  assert.equal(geometry.scrolling,true,'mobile categories remain reachable via internal scrolling');
+  assert.equal(geometry.scrolling,false,'mobile settings categories should fit as full-width rows');
+  assert.equal(await page.locator('.settings-mobile-back').isVisible(),true);
+  await page.getByRole('button',{name:'设置',exact:true}).filter({has:page.locator('.settings-mobile-back svg')}).count().catch(()=>{});
+  await page.locator('.settings-mobile-back').click();
+  assert.equal(await categories.isVisible(),true,'mobile setting list is the navigation root');
+  assert.equal(await page.locator('.settings-main').isVisible(),false);
   await page.screenshot({path:join(evidence,'settings-categories-data-mobile-320.png'),fullPage:false});
   await categories.getByRole('button',{name:/成长报告/}).click();
+  assert.equal(await categories.isVisible(),false);
+  assert.equal(await page.locator('.settings-mobile-back').isVisible(),true);
   await page.screenshot({path:join(evidence,'settings-report-mobile-320.png'),fullPage:false});
   await page.setViewportSize({width:1280,height:900});
   await categories.getByRole('button',{name:/宝宝与外观/}).click();
@@ -144,7 +151,7 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   assert.equal(await page.evaluate(async()=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('babymemo-device-v1');r.onsuccess=()=>resolve(r.result);r.onerror=reject});const jobs=await new Promise(resolve=>{const r=db.transaction('jobs').objectStore('jobs').count();r.onsuccess=()=>resolve(r.result)});db.close();return jobs}),0);
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(key=>key.startsWith('babymemo-draft-'))),false);
   await context.setOffline(true);assert.equal(await page.evaluate(async id=>(await fetch('/api/media/'+id+'/content')).status,items[0].id),401);await context.setOffline(false);
-  await page.getByLabel('管理员登录名',{exact:true}).fill('Tester');await page.getByLabel('家庭密码',{exact:true}).fill('123456');await page.getByRole('button',{name:'登录我的空间',exact:true}).click();await page.locator('.sidebar').waitFor();
+  assert.equal(await page.getByLabel('管理员登录名',{exact:true}).count(),0);await page.getByLabel('家庭密码',{exact:true}).fill('123456');await page.getByRole('button',{name:'登录我的空间',exact:true}).click();await page.locator('.sidebar').waitFor();
  });
  await page.reload();await page.setViewportSize({width:375,height:900});await page.screenshot({path:join(evidence,'web-management-mobile.png'),fullPage:true});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
