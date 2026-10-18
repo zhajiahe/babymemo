@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {
   Baby, BookHeart, BookOpenText, Camera, ChevronLeft, ChevronRight, Heart,
-  Images, Play, Plus, Settings2, ShieldCheck, TrendingUp, X
+  Images, Play, Plus, Settings2, ShieldCheck, TrendingUp, X, UsersRound, CalendarHeart, BrainCircuit, HardDriveDownload, Wifi
 } from 'lucide-react';
 import {Logo,Button,SegmentedControl} from '../components/ui';
 import {ThemeSelector} from '../components/ThemeSelector';
@@ -84,6 +84,87 @@ function PhotoViewer({index,onClose,onNavigate}:{index:number;onClose:()=>void;o
  </dialog>;
 }
 
+
+type DemoSettingsSection='profile'|'wechat'|'reports'|'ai'|'storage';
+const demoSettingsSections:{id:DemoSettingsSection;label:string;description:string;icon:typeof Baby}[]=[
+ {id:'profile',label:'宝宝与外观',description:'档案、主题',icon:Baby},
+ {id:'wechat',label:'微信成员',description:'连接与收图',icon:UsersRound},
+ {id:'reports',label:'成长报告',description:'周报、月报',icon:CalendarHeart},
+ {id:'ai',label:'AI 模型',description:'模型设置',icon:BrainCircuit},
+ {id:'storage',label:'数据与安全',description:'备份与维护',icon:HardDriveDownload}
+];
+function DemoSettings(){
+ const [section,setSection]=useState<DemoSettingsSection>('profile');
+ const [preview,setPreview]=useState<'week'|'month'>('week');
+ const selected=demoSettingsSections.find(item=>item.id===section)!;
+ return <div className="settings-layout demo-settings-layout">
+  <nav className="settings-categories" aria-label="设置分类">
+   {demoSettingsSections.map(item=>{const Icon=item.icon;return <button type="button" key={item.id} className={'settings-category'+(section===item.id?' is-active':'')} aria-current={section===item.id?'page':undefined} onClick={()=>setSection(item.id)}>
+    <span className="settings-category-icon"><Icon size={19} aria-hidden="true"/></span>
+    <span className="settings-category-label"><strong>{item.label}</strong><small>{item.description}</small></span>
+    <ChevronRight size={16} className="settings-category-chevron" aria-hidden="true"/>
+   </button>})}
+  </nav>
+  <section className="settings-main" aria-labelledby="demo-settings-section-title">
+   <div className="settings-main-heading"><span className="settings-main-eyebrow">SETTINGS</span><h2 id="demo-settings-section-title">{selected.label}</h2><p>{selected.description} · 虚构家庭演示</p></div>
+   <div className="settings-grid">
+    {section==='profile'&&<>
+     <section className="card span-2 appearance-settings"><div className="section-title"><h3>外观主题</h3></div><ThemeSelector/></section>
+     <section className="card span-2"><div className="section-title"><h3>宝宝资料</h3><Baby size={20}/></div>
+      <div className="demo-profile-intro"><span className="demo-profile-avatar"><Baby size={29}/></span><div><strong>小星星</strong><p className="muted small">我们的温暖小家 · 10 个月</p></div></div>
+      <div className="demo-history-row"><span>出生日期</span><strong>2025-12-10</strong></div>
+      <div className="demo-history-row"><span>家庭时区</span><strong>Asia/Shanghai</strong></div>
+      <div className="demo-history-row"><span>家庭成员 · 宝宝</span><strong>1 位宝宝</strong></div>
+      <p className="muted small">真实设置支持切换宝宝、修改档案、更新头像，以及新增和管理宝宝。</p>
+     </section>
+    </>}
+    {section==='wechat'&&<section className="card span-2"><div className="section-title"><h3>微信操作</h3><UsersRound size={20}/></div>
+      <p className="muted small">添加家庭成员的微信，就能在聊天中保存照片、视频和成长瞬间。</p>
+      <div className="wechat-row"><div className="wechat-status"><strong>微信消息接收 · 已绑定 3 位 · 已启用 3 位</strong></div></div>
+      {['爸爸','妈妈','外婆'].map(name=><div className="demo-wechat-member" key={name}><span className="demo-member-avatar"><UsersRound size={17}/></span><div><strong>{name}</strong><small className="muted">演示成员 · 正在接收消息</small></div><span className="demo-member-state"><Wifi size={14}/>已连接</span></div>)}
+      <div className="demo-settings-explainer">真实产品可扫码绑定家人、查看连接状态、设置照片归档的默认宝宝。这里不会连接微信。</div>
+     </section>}
+    {section==='reports'&&<section className="card span-2 family-report-settings demo-report-settings">
+     <div className="section-title"><div><h3>家庭成长周报与月报</h3><p className="muted small">AI 依据真实记录生成成长故事、成长指标及照片视频统计。</p></div><CalendarHeart size={20}/></div>
+     <div className="stack">
+      <div className="family-report-toggle"><span><strong>每周 AI 成长报告</strong><small className="muted">每周日自动发送微信</small></span><span className="demo-report-state">演示 · 关闭</span></div>
+      <div className="family-report-toggle"><span><strong>每月 AI 成长报告</strong><small className="muted">每月 1 日发送上月报告</small></span><span className="demo-report-state">演示 · 关闭</span></div>
+      <p className="muted small">正式设置中可分别开启、选择时间与家人，并向单个成员试发报告。</p>
+      <div className="demo-report-preview">
+       <div className="demo-preview-head"><strong>查看 AI 报告示例</strong><span className="demo-readonly">虚构内容 · 不发送</span></div>
+       <SegmentedControl label="示例报告类型" value={preview} onChange={setPreview} options={[{value:'week' as const,label:'周报'},{value:'month' as const,label:'月报'}]}/>
+       <article className="demo-wechat-report"><span className="demo-report-eyebrow">🌱 BabyMemo · 家庭成长{preview==='week'?'周报':'月报'}</span>
+        <time dateTime={preview==='week'?'2026-10-12':'2026-10-01'}>{preview==='week'?'10 月 12 日 — 10 月 18 日':'10 月 1 日 — 10 月 31 日'}</time>
+        <strong>✨ 成长瞬间</strong>
+        <p>{preview==='week'?'这一周，记录了追着泡泡跑的下午、早晨的小毯子和扶站时的笑声。':'这个月，我们一起经历了第一次扶站、公园散步，也记录了许多温柔的日常。'}</p>
+        <strong>📏 成长指标</strong><p>最新体重 8.6 kg · 身高 72.5 cm</p>
+        <strong>📷 照片与视频</strong><p>{preview==='week'?'照片 3 张 · 视频 1 段':'照片 4 张 · 视频 1 段'}（演示数量）</p>
+        <strong>💛 AI 回顾</strong><p>每一张照片背后，都藏着值得珍惜的成长故事。BabyMemo 会把这些真实记录整理成温柔的家庭回忆。</p>
+       </article>
+      </div>
+      <p className="muted small">演示不会访问微信、不调用 AI、不修改报告设置。真实报告只根据家庭已有记录生成。</p>
+     </div>
+    </section>}
+    {section==='ai'&&<section className="card span-2 settings-ai-card"><div className="section-title"><h3>微信 AI 模型</h3><BrainCircuit size={20}/></div>
+      <div className="settings-ai-overview"><div><span className="settings-ai-caption">默认提供方</span><strong>Cloudflare Workers AI</strong><p className="muted small">也可在真实设置中切换到 OpenRouter 模型。</p></div><span className="demo-readonly">示例配置</span></div>
+      <div className="demo-settings-explainer">真实设置还支持检测模型连接、填写模型 ID 与安全管理 API Key；演示不会调用任何 AI 服务。</div>
+     </section>}
+    {section==='storage'&&<>
+     <section className="card span-2"><div className="section-title"><h3>家庭数据与回收站</h3><ShieldCheck size={20}/></div>
+      <div className="demo-history-row"><span>完整家庭档案</span><strong>ZIP 导出</strong></div>
+      <div className="demo-history-row"><span>恢复删除的记录</span><strong>30 天内</strong></div>
+      <div className="demo-history-row"><span>相册封面维护</span><strong>按需修复</strong></div>
+      <p className="muted small">真实产品支持私密备份、离线同步、回收站和封面修复。演示不会下载或修改数据。</p>
+     </section>
+     <section className="card span-2"><div className="section-title"><h3>账户安全</h3><ShieldCheck size={20}/></div>
+      <div className="demo-settings-explainer">真实设置允许修改家庭密码并注销旧会话，演示不会要求输入密码。</div>
+     </section>
+    </>}
+   </div>
+  </section>
+ </div>;
+}
+
 export default function Demo(){
  const [active,setActive]=useState<DemoTab>('overview');
  const [albumMode,setAlbumMode]=useState<'stories'|'grid'>('stories');
@@ -142,7 +223,7 @@ export default function Demo(){
     </>}
     {active==='growth'&&<div className="demo-growth"><GrowthChart items={growth}/><section className="card"><h2>测量历史</h2><p className="muted">每一次变化，都有迹可循。</p>{growth.slice().reverse().map(record=><div className="demo-history-row" key={record.id}><time dateTime={record.day}>{record.day}</time><span>体重 {record.weight} kg</span><span>身高 {record.height} cm</span></div>)}</section></div>}
     {active==='moments'&&<section className="demo-moments"><div className="demo-moments-intro">记录那些不想忘记的第一次，和每一个平凡又珍贵的日子。</div>{moments.map(moment=><article className="card demo-moment" key={moment.day}><time dateTime={moment.day}>{moment.day}</time><h2>{moment.title}</h2><p>{moment.description}</p></article>)}</section>}
-    {active==='settings'&&<div className="demo-settings"><section className="card demo-theme-card"><h2>外观主题</h2><ThemeSelector/></section><section className="card"><h2>家庭空间</h2><p className="muted">我们的温暖小家</p><div className="demo-history-row"><span>宝宝</span><strong>小星星</strong></div><div className="demo-history-row"><span>家庭成员</span><strong>仅受邀家人</strong></div><div className="demo-history-row"><span>照片与日记</span><strong>私密保存</strong></div></section><section className="card demo-setting-note"><ShieldCheck size={22}/><h2>只属于家人的成长记录</h2><p>真实 BabyMemo 还支持微信记录、离线同步与家庭档案导出。演示仅展示只读界面，不会保存或修改数据。</p><a href="https://github.com/zhajiahe/babymemo" target="_blank" rel="noopener noreferrer">查看产品与部署说明 ↗</a></section></div>}
+    {active==='settings'&&<DemoSettings/>}
    </div>
   </main>
   {selected!==null&&<PhotoViewer index={selected} onClose={()=>setSelected(null)} onNavigate={setSelected}/>}
