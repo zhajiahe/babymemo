@@ -2,6 +2,7 @@ import {RecordFilterBar,emptyFilters,filterQuery,type RecordFilters} from './com
 import {OfflineStatus} from './components/OfflineStatus';
 import {clearDevice,offlineJobs} from './offline';
 import {resumeThumbnailRepair,clearThumbnailRepair} from './thumbnail-repair';
+import {repairMissingVideoCovers} from './auto-video-covers';
 import {mediaThumbnailUrl} from './private-media-cache.mjs';
 import {api,post,ApiFailure,today,type State,type Tab,type RecordItem} from './lib/client';
 import {RecordView,GrowthChart} from './features/growth/RecordView';
@@ -121,6 +122,16 @@ export default function App(){
  },[mode,active,baby?.id]);
  // Resume only jobs explicitly started by the user on this device.
  useEffect(()=>{if(mode==='app'&&state)resumeThumbnailRepair(state.babies.map(item=>item.id))},[mode,state]);
+ // Best-effort automatic poster repair for WeChat videos lacking CDN thumbnails.
+ // Uses small Range reads on visible, signed-in devices; never changes originals.
+ const videoCoverBabies=state?.babies.map(item=>item.id).join('|')||'';
+ useEffect(()=>{
+  if(mode!=='app'||!videoCoverBabies)return;
+  const controller=new AbortController();
+  const run=()=>{if(!controller.signal.aborted)void repairMissingVideoCovers(videoCoverBabies.split('|'),controller.signal)};
+  run();document.addEventListener('visibilitychange',run);window.addEventListener('online',run);
+  return()=>{controller.abort();document.removeEventListener('visibilitychange',run);window.removeEventListener('online',run)};
+ },[mode,videoCoverBabies]);
  useEffect(()=>{
   const ready=(event:Event)=>{
    const {id,updatedAt}=(event as CustomEvent<{id:string;updatedAt?:string}>).detail||{};
