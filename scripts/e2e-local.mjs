@@ -772,7 +772,7 @@ async function browserE2e(){
         const sample=preview.locator('.demo-wechat-report');
         assert.match(await sample.innerText(),/本期成长足迹/);assert.match(await sample.innerText(),/📏 体重/);
         await preview.getByRole('group',{name:'示例报告类型'}).getByRole('button',{name:'月报'}).click();
-        assert.match(await sample.innerText(),/10 月 1 日/);
+        assert.match(await sample.innerText(),/2026年10月/);
         assert.equal(await preview.getByRole('group',{name:'示例报告类型'}).getByRole('button',{name:'月报'}).getAttribute('aria-pressed'),'true');
         await preview.screenshot({path:join(evidence,'demo-settings-reports-1280.png'),fullPage:false});
         for(const width of [320,390,768]){
