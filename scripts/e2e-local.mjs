@@ -1223,11 +1223,13 @@ async function browserE2e(){
       assert.equal(await input.inputValue(),'只属于宝宝A的临时草稿');
       await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/宝宝与外观/}).click();
       await picker.selectOption({label:'Second Baby'});
       await openMoments();
       assert.equal(await input.inputValue(),'');
       await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/宝宝与外观/}).click();
       await picker.selectOption({label:'Test Baby'});
       await openMoments();
       assert.equal(await input.inputValue(),'只属于宝宝A的临时草稿');
