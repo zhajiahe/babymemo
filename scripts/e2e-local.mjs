@@ -1212,6 +1212,7 @@ async function browserE2e(){
       const input=momentDialog.locator('input[placeholder*="第一次独立走路"]');
       await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/宝宝与外观/}).click();
       const picker=page.locator('.settings-baby-switch select[aria-label="选择宝宝"]');
       await picker.selectOption({label:'Test Baby'});
       await openMoments();
