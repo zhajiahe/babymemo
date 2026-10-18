@@ -133,13 +133,21 @@ function DemoSettings(){
       <div className="demo-report-preview">
        <div className="demo-preview-head"><strong>查看 AI 报告示例</strong><span className="demo-readonly">虚构内容 · 不发送</span></div>
        <SegmentedControl label="示例报告类型" value={preview} onChange={setPreview} options={[{value:'week' as const,label:'周报'},{value:'month' as const,label:'月报'}]}/>
-       <article className="demo-wechat-report"><span className="demo-report-eyebrow">🌱 BabyMemo · 家庭成长{preview==='week'?'周报':'月报'}</span>
-        <time dateTime={preview==='week'?'2026-10-12':'2026-10-01'}>{preview==='week'?'10 月 12 日 — 10 月 18 日':'10 月 1 日 — 10 月 31 日'}</time>
-        <strong>✨ 成长瞬间</strong>
-        <p>{preview==='week'?'这一周，记录了追着泡泡跑的下午、早晨的小毯子和扶站时的笑声。':'这个月，我们一起经历了第一次扶站、公园散步，也记录了许多温柔的日常。'}</p>
-        <strong>📏 成长指标</strong><p>最新体重 8.6 kg · 身高 72.5 cm</p>
-        <strong>📷 照片与视频</strong><p>{preview==='week'?'照片 3 张 · 视频 1 段':'照片 4 张 · 视频 1 段'}（演示数量）</p>
-        <strong>💛 AI 回顾</strong><p>每一张照片背后，都藏着值得珍惜的成长故事。BabyMemo 会把这些真实记录整理成温柔的家庭回忆。</p>
+       <article className="demo-wechat-report">
+        <span className="demo-report-eyebrow">🌱 小星星的{preview==='week'?'这一周':'10月成长记'}</span>
+        <time dateTime={preview==='week'?'2026-10-12':'2026-10-01'}>{preview==='week'?'10月12日 — 10月18日 · BabyMemo 成长周报':'2026年10月 · BabyMemo 成长月报'}</time>
+        <strong>{preview==='week'?'追着泡泡跑的下午':'把平凡日子存进十月'}</strong>
+        {preview==='week'?<>
+         <p>这一周，小星星在公园里发现了会飞的泡泡，一路追着跑，跌倒后又爬起来。傍晚的阳光和这一阵笑声，成了家人想记住的下午。</p>
+         <p>周末的早晨，她抱着小毯子笑个不停。这样的普通日常，也慢慢成了珍贵的回忆。</p>
+        </>:<>
+         <p>十月的小星星有不少值得珍藏的日子：在公园追泡泡、扶着沙发站住，还有一家人慢慢散步的周末。</p>
+         <p>我们记下了她对小小世界的好奇，也记下平凡的清晨和周末。那些细节，正是这个月独一无二的模样。</p>
+         <p>每次翻开记录，都能重新想起当时一家人陪在身边的时光。</p>
+        </>}
+        <strong>📒 本期成长足迹</strong>
+        <p>✨ {preview==='week'?'2':'3'} 个瞬间 · 📷 {preview==='week'?'3':'4'} 张照片 · 🎬 1 段视频</p>
+        <p>📏 体重 8.6 kg（10月11日测量） · 身高 72.5 cm（10月11日测量）</p>
        </article>
       </div>
       <p className="muted small">演示不会访问微信、不调用 AI、不修改报告设置。真实报告只根据家庭已有记录生成。</p>
