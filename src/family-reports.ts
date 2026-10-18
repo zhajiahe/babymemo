@@ -75,13 +75,24 @@ async function aiStory(env:Env,period:ReportPeriod,facts:ReportFacts[]){
  ];
  const provider=await setting(env,'ai_provider')||DEFAULT_AI_PROVIDER;
  const max_tokens=period.kind==='week'?800:1150;
- let response;
- if(provider==='openrouter'){
-  const key=await resolveOpenRouterKey(env);if(!key)throw Error('REPORT_AI_NOT_CONFIGURED');
-  response=await openRouterCompletion({key,model:await setting(env,'openrouter_model')||DEFAULT_OPENROUTER_MODEL,messages,max_tokens,maxAttempts:1});
- }else response=await qwenCompletion({ai:env.AI!,messages,max_tokens});
- const result=(response as {choices?:{message?:{content?:unknown}}[]})?.choices?.[0]?.message?.content;
- return parseReportNarrative(result);
+ const run=async (prompt:typeof messages)=>{
+  const response=provider==='openrouter'
+   ?await (async()=>{
+    const key=await resolveOpenRouterKey(env);if(!key)throw Error('REPORT_AI_NOT_CONFIGURED');
+    return openRouterCompletion({key,model:await setting(env,'openrouter_model')||DEFAULT_OPENROUTER_MODEL,messages:prompt,max_tokens,maxAttempts:1});
+   })()
+   :await qwenCompletion({ai:env.AI!,messages:prompt,max_tokens});
+  return (response as {choices?:{message?:{content?:unknown}}[]})?.choices?.[0]?.message?.content;
+ };
+ const first=await run(messages);
+ try{return parseReportNarrative(first)}
+ catch(error){
+  if(!(error instanceof Error)||error.message!=='REPORT_AI_INVALID_RESPONSE')throw error;
+  // A strict JSON-only retry avoids sending raw model prose, truncated JSON or
+  // provider reasoning artifacts to family members.
+  const retry=[...messages,{role:'user',content:'请重新生成报告：上次返回格式不符合要求。只输出一个合法 JSON 对象，含 title 字符串和 paragraphs 字符串数组；不要 Markdown、说明或代码围栏。'}];
+  return parseReportNarrative(await run(retry));
+ }
 }
 async function reportBody(env:Env,period:ReportPeriod):Promise<string|null>{
  const facts=await factsFor(env,period);
