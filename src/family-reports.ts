@@ -8,8 +8,8 @@ import {scheduledReportPeriods,type ReportKind,type ReportPeriod} from './family
 
 type ReportConfig={weekly:boolean;monthly:boolean;hour:number;timeZone:string};
 type Report={kind:ReportKind;period_start:string;period_end:string;body:string;created_at:string};
-type Recipient={id:string;context_cipher:string|null};
-type Delivery={client_id:string;state:string;attempts:number};
+type Recipient={id:string;context_cipher:string|null;context_updated_at:string|null};
+type Delivery={client_id:string;state:string;attempts:number;updated_at:string};
 const hours=[8,12,20,21];
 const now=()=>new Date().toISOString();
 const clean=(v:unknown,len=150)=>typeof v==='string'?v.replace(/[\u0000-\u001f]+/g,' ').slice(0,len).trim():'';
@@ -108,15 +108,18 @@ async function createReport(env:Env,period:ReportPeriod):Promise<Report|null>{
  return env.DB.prepare('SELECT * FROM family_reports WHERE kind=? AND period_start=?').bind(period.kind,period.start).first<Report>();
 }
 async function deliver(env:Env,report:Report){
- const members=await env.DB.prepare('SELECT id,context_cipher FROM wechat_connections WHERE enabled=1 AND report_subscribed=1').all<Recipient>();
+ const members=await env.DB.prepare('SELECT id,context_cipher,context_updated_at FROM wechat_connections WHERE enabled=1 AND report_subscribed=1').all<Recipient>();
  for(const member of members.results){
   await env.DB.prepare("INSERT OR IGNORE INTO family_report_deliveries(kind,period_start,connection_id,client_id,state,updated_at) VALUES(?,?,?,?,'pending',?)").bind(report.kind,report.period_start,member.id,crypto.randomUUID(),now()).run();
-  const row=await env.DB.prepare('SELECT client_id,state,attempts FROM family_report_deliveries WHERE kind=? AND period_start=? AND connection_id=?').bind(report.kind,report.period_start,member.id).first<Delivery>();
+  const row=await env.DB.prepare('SELECT client_id,state,attempts,updated_at FROM family_report_deliveries WHERE kind=? AND period_start=? AND connection_id=?').bind(report.kind,report.period_start,member.id).first<Delivery>();
   if(!row||row.state==='sent'||row.state==='failed'||row.attempts>=3)continue;
   if(!member.context_cipher){
    await env.DB.prepare("UPDATE family_report_deliveries SET state='waiting_context',error_code='WECHAT_CONTEXT_REQUIRED',updated_at=? WHERE kind=? AND period_start=? AND connection_id=? AND state NOT IN ('sent','failed','sending')").bind(now(),report.kind,report.period_start,member.id).run();
    continue;
   }
+  // A rejected or missing iLink conversation must be refreshed by an actual
+  // incoming message; do not burn retry budget on the same stale token hourly.
+  if(row.state==='waiting_context'&&(!member.context_updated_at||member.context_updated_at<=row.updated_at))continue;
   const stale=new Date(Date.now()-30*60000).toISOString();
   const claim=await env.DB.prepare("UPDATE family_report_deliveries SET state='sending',attempts=attempts+1,error_code=NULL,updated_at=? WHERE kind=? AND period_start=? AND connection_id=? AND attempts<3 AND (state IN ('pending','retry','waiting_context') OR (state='sending' AND updated_at<?))").bind(now(),report.kind,report.period_start,member.id,stale).run();
   if(!claim.meta.changes)continue;
@@ -126,7 +129,8 @@ async function deliver(env:Env,report:Report){
    await sendWechatFamilyReport(env,member.id,report.body,row.client_id);
    await env.DB.prepare("UPDATE family_report_deliveries SET state='sent',error_code=NULL,updated_at=? WHERE kind=? AND period_start=? AND connection_id=?").bind(now(),report.kind,report.period_start,member.id).run();
   }catch(e){
-   await env.DB.prepare('UPDATE family_report_deliveries SET state=?,error_code=?,updated_at=? WHERE kind=? AND period_start=? AND connection_id=?').bind(row.attempts+1>=3?'failed':'retry',errorCode(e),now(),report.kind,report.period_start,member.id).run();
+   const reason=errorCode(e),wait=reason==='WECHAT_SEND_REJECTED'||reason==='WECHAT_CONTEXT_REQUIRED';
+   await env.DB.prepare('UPDATE family_report_deliveries SET state=?,error_code=?,updated_at=? WHERE kind=? AND period_start=? AND connection_id=?').bind(row.attempts+1>=3?'failed':wait?'waiting_context':'retry',reason,now(),report.kind,report.period_start,member.id).run();
   }
  }
 }
