@@ -209,7 +209,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  }
  async function inspect(id:string){setInspectedMember(id);try{const status=await api<WechatRunStatus>('/api/settings/wechat/connections/'+encodeURIComponent(id)+'/status');setRunStatuses(current=>({...current,[id]:status}))}catch{notify('暂时无法读取微信状态，请稍后重试')}}
  return <div className={"settings-layout"+(mobileDetail?" mobile-detail":"")}>
- <div className="settings-mobile-overview-header"><h2>设置</h2><p>选择要管理的内容</p></div>
+ <div className="settings-mobile-overview-header"><h2>家庭设置</h2><p>选择要管理的内容</p></div>
  <nav className="settings-categories" aria-label="设置分类">
   {SETTINGS_SECTIONS.map(section=>{const Icon=section.icon;return <button id={'settings-nav-'+section.id} type="button" key={section.id} className={'settings-category'+(activeSection===section.id?' is-active':'')} aria-current={activeSection===section.id?'page':undefined} onClick={()=>{setActiveSection(section.id);setMobileDetail(true)}}>
    <span className="settings-category-icon"><Icon size={19} aria-hidden="true"/></span>
