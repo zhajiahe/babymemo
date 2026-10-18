@@ -21,7 +21,7 @@ export async function authenticated(c:Ctx):Promise<boolean>{
   }
   return true;
 }
-export async function login(c:Ctx,name:string,password:string):Promise<boolean>{
+export async function login(c:Ctx,password:string):Promise<boolean>{
   const ip=c.req.header('CF-Connecting-IP')??'unknown';
   const raw=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ip));
   const key=Array.from(new Uint8Array(raw),b=>b.toString(16).padStart(2,'0')).join('');
@@ -32,7 +32,7 @@ export async function login(c:Ctx,name:string,password:string):Promise<boolean>{
   const existing=await owner(c.env);
   if(!existing)return false;
   const hash=await passwordHash(password,existing.password_salt);
-  if(!constantEqual(existing.password_hash,hash)||!constantEqual(existing.name,name))return false;
+  if(!constantEqual(existing.password_hash,hash))return false;
   await c.env.DB.prepare('DELETE FROM auth_attempts WHERE ip_hash=?').bind(key).run();
   await applySession(c,existing.session_version);
   return true;

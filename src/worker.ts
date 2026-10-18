@@ -19,6 +19,7 @@ import {previousMutation,commitMutation} from './web-mutations';
 import {purgeDeletedMedia,retentionCutoff} from './media-retention.mjs';
 export { WechatSession } from './wechat';
 import {runWechatCronPolling} from './wechat-cron-pilot';
+import {reconcileStaleWechatMedia} from './wechat-media-reconcile';
 import {familyReportSettings,saveFamilyReportConfig,runFamilyReportCron,sendFamilyReportTest} from './family-reports';
 
 const app = new Hono<ApplicationEnv>();
@@ -71,8 +72,8 @@ app.post('/api/bootstrap',async c=>{
 app.post('/api/login',async c=>{
   try {
     const v=await json(c.req.raw);
-    if(typeof v.name!=='string'||typeof v.password!=='string'||v.password.length>128)return fail(c,400,'INVALID_INPUT');
-    const ok=await login(c,v.name,v.password);
+    if(typeof v.password!=='string'||v.password.length<1||v.password.length>128)return fail(c,400,'INVALID_INPUT');
+    const ok=await login(c,v.password);
     return ok?c.json({ok:true}):fail(c,401,'INVALID_CREDENTIALS_OR_RATE_LIMIT');
   }catch{return fail(c,400,'INVALID_INPUT');}
 });
@@ -208,9 +209,9 @@ app.get('/api/media/thumbnail-backfill',async c=>{
   const after=c.req.query('after')||'';
   const type=c.req.query('type')||'image';
   if(after.length>80)return fail(c,400,'INVALID_CURSOR');
-  if(type!=='image'&&type!=='all')return fail(c,400,'INVALID_TYPE');
+  if(type!=='image'&&type!=='all'&&type!=='video')return fail(c,400,'INVALID_TYPE');
   // Keep the manual legacy photo backfill image-only by default.
-  const missing=type==='all'?"(mime LIKE 'image/%' OR mime LIKE 'video/%')":"mime LIKE 'image/%'";
+  const missing=type==='all'?"(mime LIKE 'image/%' OR mime LIKE 'video/%')":type==='video'?"mime LIKE 'video/%'":"mime LIKE 'image/%'";
   const batch=await c.env.DB.prepare(
     'SELECT id,mime,size FROM media WHERE baby_id=? AND deleted_at IS NULL AND upload_state=\'ready\' AND thumbnail_ready=0 AND '+missing+' AND id>? ORDER BY id LIMIT 10'
   ).bind(babyId,after).all<{id:string;mime:string;size:number}>();
@@ -714,6 +715,11 @@ export default {
   async scheduled(event:ScheduledController,env:Env,ctx:ExecutionContext){
     if(event.cron==='0 * * * *'){
       ctx.waitUntil(runFamilyReportCron(env));
+      // Bounded hourly reconciliation: never let a lost DO job leave a D1
+      // placeholder in 'processing' for days. R2 originals are never purged.
+      ctx.waitUntil(reconcileStaleWechatMedia(env,new Date(Date.now()-24*3600000).toISOString())
+        .then(stats=>{if(stats.scanned)console.log(JSON.stringify({event:'WECHAT_MEDIA_RECONCILE',...stats}))})
+        .catch(()=>console.error(JSON.stringify({event:'WECHAT_MEDIA_RECONCILE_FAILED'}))));
       return;
     }
     if(event.cron==='* * * * *'){

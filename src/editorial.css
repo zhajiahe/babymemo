@@ -543,3 +543,47 @@ h1,h2,h3 { letter-spacing:normal; }
 @media(max-width:480px){
  .settings-categories{margin-inline:-12px;padding-inline:12px}
 }
+
+/* iPhone settings: native-style grouped list → focused detail, not a
+   horizontally scrolling category ribbon above a long settings form. */
+.settings-mobile-overview-header,.settings-mobile-back{display:none}
+@media(max-width:800px){
+ .settings-mobile-overview-header{display:block;margin:2px 0 17px}
+ .settings-mobile-overview-header h2{font-size:27px;line-height:1.25;margin:0 0 5px;font-weight:730}
+ .settings-mobile-overview-header p{margin:0;color:var(--bm-muted);font-size:13px}
+ .settings-layout .settings-categories{
+  position:static;display:flex;flex-direction:column;gap:0;
+  margin:0;padding:0;border:1px solid var(--bm-border);border-radius:15px;
+  overflow:visible;background:var(--bm-surface);box-shadow:none;
+  -webkit-backdrop-filter:none;backdrop-filter:none;scroll-snap-type:none
+ }
+ .settings-layout .settings-category{
+  display:flex;min-height:67px;padding:12px 14px;gap:12px;
+  white-space:normal;border:0;border-radius:0;border-bottom:1px solid var(--bm-border-soft);
+  scroll-snap-align:none
+ }
+ .settings-layout .settings-category:first-child{border-radius:14px 14px 0 0}
+ .settings-layout .settings-category:last-child{border-bottom:0;border-radius:0 0 14px 14px}
+ .settings-layout .settings-category-icon{
+  display:grid;flex:0 0 38px;width:38px;height:38px;border-radius:11px
+ }
+ .settings-layout .settings-category-label strong{font-size:15px}
+ .settings-layout .settings-category-label small{display:block;font-size:12px;white-space:normal}
+ .settings-layout .settings-category-chevron{display:block;opacity:.7}
+ .settings-layout:not(.mobile-detail) .settings-category.is-active{color:var(--bm-ink);background:transparent}
+ .settings-layout:not(.mobile-detail) .settings-category.is-active .settings-category-icon{
+  color:var(--bm-muted);background:var(--bm-surface-soft)
+ }
+ .settings-layout .settings-main{display:none}
+ .settings-layout.mobile-detail .settings-mobile-overview-header,
+ .settings-layout.mobile-detail .settings-categories{display:none}
+ .settings-layout.mobile-detail .settings-main{display:block}
+ .settings-layout .settings-mobile-back{
+  display:inline-flex;align-items:center;gap:4px;min-height:44px;
+  border:0;background:transparent;padding:0 6px 0 0;
+  color:var(--bm-brand);font-size:15px;font-weight:600;cursor:pointer
+ }
+ .settings-layout .settings-mobile-back:focus-visible{outline:2px solid var(--bm-focus);outline-offset:3px;border-radius:5px}
+ .settings-layout .settings-main-heading{margin:5px 0 17px}
+ .settings-layout .settings-main-heading h2{font-size:24px}
+}

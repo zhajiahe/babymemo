@@ -188,6 +188,17 @@ test('file attachment MIME spoofing and malformed declared sizes fail before wri
   {fetchImpl:async()=>{throw Error('SHOULD_NOT_DOWNLOAD')}}),/文件大小无效/);
 });
 
+test('queued WeChat job resumes a placeholder marked failed by stale reconciliation',async()=>{
+ const env=mockEnv();
+ const source='bot:resumed:image:0',id=photoRecordId(source),objectKey='private/'+baby.id+'/'+id;
+ env.rows.set(source,{id,baby_id:baby.id,upload_state:'failed',deleted_at:null,purge_token:null});
+ env.objects.set(objectKey,{bytes:jpeg,mime:'image/jpeg'});
+ const response=await persistWeChatPhotos(env,raw,baby,'bot:resumed',{fetchImpl:async()=>{throw Error('MUST_REUSE_EXISTING_R2')}});
+ assert.match(response,/已保存.*1 张照片/);
+ assert.ok(env.calls.some(c=>c.sql.includes("UPDATE media SET upload_state='processing'")));
+ assert.ok(env.calls.some(c=>c.sql.includes("upload_state='ready'")));
+ assert.equal(env.objects.size,1,'must not rewrite or delete the original');
+});
 test('lost D1 commit is recovered from private R2 on retry without fetching CDN again',async()=>{
  const env=mockEnv({failIndexOnce:true});
  await assert.rejects(()=>persistWeChatPhotos(env,raw,baby,'bot:message2',{fetchImpl:cdnFetch}),/D1_TEMPORARY_FAILURE/);

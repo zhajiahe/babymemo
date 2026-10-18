@@ -2,6 +2,7 @@ import {RecordFilterBar,emptyFilters,filterQuery,type RecordFilters} from './com
 import {OfflineStatus} from './components/OfflineStatus';
 import {clearDevice,offlineJobs} from './offline';
 import {resumeThumbnailRepair,clearThumbnailRepair} from './thumbnail-repair';
+import {repairMissingVideoCovers} from './auto-video-covers';
 import {mediaThumbnailUrl} from './private-media-cache.mjs';
 import {api,post,ApiFailure,today,type State,type Tab,type RecordItem} from './lib/client';
 import {RecordView,GrowthChart} from './features/growth/RecordView';
@@ -23,14 +24,14 @@ function Gate({onReady}:{onReady:()=>void}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
  useEffect(()=>{api<{initialized:boolean;sessionConfigured:boolean;encryptionConfigured:boolean}>('/api/bootstrap/status').then(v=>{setReady(v);setMode(v.initialized?'login':'setup')}).catch(()=>{setMode('unavailable');setError('无法连接后端，请检查 Cloudflare 部署和 D1 迁移。')})},[]);
  async function submit(e:FormEvent){e.preventDefault();setBusy(true);setError('');
-  try{await post(mode==='setup'?'/api/bootstrap':'/api/login',mode==='setup'?form:{name:form.ownerName,password:form.password});onReady();}
+  try{await post(mode==='setup'?'/api/bootstrap':'/api/login',mode==='setup'?form:{password:form.password});onReady();}
   catch(e){setError(e instanceof Error?e.message:'操作失败');}finally{setBusy(false);}
  }
  return <div className="gate"><div className="gate-intro"><Logo/><h1>一家人的成长，<br/>都记在这里。</h1><p>照片、成长记录和那些第一次。<br/>留下一份只属于家人的日记。</p><a className="demo-gate-link" href="/demo.html">先看看 BabyMemo 长什么样 <ChevronRight size={17}/></a></div>
- <div className="gate-panel"><div className="gate-card"><div className="gate-theme-selector"><ThemeSelector compact/></div><div className="eyebrow">{mode==='setup'?'首次设置':'家庭登录'}</div><h2>{mode==='setup'?'创建家庭空间':'登录 BabyMemo'}</h2><p className="muted">{mode==='setup'?'完成以下必填信息后，才会开放记录功能。':'使用你初始化时设置的家庭账号登录。'}</p>
+ <div className="gate-panel"><div className="gate-card"><div className="gate-theme-selector"><ThemeSelector compact/></div><div className="eyebrow">{mode==='setup'?'首次设置':'家庭登录'}</div><h2>{mode==='setup'?'创建家庭空间':'登录 BabyMemo'}</h2><p className="muted">{mode==='setup'?'完成以下必填信息后，才会开放记录功能。':'输入家庭密码，继续记录一家人的成长。'}</p>
  {mode==='loading'?<div className="skeleton">正在检查服务状态…</div>:mode==='unavailable'?<div className="stack"><div className="error" role="alert">{error}</div><Button variant="secondary" onClick={()=>location.reload()}><RefreshCw size={15}/>重新检查</Button></div>:<form onSubmit={submit} className="stack">
  {mode==='setup'&&<><div className="setup-check">{[['会话密钥',ready.sessionConfigured],['加密密钥',ready.encryptionConfigured]].map(([label,ok])=><span key={String(label)} className={ok?'good':'bad'}>{ok?<Check size={13}/>:<WifiOff size={13}/>} {label}</span>)}</div><p className="setup-security-note">首次访问未初始化实例的人可以创建管理员。请部署后立即完成初始化；如需限制访问，请提前为站点启用 Cloudflare Access。</p></>}
- <>{mode==='setup'&&<Field label="家庭名称（必填）"><input required maxLength={80} value={form.familyName} onChange={e=>setForm({...form,familyName:e.target.value})} placeholder="例如：我们的温暖小家"/></Field>}<Field label={mode==='setup'?'管理员登录名':'管理员登录名'}><input required value={form.ownerName} autoComplete="username" onChange={e=>setForm({...form,ownerName:e.target.value})} placeholder="例如：爸爸 / 妈妈"/></Field>
+ <>{mode==='setup'&&<Field label="家庭名称（必填）"><input required maxLength={80} value={form.familyName} onChange={e=>setForm({...form,familyName:e.target.value})} placeholder="例如：我们的温暖小家"/></Field>}{mode==='setup'&&<Field label="管理员登录名"><input required value={form.ownerName} autoComplete="username" onChange={e=>setForm({...form,ownerName:e.target.value})} placeholder="例如：爸爸 / 妈妈"/></Field>}
  </><Field label="家庭密码"><input type="password" autoComplete={mode==='setup'?'new-password':'current-password'} minLength={mode==='setup'?6:1} required value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder={mode==='setup'?'至少 6 位字符（可使用数字）':'输入家庭密码'}/></Field>
  {mode==='setup'&&<><div className="form-divider"><span>宝宝档案</span></div><div className="two"><Field label="宝宝名字"><input required value={form.babyName} onChange={e=>setForm({...form,babyName:e.target.value})} placeholder="宝宝昵称"/></Field><Field label="性别"><select value={form.gender} onChange={e=>setForm({...form,gender:e.target.value})}><option value="girl">女孩</option><option value="boy">男孩</option><option value="other">暂不填写</option></select></Field></div>
  <div className="two"><Field label="出生日期"><input type="date" required max={today()} value={form.birthday} onChange={e=>setForm({...form,birthday:e.target.value})}/></Field><Field label="出生时间（可后补）"><input type="time" value={form.birthTime} onChange={e=>setForm({...form,birthTime:e.target.value})}/></Field></div>
@@ -121,6 +122,16 @@ export default function App(){
  },[mode,active,baby?.id]);
  // Resume only jobs explicitly started by the user on this device.
  useEffect(()=>{if(mode==='app'&&state)resumeThumbnailRepair(state.babies.map(item=>item.id))},[mode,state]);
+ // Best-effort automatic poster repair for WeChat videos lacking CDN thumbnails.
+ // Uses small Range reads on visible, signed-in devices; never changes originals.
+ const videoCoverBabies=state?.babies.map(item=>item.id).join('|')||'';
+ useEffect(()=>{
+  if(mode!=='app'||!videoCoverBabies)return;
+  const controller=new AbortController();
+  const run=()=>{if(!controller.signal.aborted)void repairMissingVideoCovers(videoCoverBabies.split('|'),controller.signal)};
+  run();document.addEventListener('visibilitychange',run);window.addEventListener('online',run);
+  return()=>{controller.abort();document.removeEventListener('visibilitychange',run);window.removeEventListener('online',run)};
+ },[mode,videoCoverBabies]);
  useEffect(()=>{
   const ready=(event:Event)=>{
    const {id,updatedAt}=(event as CustomEvent<{id:string;updatedAt?:string}>).detail||{};

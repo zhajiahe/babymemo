@@ -164,7 +164,7 @@ async function e2e() {
     sessionCookie='';
     assert.equal((await json('/api/state',{anonymous:true})).status,401);
     assert.equal((await json('/api/login',{method:'POST',body:{name:'Tester',password:'wrong'},anonymous:true})).status,401);
-    const login=await json('/api/login',{method:'POST',body:{name:'Tester',password:'123456'},anonymous:true});
+    const login=await json('/api/login',{method:'POST',body:{password:'123456'},anonymous:true});
     assert.equal(login.status,200,JSON.stringify(login.data));
     sessionCookie=login.headers.get('set-cookie')?.split(';')[0]??'';
     assert.match(sessionCookie,/^babymemo_session=/);
@@ -781,8 +781,12 @@ async function browserE2e(){
           assert.equal(overflow,false,'Demo settings overflow at '+width);
           if(width===390)await preview.screenshot({path:join(evidence,'demo-settings-reports-390.png'),fullPage:false});
         }
+        // Entering phone viewport from a desktop-selected section shows its detail.
+        // Return to the mobile root before selecting another category.
+        await preview.locator('.settings-mobile-back').click();
         await sections.getByRole('button',{name:/微信成员/}).click();
         await preview.getByRole('heading',{name:'微信操作'}).waitFor();
+        await preview.locator('.settings-mobile-back').click();
         await sections.getByRole('button',{name:/宝宝与外观/}).click();
         await preview.getByRole('group',{name:'外观主题'}).waitFor();
         await preview.setViewportSize({width:375,height:812});
@@ -854,8 +858,9 @@ async function browserE2e(){
     }
     await step((useWebKit?'WebKit':'Chromium')+': sign in through rendered React login form',async()=>{
       await page.goto(base+'/',{waitUntil:'domcontentloaded'});
-      await page.locator('input[autocomplete="username"]').fill('Tester');
+      assert.equal(await page.locator('input[autocomplete="username"]').count(),0,'returning owner only needs a password');
       await page.locator('input[autocomplete="current-password"]').fill('123456');
+      assert.equal(await page.locator('input[type="password"]').count(),1);
       const loginResponse=page.waitForResponse(r=>r.url().endsWith('/api/login')&&r.request().method()==='POST');
       await page.getByRole('button',{name:/登录我的空间/}).click();
       assert.equal((await loginResponse).status(),200);
@@ -1207,6 +1212,7 @@ async function browserE2e(){
       const input=momentDialog.locator('input[placeholder*="第一次独立走路"]');
       await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/宝宝与外观/}).click();
       const picker=page.locator('.settings-baby-switch select[aria-label="选择宝宝"]');
       await picker.selectOption({label:'Test Baby'});
       await openMoments();
@@ -1217,11 +1223,13 @@ async function browserE2e(){
       assert.equal(await input.inputValue(),'只属于宝宝A的临时草稿');
       await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/宝宝与外观/}).click();
       await picker.selectOption({label:'Second Baby'});
       await openMoments();
       assert.equal(await input.inputValue(),'');
       await closeMoments();
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/宝宝与外观/}).click();
       await picker.selectOption({label:'Test Baby'});
       await openMoments();
       assert.equal(await input.inputValue(),'只属于宝宝A的临时草稿');
