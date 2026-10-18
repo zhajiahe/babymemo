@@ -36,6 +36,9 @@ export async function browserThemeRegression({page,context,base,evidence}) {
  // Test the narrowest supported mobile viewport while the real settings form is visible.
  await page.setViewportSize({width:320,height:700});
  await page.waitForFunction(()=>document.querySelector('.mobile-nav')&&getComputedStyle(document.querySelector('.mobile-nav')).display!=='none');
+ // On phones the settings navigation is a list; enter the profile detail
+ // before measuring theme controls and native date fields.
+ await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/宝宝与外观/}).click();
  const overflow=await page.evaluate(()=>{
   const el=document.querySelector('.theme-switch');
   const rect=el.getBoundingClientRect();
