@@ -68,11 +68,26 @@ export function reportEditorialInstructions(kind:ReportKind):string{
  ].join('\n');
 }
 export function reportEditorialInput(period:ReportPeriod,facts:ReportFacts[]):string{
- return JSON.stringify({period,babies:facts.map(f=>({
+ const babies=facts.map(f=>({
   name:f.name,counts:f.counts,
-  moments:f.moments,
-  media:f.media
- }))});
+  moments:f.moments.map(m=>({day:m.day,title:m.title,description:m.description.slice(0,200)})),
+  media:f.media.map(m=>({...m,caption:m.caption.slice(0,180)}))
+ }));
+ let result=JSON.stringify({period,babies});
+ // Never truncate JSON halfway through a record: trim older source stories if
+ // a multi-baby month approaches the model's input budget. Counts remain exact.
+ while(result.length>14500){
+  let index=-1,maximum=0;
+  for(let i=0;i<babies.length;i++){
+   const size=babies[i].moments.length+babies[i].media.length;
+   if(size>maximum){index=i;maximum=size}
+  }
+  if(index<0)break;
+  if(babies[index].moments.length>=babies[index].media.length)babies[index].moments.pop();
+  else babies[index].media.pop();
+  result=JSON.stringify({period,babies});
+ }
+ return result;
 }
 const clean=(v:unknown,max:number)=>typeof v==='string'?v.replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,max):'';
 export function parseReportNarrative(raw:unknown):ReportNarrative{
