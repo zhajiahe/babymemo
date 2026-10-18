@@ -164,7 +164,7 @@ async function e2e() {
     sessionCookie='';
     assert.equal((await json('/api/state',{anonymous:true})).status,401);
     assert.equal((await json('/api/login',{method:'POST',body:{name:'Tester',password:'wrong'},anonymous:true})).status,401);
-    const login=await json('/api/login',{method:'POST',body:{name:'Tester',password:'123456'},anonymous:true});
+    const login=await json('/api/login',{method:'POST',body:{password:'123456'},anonymous:true});
     assert.equal(login.status,200,JSON.stringify(login.data));
     sessionCookie=login.headers.get('set-cookie')?.split(';')[0]??'';
     assert.match(sessionCookie,/^babymemo_session=/);
@@ -854,8 +854,9 @@ async function browserE2e(){
     }
     await step((useWebKit?'WebKit':'Chromium')+': sign in through rendered React login form',async()=>{
       await page.goto(base+'/',{waitUntil:'domcontentloaded'});
-      await page.locator('input[autocomplete="username"]').fill('Tester');
+      assert.equal(await page.locator('input[autocomplete="username"]').count(),0,'returning owner only needs a password');
       await page.locator('input[autocomplete="current-password"]').fill('123456');
+      assert.equal(await page.locator('input[type="password"]').count(),1);
       const loginResponse=page.waitForResponse(r=>r.url().endsWith('/api/login')&&r.request().method()==='POST');
       await page.getByRole('button',{name:/登录我的空间/}).click();
       assert.equal((await loginResponse).status(),200);
