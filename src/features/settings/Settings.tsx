@@ -3,7 +3,7 @@ import {downloadFamilyArchive} from '../../export-download';
 import {useEffect,useState,useSyncExternalStore,type FormEvent} from 'react';
 import {Button,Card,Field,Primary,ModalDialog} from '../../components/ui';
 import {ThemeSelector} from '../../components/ThemeSelector';
-import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi,BrainCircuit,ChevronRight,SlidersHorizontal,CalendarHeart,HardDriveDownload,UsersRound} from 'lucide-react';
+import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi,BrainCircuit,ChevronRight,CalendarHeart,HardDriveDownload,UsersRound} from 'lucide-react';
 import {api,post,today,type BabyInfo,type State,type WechatRunStatus} from '../../lib/client';
 import {DEFAULT_OPENROUTER_MODEL,OPENROUTER_MODEL_PRESETS,openRouterModelDescription} from '../../openrouter-model.mjs';
 import {wechatStatusView,wechatStatusTime} from '../../wechat-status.mjs';
@@ -100,7 +100,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   }
   void refresh();return()=>{cancelled=true;controller.abort();clearTimeout(timer)};
  },[membersKey]);
- const [memberName,setMemberName]=useState(''),[memberBusy,setMemberBusy]=useState('');
+ const [memberName,setMemberName]=useState(''),[memberBusy,setMemberBusy]=useState(''),[showPairing,setShowPairing]=useState(false);
  const [password,setPassword]=useState({currentPassword:'',newPassword:'',confirmPassword:''}),[passwordBusy,setPasswordBusy]=useState(false);
  const [trash,setTrash]=useState<{growth:{id:string;baby_id:string;day:string;deleted_at:string}[];milestones:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[];media:{id:string;baby_id:string;day:string;title:string;deleted_at:string}[]}|null>(null);
  const [trashBusy,setTrashBusy]=useState(false);
@@ -109,7 +109,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  useEffect(()=>{if(dirty)try{localStorage.setItem('babymemo-draft-baby-'+baby.id,JSON.stringify({name,birthday,birth_time:birthTime,gender,time_zone:timeZone,allergies,notes,updated_at:formVersion}))}catch{notify('本机存储不可用，关闭页面前请保存资料。')}},[name,birthday,birthTime,gender,timeZone,allergies,notes,dirty]);
  useEffect(()=>{if(qr)void import('qrcode').then(({default:QRCode})=>QRCode.toDataURL(qr,{width:220,margin:2,errorCorrectionLevel:'M'})).then(setQrImage).catch(()=>notify('二维码渲染失败'))},[qr]);
  useEffect(()=>{if(!qr||status==='confirmed'||status==='expired')return;let cancelled=false;let timeout:ReturnType<typeof setTimeout>;
-  const poll=async()=>{try{const r=await post<{status:string}>('/api/settings/wechat/qr/status',{pairingId,verifyCode});if(cancelled)return;setStatus(r.status);if(r.status==='confirmed'){setQr('');setQrImage('');setPairingId('');setVerifyCode('');changed();notify('微信成员绑定成功，可在列表中启用');return;}}catch(e){if(!cancelled)setStatus('连接重试中');}if(!cancelled)timeout=setTimeout(poll,2000)};
+  const poll=async()=>{try{const r=await post<{status:string}>('/api/settings/wechat/qr/status',{pairingId,verifyCode});if(cancelled)return;setStatus(r.status);if(r.status==='confirmed'){setQr('');setQrImage('');setPairingId('');setVerifyCode('');setShowPairing(false);changed();notify('微信成员绑定成功，可在列表中启用');return;}}catch(e){if(!cancelled)setStatus('连接重试中');}if(!cancelled)timeout=setTimeout(poll,2000)};
   timeout=setTimeout(poll,500);return()=>{cancelled=true;clearTimeout(timeout)};
  },[qr,pairingId,verifyCode,status==='confirmed',status==='expired']);
  async function saveOpenrouter(e:FormEvent){e.preventDefault();if(saving)return;setSaving(true);setAiProbe(null);try{
@@ -238,7 +238,7 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  {activeSection==='storage'&&<>
  <Card className="span-2 thumbnail-repair-card">
   <div className="section-title"><h3>相册封面维护</h3><RefreshCw size={20}/></div>
-  <p className="muted small">扫描并修复缺失的照片、视频封面。关闭页面会暂停，下次打开可继续。</p><details className="settings-help"><summary>修复说明</summary><p className="muted small">后台逐项保存进度；视频截帧依赖当前设备解码能力，并非服务器离线转码。</p></details>
+  <p className="muted small">扫描并修复缺失的照片、视频封面。关闭页面会暂停，下次打开可继续。</p><details className="settings-help"><summary>修复说明</summary><p className="muted small">后台逐项保存进度；关闭应用或 iPhone 冻结页面后会暂停，重新打开后可继续。视频截帧依赖当前设备解码能力，并非服务器离线转码。</p></details>
   <div className="thumbnail-repair-actions">
     <Button type="button" variant="secondary" disabled={!navigator.onLine||coverRepair.phase==='running'}
       onClick={()=>startThumbnailRepair(state.babies.map(item=>item.id))}>
@@ -295,10 +295,10 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
    <Field label="发送时间（使用首位宝宝的时区）"><select aria-label="成长报告发送时间" value={reportSettings.hour} onChange={e=>setReportSettings(old=>old?{...old,hour:Number(e.target.value)}:old)}>{[8,12,20,21].map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}</select></Field>
    <p className="muted small">当前家庭时区：{reportSettings.timeZone}</p>
    <Button type="button" variant="primary" disabled={reportSaving} onClick={()=>void saveReportSettings()}>{reportSaving?'保存中…':'保存报告开关与时间'}</Button>
-   <section className="family-report-recipients"><strong>微信接收成员</strong><p className="muted small">只有已订阅且启用的微信成员会收到推送。</p>
+   <details className="settings-subsection family-report-recipients"><summary><span>微信接收成员 · {reportSettings.members.filter(m=>m.enabled&&m.subscribed).length} 位</span><ChevronRight size={16}/></summary><div className="settings-subsection-body"><p className="muted small">仅发送给已启用并订阅的成员。家人需要先给 Bot 发消息建立有效会话。</p>
     {reportSettings.members.map(m=><label key={m.id} className="family-report-member"><span><strong>{m.label}</strong><small className="muted">{!m.enabled?'微信连接已暂停':!m.hasContext?'等待成员发送微信消息':'已建立微信会话（会话可能过期）'}</small></span><input aria-label={m.label+'接收成长报告'} type="checkbox" checked={m.subscribed} disabled={!!reportMemberBusy} onChange={e=>void changeReportMember(m.id,e.target.checked)}/></label>)}
     {!reportSettings.members.length&&<p className="muted small">尚未绑定微信家庭成员，请在下方添加。</p>}
-   </section>
+   </div></details>
    <section className="family-report-test">
     <strong>立即测试微信推送</strong>
     <p className="muted small">选择一位家人试发 AI 周报或月报，不影响正式开关。</p>
@@ -310,10 +310,10 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
     {reportTestResult&&<p className="muted small" role="status" aria-live="polite">{reportTestResult}</p>}
     <p className="muted small">每位成员 10 分钟限一次，需在微信确认实际送达。</p>
    </section>
-   <section className="family-report-history"><strong>近期发送记录</strong>
+   <details className="settings-subsection family-report-history"><summary>近期发送记录 <ChevronRight size={16}/></summary><div className="settings-subsection-body">
     {reportSettings.reports.map(r=><div className="family-report-history-row" key={r.kind+r.period_start}><span>{r.kind==='week'?'周报':'月报'} · {r.period_start} — {r.period_end}</span><small className="muted">接口已接受 {r.sent||0}/{r.recipients||0} · 等待会话 {r.waiting||0} · 失败 {r.failed||0}</small></div>)}
     {!reportSettings.reports.length&&<p className="muted small">尚未生成成长报告。</p>}
-   </section>
+   </div></details>
    <p className="muted small">默认关闭；无新记录不发送。请用真实微信确认送达。</p>
   </div>}
  </Card>
@@ -333,9 +333,10 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
  {!state.wechat.connections.length&&<p className="muted small">尚未连接微信。家庭成员分别扫描自己的二维码即可加入同一个家庭空间。</p>}
  </div>
  {inspectedMember&&runStatuses[inspectedMember]&&<div className="wechat-member-status"><strong>运行详情 · {state.wechat.connections.find(x=>x.id===inspectedMember)?.label||''}</strong><p>{wechatStatusView(runStatuses[inspectedMember]).detail}</p><dl className="wechat-status-details"><div><dt>待保存消息</dt><dd>{runStatuses[inspectedMember].media?.pending||0} 条</dd></div><div><dt>最近保存完成</dt><dd>{wechatStatusTime(runStatuses[inspectedMember].media?.lastCompleted)}</dd></div></dl></div>}
- <div className="wechat-add"><Field label="新增微信成员 · 称呼"><input maxLength={40} value={memberName} onChange={e=>setMemberName(e.target.value)} placeholder="例如：爸爸、妈妈、外婆"/></Field>
+ <div className="settings-wechat-add-action"><Button type="button" variant="secondary" onClick={()=>setShowPairing(value=>!value)}><Plus size={16}/>{showPairing||qr?'收起添加成员':'添加微信成员'}</Button></div>
+ {(showPairing||!!qr)&&<div className="settings-wechat-add-panel"><div className="wechat-add"><Field label="家庭成员称呼"><input maxLength={40} value={memberName} onChange={e=>setMemberName(e.target.value)} placeholder="例如：爸爸、妈妈、外婆"/></Field>
   <Button type="button" variant="secondary" onClick={()=>void pair()} disabled={!memberName.trim()}><MessageCircle size={16}/>扫码添加成员</Button></div>
- {qrImage&&<div className="qr-panel"><img src={qrImage} alt="微信扫码绑定二维码"/><strong>请让“{memberName}”本人用微信扫描二维码</strong><span>扫码后在手机确认绑定；二维码属于敏感凭据，请勿分享。有效期约 10 分钟。</span><p className="small">状态：{status}</p>{status==='need_verifycode'&&<Field label="微信显示的验证码"><input value={verifyCode} onChange={e=>setVerifyCode(e.target.value)}/></Field>}</div>}
+ {qrImage&&<div className="qr-panel"><img src={qrImage} alt="微信扫码绑定二维码"/><strong>请让“{memberName}”本人用微信扫描二维码</strong><span>扫码后在手机确认绑定；二维码属于敏感凭据，请勿分享。有效期约 10 分钟。</span><p className="small">状态：{status}</p>{status==='need_verifycode'&&<Field label="微信显示的验证码"><input value={verifyCode} onChange={e=>setVerifyCode(e.target.value)}/></Field>}</div>}</div>}
  <details className="settings-help"><summary>微信指令示例与使用说明</summary><div className="wechat-examples"><strong>微信指令示例</strong><p>「小好今天体重 10.5kg」「查询小好最近 5 次测量」「修改小好 10 月 1 日体重为 10kg」「删除小好 10 月 1 日的里程碑」「查看小好回收站」</p><p className="hint">修改或删除需明确记录日期或查询结果中的编号；同日多条记录时必须用编号。删除内容可在 30 天内恢复。仅接受已启用、已绑定成员的微信私聊消息。不同成员的多轮会话互相隔离，记录与相册共享。</p></div></details>
  <p className="hint">微信 iLink 属于第三方协议适配；上线前还需真号验证账号授权、消息去重、权限及持续运行情况。</p></Card>
  </>}
