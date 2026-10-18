@@ -74,6 +74,7 @@ export async function browserThemeRegression({page,context,base,evidence}) {
  await page.screenshot({path:join(evidence,'theme-dark-mobile-growth-modal-390.png'),fullPage:false});
  await growthModal.getByRole('button',{name:'关闭新增成长记录'}).click();
  await mobileNav.getByRole('button',{name:'设置'}).click();
+ await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/宝宝与外观/}).click();
  await page.getByRole('group',{name:'外观主题'}).waitFor();
  await page.setViewportSize({width:1280,height:900});
 
@@ -112,6 +113,7 @@ export async function browserThemeRegression({page,context,base,evidence}) {
  await page.emulateMedia({colorScheme:'dark'});
  await page.reload();
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
+ await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/宝宝与外观/}).click();
  assert.equal(await page.evaluate(()=>localStorage.getItem('babymemo-theme')),null);
  assert.equal(await page.getByRole('group',{name:'外观主题'}).getByRole('button',{name:'跟随系统'}).getAttribute('aria-pressed'),'true');
  await page.screenshot({path:join(evidence,'theme-system-mobile-dark-390.png'),fullPage:false});
