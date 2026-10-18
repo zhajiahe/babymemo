@@ -33,7 +33,6 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   assert.equal(geometry.page>geometry.window+1,false,'settings must not overflow 320px page');
   assert.equal(geometry.scrolling,false,'mobile settings categories should fit as full-width rows');
   assert.equal(await page.locator('.settings-mobile-back').isVisible(),true);
-  await page.getByRole('button',{name:'设置',exact:true}).filter({has:page.locator('.settings-mobile-back svg')}).count().catch(()=>{});
   await page.locator('.settings-mobile-back').click();
   assert.equal(await categories.isVisible(),true,'mobile setting list is the navigation root');
   assert.equal(await page.locator('.settings-main').isVisible(),false);
