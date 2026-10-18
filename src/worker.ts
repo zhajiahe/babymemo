@@ -19,7 +19,7 @@ import {previousMutation,commitMutation} from './web-mutations';
 import {purgeDeletedMedia,retentionCutoff} from './media-retention.mjs';
 export { WechatSession } from './wechat';
 import {runWechatCronPolling} from './wechat-cron-pilot';
-import {familyReportSettings,saveFamilyReportConfig,runFamilyReportCron} from './family-reports';
+import {familyReportSettings,saveFamilyReportConfig,runFamilyReportCron,sendFamilyReportTest} from './family-reports';
 
 const app = new Hono<ApplicationEnv>();
 const fail = (c: any, status:number, error:string) => c.json({error},status);
@@ -528,6 +528,19 @@ app.get('/api/export/full',async c=>{
 });
 // Reports are opt-in: schedule and recipients can only be changed by a signed-in administrator.
 app.get('/api/settings/family-reports',async c=>c.json(await familyReportSettings(c.env)));
+app.post('/api/settings/family-reports/test',async c=>{
+ try{
+  const input=await json(c.req.raw,2048);
+  return c.json(await sendFamilyReportTest(c.env,input?.kind,input?.connectionId));
+ }catch(e){
+  const code=e instanceof Error?e.message:'REPORT_TEST_FAILED';
+  if(code==='REPORT_TEST_INVALID_INPUT')return fail(c,400,code);
+  if(code==='REPORT_RECIPIENT_NOT_FOUND')return fail(c,404,code);
+  if(code==='REPORT_TEST_RATE_LIMITED')return fail(c,429,code);
+  if(['REPORT_RECIPIENT_INACTIVE','WECHAT_CONTEXT_REQUIRED','REPORT_NO_RECORDS'].includes(code))return fail(c,409,code);
+  return fail(c,502,/^(REPORT_|WECHAT_|OPENROUTER_|WORKERS_AI_)[A-Z0-9_]+$/.test(code)?code:'REPORT_TEST_FAILED');
+ }
+});
 app.put('/api/settings/family-reports',async c=>{
  try{return c.json({ok:true,config:await saveFamilyReportConfig(c.env,await json(c.req.raw))})}
  catch{return fail(c,400,'INVALID_REPORT_SETTINGS')}

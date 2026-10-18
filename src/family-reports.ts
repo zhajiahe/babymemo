@@ -4,7 +4,7 @@ import {qwenCompletion,DEFAULT_AI_PROVIDER} from './qwen-workers-ai.mjs';
 import {openRouterCompletion} from './openrouter-retry.mjs';
 import {DEFAULT_OPENROUTER_MODEL} from './openrouter-model.mjs';
 import {sendWechatFamilyReport} from './wechat';
-import {scheduledReportPeriods,type ReportKind,type ReportPeriod} from './family-report-schedule';
+import {scheduledReportPeriods,reportPeriod,type ReportKind,type ReportPeriod} from './family-report-schedule';
 
 type ReportConfig={weekly:boolean;monthly:boolean;hour:number;timeZone:string};
 type Report={kind:ReportKind;period_start:string;period_end:string;body:string;created_at:string};
@@ -92,9 +92,7 @@ async function aiStory(env:Env,period:ReportPeriod,facts:unknown):Promise<string
  if(typeof content!=='string'||content.trim().length<12)throw Error('REPORT_AI_INVALID_RESPONSE');
  return content.trim().slice(0,500);
 }
-async function createReport(env:Env,period:ReportPeriod):Promise<Report|null>{
- const existing=await env.DB.prepare('SELECT * FROM family_reports WHERE kind=? AND period_start=?').bind(period.kind,period.start).first<Report>();
- if(existing)return existing;
+async function reportBody(env:Env,period:ReportPeriod):Promise<string|null>{
  const facts=await factsFor(env,period);
  if(!facts)return null;
  const story=await aiStory(env,period,facts);
@@ -103,9 +101,40 @@ async function createReport(env:Env,period:ReportPeriod):Promise<Report|null>{
   const captions=f.media.filter(s=>s.title||s.description).slice(0,3).map(s=>s.type+'：'+(s.description||s.title)).join('；');
   return '【'+f.name+'】\n✨ 成长瞬间：'+f.counts.moments+' 条'+(events?'\n'+events:'')+'\n📏 成长指标：'+(f.metrics.length?f.metrics.join('；'):'本期暂无新测量')+'\n📷 照片 '+f.counts.photos+' 张 · 🎬 视频 '+f.counts.videos+' 段'+(captions?'\n记录摘要：'+captions:'');
  });
- const body=('🌱 BabyMemo 家庭成长'+(period.kind==='week'?'周报':'月报')+'\n'+period.start+' 至 '+period.end+'\n\n'+lines.join('\n\n')+'\n\n💛 本期回顾\n'+story).slice(0,1750);
+ return ('🌱 BabyMemo 家庭成长'+(period.kind==='week'?'周报':'月报')+'\n'+period.start+' 至 '+period.end+'\n\n'+lines.join('\n\n')+'\n\n💛 本期回顾\n'+story).slice(0,1750);
+}
+async function createReport(env:Env,period:ReportPeriod):Promise<Report|null>{
+ const existing=await env.DB.prepare('SELECT * FROM family_reports WHERE kind=? AND period_start=?').bind(period.kind,period.start).first<Report>();
+ if(existing)return existing;
+ const body=await reportBody(env,period);
+ if(!body)return null;
  await env.DB.prepare('INSERT OR IGNORE INTO family_reports(kind,period_start,period_end,body,created_at) VALUES(?,?,?,?,?)').bind(period.kind,period.start,period.end,body,now()).run();
  return env.DB.prepare('SELECT * FROM family_reports WHERE kind=? AND period_start=?').bind(period.kind,period.start).first<Report>();
+}
+// Manual tests are single-recipient, explicit admin actions, never scheduled.
+export async function sendFamilyReportTest(env:Env,kind:unknown,connectionId:unknown){
+ if((kind!=='week'&&kind!=='month')||typeof connectionId!=='string'||!/^(legacy|[0-9a-f-]{36})$/i.test(connectionId))throw Error('REPORT_TEST_INVALID_INPUT');
+ const recipient=await env.DB.prepare('SELECT enabled,report_subscribed,context_cipher FROM wechat_connections WHERE id=?').bind(connectionId).first<{enabled:number;report_subscribed:number;context_cipher:string|null}>();
+ if(!recipient)throw Error('REPORT_RECIPIENT_NOT_FOUND');
+ if(recipient.enabled!==1||recipient.report_subscribed!==1)throw Error('REPORT_RECIPIENT_INACTIVE');
+ if(!recipient.context_cipher)throw Error('WECHAT_CONTEXT_REQUIRED');
+ const attemptedAt=now(),cutoff=new Date(Date.now()-10*60000).toISOString();
+ const claim=await env.DB.prepare('INSERT INTO family_report_test_attempts(connection_id,attempted_at) VALUES(?,?) ON CONFLICT(connection_id) DO UPDATE SET attempted_at=excluded.attempted_at WHERE family_report_test_attempts.attempted_at<?').bind(connectionId,attemptedAt,cutoff).run();
+ if(!claim.meta.changes)throw Error('REPORT_TEST_RATE_LIMITED');
+ const config=await familyReportConfig(env);
+ const today=new Intl.DateTimeFormat('sv-SE',{timeZone:config.timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const period:ReportPeriod=kind==='week'?reportPeriod('week',today):{kind:'month',start:today.slice(0,7)+'-01',end:today};
+ let body:string|null;
+ try{
+  body=await reportBody(env,period);
+  if(!body)throw Error('REPORT_NO_RECORDS');
+ }catch(e){
+  // AI or source failure happened before outbound delivery; permit a corrected retry.
+  await env.DB.prepare('DELETE FROM family_report_test_attempts WHERE connection_id=? AND attempted_at=?').bind(connectionId,attemptedAt).run();
+  throw e;
+ }
+ await sendWechatFamilyReport(env,connectionId,'【测试消息 · 不计入正式报告】\n'+body,crypto.randomUUID());
+ return {accepted:true,kind,periodStart:period.start,periodEnd:period.end};
 }
 async function deliver(env:Env,report:Report){
  const members=await env.DB.prepare('SELECT id,context_cipher,context_updated_at FROM wechat_connections WHERE enabled=1 AND report_subscribed=1').all<Recipient>();
