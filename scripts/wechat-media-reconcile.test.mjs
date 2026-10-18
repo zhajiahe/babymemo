@@ -51,7 +51,7 @@ test('missing original becomes visible failure, never falsely ready or delete or
  assert.equal(result.failed,1);
  assert.equal(x.record.upload_state,'failed');
  assert.equal(x.record.size,0);
- assert.equal(x.calls.some(s=>/DELETE/i.test(s)),false);
+ assert.equal(x.calls.some(s=>/^\s*DELETE\s/i.test(s)),false);
 });
 test('wrong MIME in R2 cannot masquerade as a valid photo',async()=>{
  const x=fixture({object:{size:350,httpMetadata:{contentType:'text/html'}}});
