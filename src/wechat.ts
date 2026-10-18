@@ -217,6 +217,28 @@ export function workerMediaBot(env:Env,connectionId:string):DurableObjectStub {
 }
 type MediaTask={connectionId:string;sourceId:string;botId:string;userId:string;credentialHash:string;raw:Json;babyId:string;thread:any;epoch:string;version:number;receivedAt:number};
 type MediaResult={reply:string;ok:boolean;sourceId:string;babyId:string;epoch:string;version:number;thread:any;expiresAt:number};
+// A scheduled message is only permitted for the exact bound and subscribed account.
+// The most recent inbound context_token is persisted encrypted; never construct one.
+export async function sendWechatFamilyReport(env:Env,connectionId:string,message:string,clientId:string):Promise<void>{
+ const c=await getWechatConnection(env,connectionId) as (Awaited<ReturnType<typeof getWechatConnection>> & {context_cipher:string|null;report_subscribed:number})|null;
+ if(!c||c.enabled!==1||c.report_subscribed!==1)throw Error('WECHAT_NOT_SUBSCRIBED');
+ if(!c.context_cipher)throw Error('WECHAT_CONTEXT_REQUIRED');
+ const [token,contextToken]=await Promise.all([decryptSecret(env,c.token_cipher),decryptSecret(env,c.context_cipher)]);
+ if(!contextToken)throw Error('WECHAT_CONTEXT_REQUIRED');
+ try{
+  const response=await ilink(c.base_url||API_BASE,'ilink/bot/sendmessage',{
+   msg:{from_user_id:'',to_user_id:c.user_id,client_id:clientId,message_type:2,message_state:2,
+    context_token:contextToken,item_list:[{type:1,text_item:{text:message.slice(0,1800)}}]},
+   base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}
+  },token);
+  if(response.ret!==undefined&&response.ret!==0)throw Error('WECHAT_SEND_REJECTED');
+ }catch(error){
+  if(error instanceof Error&&error.message==='WECHAT_AUTH_EXPIRED'){
+   await env.DB.prepare('UPDATE wechat_connections SET enabled=0,context_cipher=NULL,context_updated_at=NULL,updated_at=? WHERE id=? AND token_cipher=?').bind(new Date().toISOString(),connectionId,c.token_cipher).run();
+  }
+  throw error;
+ }
+}
 async function sendWechatReply(env:Env,connectionId:string,raw:Json,reply:string,clientId:string,task:MediaTask):Promise<void>{
  const c=await getWechatConnection(env,connectionId);if(!c||c.enabled!==1)throw Error('WECHAT_PAUSED');
  if(c.bot_id!==task.botId||c.user_id!==task.userId||await mediaTaskId(c.token_cipher)!==task.credentialHash)throw Error('WECHAT_BINDING_CHANGED');
@@ -461,6 +483,12 @@ export class WechatSession {
       for(const raw of (Array.isArray(response.msgs)?response.msgs:[])){
         if(!raw||raw.message_type!==1||(raw.message_state!==undefined&&raw.message_state!==0&&raw.message_state!==2)||raw.group_id||raw.from_user_id!==userId||raw.to_user_id&&raw.to_user_id!==botId)continue;
         if(!Array.isArray(raw.item_list))continue;
+        // Store the context even when the message is a duplicate; outgoing scheduled
+        // reports must not rely on short-lived in-memory conversation context.
+        if(typeof raw.context_token==='string'&&raw.context_token.length>3&&raw.context_token.length<=4096){
+         await this.env.DB.prepare('UPDATE wechat_connections SET context_cipher=?,context_updated_at=? WHERE id=? AND bot_id=? AND user_id=? AND token_cipher=?')
+          .bind(await encryptSecret(this.env,raw.context_token),new Date().toISOString(),connectionId,botId,userId,tokenEncrypted).run();
+        }
         const originalText=wechatMessageText(raw);
         const baseParsed=parseWechatIncoming(raw);
         const parsed=await hydrateWechatIncoming(this.env,raw,baseParsed).catch(()=>baseParsed);

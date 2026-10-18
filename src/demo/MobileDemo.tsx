@@ -26,7 +26,7 @@ export default function MobileDemo(){
    <div className="mobile-demo-intro">
     <span className="mobile-demo-kicker">一个温暖的小小空间</span>
     <h1>把每一个瞬间，都留在掌心。</h1>
-    <p>在右侧的手机中，直接浏览 BabyMemo 的相册、照片故事和成长曲线。这里运行的是同一份只读交互 Demo，不是一张手机界面截图。</p>
+    <p>在右侧手机中，亲自体验照片故事、成长曲线、分类设置，以及 AI 周报与月报示例。使用的是同一份只读交互 Demo，而不是手机界面截图。</p>
     <a href="/demo.html" className="mobile-demo-open"><ExternalLink size={17}/> 在新页面打开完整 Demo</a>
     <span className="mobile-demo-privacy">虚构家庭与示例照片 · 无需登录 · 不读取真实家庭数据</span>
    </div>

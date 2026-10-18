@@ -172,6 +172,31 @@ async function e2e() {
     assert.match(login.headers.get('set-cookie')??'',/HttpOnly; Secure; SameSite=Lax/);
     assert.equal((await json('/api/state')).status,200);
   });
+  await step('family AI reports default off, require authenticated administrator and validate settings',async()=>{
+    assert.equal((await json('/api/settings/family-reports',{anonymous:true})).status,401);
+    const initial=await json('/api/settings/family-reports');
+    assert.equal(initial.status,200,JSON.stringify(initial.data));
+    assert.equal(initial.data.weekly,false);
+    assert.equal(initial.data.monthly,false);
+    assert.equal(initial.data.hour,20);
+    assert.deepEqual(initial.data.members,[]);
+    assert.equal((await json('/api/settings/family-reports',{method:'PUT',body:{weekly:'yes',monthly:false,hour:20}})).status,400);
+    assert.equal((await json('/api/settings/family-reports',{method:'PUT',body:{weekly:true,monthly:true,hour:3}})).status,400);
+    const changed=await json('/api/settings/family-reports',{method:'PUT',body:{weekly:true,monthly:true,hour:8}});
+    assert.equal(changed.status,200,JSON.stringify(changed.data));
+    assert.equal(changed.data.config.weekly,true);
+    assert.equal(changed.data.config.monthly,true);
+    assert.equal(changed.data.config.hour,8);
+    assert.equal((await json('/api/settings/family-reports/members/unknown',{method:'PUT',body:{subscribed:true}})).status,404);
+    assert.equal((await json('/api/settings/family-reports/members/unknown',{method:'PUT',body:{subscribed:'yes'}})).status,400);
+    assert.equal((await json('/api/settings/family-reports/test',{method:'POST',body:{kind:'week',connectionId:'legacy'},anonymous:true})).status,401);
+    assert.equal((await json('/api/settings/family-reports/test',{method:'POST',body:{kind:'year',connectionId:'legacy'}})).status,400);
+    assert.equal((await json('/api/settings/family-reports/test',{method:'POST',body:{kind:'week',connectionId:'legacy'}})).status,404);
+    assert.equal((await json('/api/settings/family-reports/test',{method:'POST',body:{kind:'month',connectionId:'invalid'}})).status,400);
+    const reset=await json('/api/settings/family-reports',{method:'PUT',body:{weekly:false,monthly:false,hour:20}});
+    assert.equal(reset.status,200);
+    assert.equal((await json('/api/settings/family-reports')).data.weekly,false);
+  });
   await step('old 7-day sessions upgrade once to renewable 180-day cookies',async()=>{
     sessionCookie=signedTestSession(Date.now()+7*86400000);
     const initial=await json('/api/state');
@@ -737,6 +762,29 @@ async function browserE2e(){
             await preview.screenshot({path:join(evidence,'design-system-demo-album-'+width+'.png'),fullPage:true});
           }
         }
+        // Demo settings must follow the same IA as the live app, without API calls.
+        await preview.setViewportSize({width:1280,height:844});
+        await preview.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();
+        const sections=preview.getByRole('navigation',{name:'设置分类'});
+        assert.equal(await sections.locator('button').count(),5);
+        await sections.getByRole('button',{name:/成长报告/}).click();
+        await preview.getByRole('heading',{name:'家庭成长周报与月报'}).waitFor();
+        const sample=preview.locator('.demo-wechat-report');
+        assert.match(await sample.innerText(),/成长瞬间/);
+        await preview.getByRole('group',{name:'示例报告类型'}).getByRole('button',{name:'月报'}).click();
+        assert.match(await sample.innerText(),/10 月 1 日/);
+        assert.equal(await preview.getByRole('group',{name:'示例报告类型'}).getByRole('button',{name:'月报'}).getAttribute('aria-pressed'),'true');
+        await preview.screenshot({path:join(evidence,'demo-settings-reports-1280.png'),fullPage:false});
+        for(const width of [320,390,768]){
+          await preview.setViewportSize({width,height:844});
+          const overflow=await preview.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);
+          assert.equal(overflow,false,'Demo settings overflow at '+width);
+          if(width===390)await preview.screenshot({path:join(evidence,'demo-settings-reports-390.png'),fullPage:false});
+        }
+        await sections.getByRole('button',{name:/微信成员/}).click();
+        await preview.getByRole('heading',{name:'微信操作'}).waitFor();
+        await sections.getByRole('button',{name:/宝宝与外观/}).click();
+        await preview.getByRole('group',{name:'外观主题'}).waitFor();
         await preview.setViewportSize({width:375,height:812});
         await preview.locator('.mobile-nav').getByRole('button',{name:'成长'}).click();
         await preview.getByRole('heading',{name:'成长记录'}).waitFor();
@@ -777,6 +825,12 @@ async function browserE2e(){
         await preview.locator('.photo-item').first().waitFor();
         assert.equal(await preview.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'mobile demo must not overflow at 390px');
         await preview.screenshot({path:join(evidence,'mobile-demo-phone.png'),fullPage:true});
+        await preview.locator('.mobile-nav').getByRole('button',{name:'设置'}).click();
+        await preview.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/成长报告/}).click();
+        await preview.getByRole('group',{name:'示例报告类型'}).getByRole('button',{name:'周报'}).click();
+        await preview.getByRole('group',{name:'示例报告类型'}).getByRole('button',{name:'月报'}).click();
+        await preview.screenshot({path:join(evidence,'mobile-demo-report-phone.png'),fullPage:false});
+        assert.equal(await preview.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'mobile report demo must not overflow');
         assert.deepEqual(requests,[],'Demo must never call private API');
       }finally{await preview.close()}
     });
@@ -1113,10 +1167,13 @@ async function browserE2e(){
         for(const [nav,heading] of views){
           await page.locator('.mobile-nav button[aria-label="'+nav+'"]').click();
           await page.getByRole('heading',{name:heading,exact:true}).waitFor({timeout:12000});
-          const result=await page.evaluate(()=>({
-            width:window.innerWidth,html:document.documentElement.scrollWidth,
-            body:document.body.scrollWidth
-          }));
+          const result=await page.evaluate(()=>{
+            const width=window.innerWidth,html=document.documentElement.scrollWidth,body=document.body.scrollWidth;
+            const offenders=html>width+1?[...document.querySelectorAll('body *')].filter(el=>{
+              const r=el.getBoundingClientRect();return r.width>0&&r.right>width+1;
+            }).slice(0,9).map(el=>({tag:el.tagName.toLowerCase(),className:typeof el.className==='string'?el.className.slice(0,90):'',right:Math.round(el.getBoundingClientRect().right)})):[];
+            return {width,html,body,offenders};
+          });
           assert.ok(Math.max(result.html,result.body)<=result.width+1,
             'Horizontal overflow on '+width+'px '+nav+': '+JSON.stringify(result));
           assert.equal(await page.locator('.topbar .space-name').isVisible(),true,'family name hidden at '+width+'px');
@@ -1218,7 +1275,7 @@ async function browserE2e(){
       const statuses=Object.fromEntries(members.map(member=>[member.id,{connectionId:member.id,connected:true,enabled:member.enabled,lastPoll:stamp,lastMessage:stamp,lastError:member.id==='status-expired'?'WECHAT_AUTH_EXPIRED':null,media:{pending:member.id==='status-saving'?2:0,saving:member.id==='status-saving',retrying:false,lastError:null,lastCompleted:null}}]));
       await page.route('**/api/state',async route=>{const response=await route.fetch();const data=await response.json();data.wechat.connections=members.map(member=>({...member,createdAt:stamp,updatedAt:stamp}));await route.fulfill({response,json:data})});
       await page.route('**/api/settings/wechat/connections/*/status',async route=>{const id=new URL(route.request().url()).pathname.split('/').at(-2);await route.fulfill({json:statuses[id]})});
-      await page.goto(base+'/',{waitUntil:'domcontentloaded'});await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();await page.getByText('运行正常',{exact:true}).waitFor();
+      await page.goto(base+'/',{waitUntil:'domcontentloaded'});await page.locator('.sidebar .nav-link').filter({hasText:'设置'}).click();await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/微信成员/}).click();await page.getByText('运行正常',{exact:true}).waitFor();
       for(const label of ['媒体保存中','需要重新绑定','已暂停'])assert.equal(await page.getByText(label,{exact:true}).isVisible(),true);
       assert.equal(await page.locator('.status-json').count(),0);
       for(const width of [320,375,768,1280]){await page.setViewportSize({width,height:900});const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,'WeChat status overflow at '+width);if(width===320||width===1280)await page.screenshot({path:join(evidence,'wechat-status-'+width+'.png'),fullPage:true})}
@@ -1232,6 +1289,7 @@ async function browserE2e(){
     await step((useWebKit?'WebKit':'Chromium')+': one-click cover repair checkpoint and pause',async()=>{
       await page.setViewportSize({width:390,height:844});
       await page.locator('.mobile-nav button[aria-label="设置"]').click();
+      await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/数据与安全/}).click();
       const section=page.locator('.thumbnail-repair-card');
       // Intercept the browser fetch itself: service workers can bypass Playwright
       // route interception, making a fast empty scan detach the Pause button.
@@ -1260,6 +1318,7 @@ async function browserE2e(){
         });
       }
       await page.reload();
+      await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/数据与安全/}).click();
       await section.getByRole('button',{name:'继续修复缺失封面'}).waitFor();
       const response=await page.evaluate(async()=>{
         const state=await(await fetch('/api/state')).json();

@@ -67,3 +67,32 @@
  .demo-app .demo-note{font-size:11px}
  .demo-history-row time{min-width:90px}
 }
+
+
+/* The public sample reuses real settings navigation + tokens, but never exposes mutations. */
+.demo-app .demo-settings-layout{min-width:0}
+.demo-app .demo-settings-layout .settings-grid{display:grid;grid-template-columns:minmax(0,1fr)}
+.demo-app .demo-settings-layout .settings-grid .card{grid-column:1;min-width:0}
+.demo-app .demo-settings-layout .settings-main-heading p{margin:0}
+.demo-profile-intro{display:flex;align-items:center;gap:13px;padding:14px;border-radius:12px;background:var(--bm-surface-alt);margin-bottom:10px}
+.demo-profile-intro p{margin:4px 0 0}
+.demo-profile-avatar,.demo-member-avatar{display:grid;place-items:center;flex:none;color:var(--bm-brand);background:var(--bm-brand-soft);border-radius:12px;width:42px;height:42px}
+.demo-wechat-member{display:flex;align-items:center;gap:12px;padding:13px 0;border-top:1px solid var(--bm-border)}
+.demo-wechat-member>div{display:flex;flex:1;flex-direction:column;gap:5px;min-width:0}
+.demo-wechat-member>div small{font-size:12px}
+.demo-member-state{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-size:12px;color:var(--bm-success)}
+.demo-settings-explainer{padding:13px 14px;background:var(--bm-surface-alt);border-radius:10px;font-size:13px;line-height:1.65;color:var(--bm-muted);margin-top:12px}
+.demo-report-settings .stack{gap:13px}
+.demo-report-state{padding:6px 8px;white-space:nowrap;border-radius:7px;background:var(--bm-surface-alt);color:var(--bm-muted);font-size:12px}
+.demo-report-preview{border:1px solid var(--bm-border);border-radius:13px;padding:15px;display:grid;gap:15px}
+.demo-preview-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.demo-wechat-report{background:var(--bm-surface-alt);border-radius:11px;padding:17px;display:flex;flex-direction:column;gap:9px;font-size:13px;line-height:1.7}
+.demo-wechat-report time{color:var(--bm-muted);font-size:12px}
+.demo-wechat-report strong{font-size:13px;color:var(--bm-ink)}
+.demo-wechat-report p{margin:0;line-height:1.7;color:var(--bm-muted)}
+.demo-report-eyebrow{color:var(--bm-brand);font-size:15px;font-weight:680}
+@media(max-width:800px){
+ .demo-app .demo-settings-layout .settings-grid>.card{width:100%}
+ .demo-app .demo-report-preview{padding:12px}
+ .demo-app .demo-wechat-report{padding:14px}
+}

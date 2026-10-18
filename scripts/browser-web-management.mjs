@@ -6,6 +6,39 @@ export async function browserWebManagement({page,context,base,evidence,step}){
  const nav=async label=>{await page.locator('.sidebar .nav-link').filter({hasText:label}).click()};
  await page.setViewportSize({width:1280,height:900});await page.reload();await nav('设置');
  await step('Theme: system preference, reload, tabs, iframe and 320px viewport',async()=>{await browserThemeRegression({page,context,base,evidence})});
+ await step('Settings navigation: five focused sections, safe mobile sizing, and report test discoverability',async()=>{
+  const categories=page.getByRole('navigation',{name:'设置分类'});
+  assert.equal(await categories.locator('button').count(),5);
+  assert.equal(await page.locator('.appearance-settings').isVisible(),true);
+  assert.equal(await page.locator('.settings-baby-switch').isVisible(),true);
+  assert.equal(await page.locator('.family-report-settings').count(),0,'avoid rendering a giant settings page');
+  await categories.getByRole('button',{name:/成长报告/}).click();
+  await page.getByRole('heading',{name:'家庭成长周报与月报'}).waitFor();
+  await page.getByText('立即测试微信推送').waitFor();
+  await page.getByRole('button',{name:'发送测试周报'}).waitFor();
+  assert.equal(await page.locator('.settings-baby-switch').count(),0);
+  await categories.getByRole('button',{name:/微信成员/}).click();
+  await page.getByRole('heading',{name:'微信操作'}).waitFor();
+  assert.equal(await page.locator('.family-report-settings').count(),0);
+  await categories.getByRole('button',{name:/AI 模型/}).click();
+  await page.getByRole('heading',{name:'微信 AI 模型'}).waitFor();
+  await categories.getByRole('button',{name:/数据与安全/}).click();
+  await page.getByRole('heading',{name:'家庭数据与回收站'}).waitFor();
+  await page.getByText('修改家庭密码').waitFor();
+  await page.setViewportSize({width:320,height:700});
+  const geometry=await page.evaluate(()=>{
+   const nav=document.querySelector('.settings-categories');
+   return {page:document.documentElement.scrollWidth,window:window.innerWidth,scrolling:nav.scrollWidth>nav.clientWidth};
+  });
+  assert.equal(geometry.page>geometry.window+1,false,'settings must not overflow 320px page');
+  assert.equal(geometry.scrolling,true,'mobile categories remain reachable via internal scrolling');
+  await page.screenshot({path:join(evidence,'settings-categories-data-mobile-320.png'),fullPage:false});
+  await categories.getByRole('button',{name:/成长报告/}).click();
+  await page.screenshot({path:join(evidence,'settings-report-mobile-320.png'),fullPage:false});
+  await page.setViewportSize({width:1280,height:900});
+  await categories.getByRole('button',{name:/宝宝与外观/}).click();
+  await page.locator('.settings-baby-switch').waitFor();
+ });
  await page.locator('.settings-baby-switch select').selectOption({label:'Test Baby'});
  const babyId=await page.locator('.settings-baby-switch select').inputValue();
  const requestHeaders={Origin:base,Cookie:(await context.cookies()).map(cookie=>cookie.name+'='+cookie.value).join(';')};
@@ -31,6 +64,7 @@ export async function browserWebManagement({page,context,base,evidence,step}){
   const png=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=canvas.height=32;const c=canvas.getContext('2d');c.fillStyle='#2165A8';c.fillRect(0,0,32,32);return canvas.toDataURL('image/png').split(',')[1]});
   await page.locator('.baby-avatar-control input[type="file"]').setInputFiles({name:'synthetic-avatar.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});await page.waitForFunction(()=>document.querySelector('.baby-avatar-control img')?.naturalWidth===256);await page.waitForFunction(async id=>{const r=await fetch('/api/export/records');if(!r.ok)return false;const data=await r.json();return data.babies?.some(b=>b.id===id&&b.avatar_key&&!String(b.avatar_key).startsWith('pending:'))},babyId,{timeout:30000});
   await page.screenshot({path:join(evidence,'web-profile-avatar.png'),fullPage:true});
+  await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:/数据与安全/}).click();
   const [download]=await Promise.all([page.waitForEvent('download',{timeout:45000}),page.getByRole('button',{name:'下载完整家庭档案 ZIP',exact:true}).click()]);
   const archive=await download.path();assert.ok(archive,await download.failure());
   const verified=spawnSync('python3',['-c',"import sys,zipfile,json\nz=zipfile.ZipFile(sys.argv[1]); data=json.loads(z.read('records.json')); names=z.namelist(); crc=z.testzip(); allergy=any(b.get('name')=='Export Fixture' and b.get('allergies')=='花生' for b in data['babies']); avatar=any(n.startswith('avatars/') for n in names); media=any(n.startswith('media/') for n in names); print('BROWSER_EXPORT_CHECK',{'crc':crc,'allergy':allergy,'avatar':avatar,'media':media,'names':names},file=sys.stderr); assert crc is None,'ZIP CRC failed'; assert allergy,'missing existing baby profile'; assert avatar,'missing avatar'; assert media,'missing media'; print('BROWSER_EXPORT_OK')",archive],{encoding:'utf8'});assert.equal(verified.status,0,verified.stderr);

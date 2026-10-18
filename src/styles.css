@@ -230,3 +230,16 @@ input[type="date"],input[type="time"] { min-width:0; max-width:100%; }
 /* Uniform, readable video indicators in the home feed. */
 .home-video-badge,.home-thumb-video{display:inline-flex;align-items:center;justify-content:center;gap:5px;pointer-events:none}
 .home-thumb-video svg,.home-video-badge svg{display:block}
+
+/* Family report controls reuse the semantic surface palette and touch sizing. */
+.family-report-settings .stack{gap:14px}
+.family-report-toggle,.family-report-member{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:var(--bm-touch-min);padding:12px 0;border-bottom:1px solid var(--bm-border)}
+.family-report-toggle span,.family-report-member span{display:flex;flex-direction:column;gap:4px;min-width:0}
+.family-report-toggle input,.family-report-member input{width:20px;height:20px;flex-shrink:0;accent-color:var(--bm-brand);cursor:pointer}
+.family-report-recipients,.family-report-history{padding-top:8px}
+.family-report-history-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 12px;padding:10px 0;border-bottom:1px solid var(--bm-border)}
+.family-report-toggle small,.family-report-member small{font-size:.85rem}
+
+.family-report-test{padding-top:8px;display:grid;gap:10px}
+.family-report-test-actions{display:flex;gap:10px;flex-wrap:wrap}
+.family-report-test-actions button{min-height:var(--bm-touch-min)}

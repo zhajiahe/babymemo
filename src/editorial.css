@@ -432,3 +432,114 @@ h1,h2,h3 { letter-spacing:normal; }
 
 /* A modal-based growth creator needs no empty desktop sidebar. */
 .record-layout--single { grid-template-columns:minmax(0,1fr); }
+
+
+/* Settings information architecture: only one focused panel at a time. */
+.settings-layout{
+ display:grid;grid-template-columns:minmax(0,222px) minmax(0,1fr);
+ align-items:start;column-gap:22px;min-width:0
+}
+.settings-categories{
+ position:sticky;top:24px;display:flex;flex-direction:column;gap:3px;padding:8px;
+ border:1px solid var(--bm-border);border-radius:16px;background:var(--bm-surface);
+ min-width:0
+}
+.settings-category{
+ display:flex;align-items:center;gap:11px;width:100%;min-height:66px;padding:9px 11px;
+ color:var(--bm-ink);background:transparent;border:1px solid transparent;border-radius:11px;
+ text-align:left;transition:background-color var(--bm-duration-fast),color var(--bm-duration-fast)
+}
+.settings-category:hover{background:var(--bm-surface-alt)}
+.settings-category.is-active{background:var(--bm-brand-soft);color:var(--bm-brand)}
+.settings-category-icon{
+ display:grid;place-items:center;flex:0 0 35px;width:35px;height:35px;
+ border-radius:10px;background:var(--bm-surface-soft);color:var(--bm-muted)
+}
+.settings-category.is-active .settings-category-icon{color:var(--bm-brand);background:var(--bm-surface)}
+.settings-category-label{display:flex;flex:1;flex-direction:column;gap:3px;min-width:0}
+.settings-category-label strong{font-size:14px;font-weight:650;line-height:1.4}
+.settings-category-label small{font-size:11px;color:var(--bm-muted);line-height:1.35}
+.settings-category.is-active .settings-category-label small{color:var(--bm-brand)}
+.settings-category-chevron{color:var(--bm-muted);opacity:0}
+.settings-category.is-active .settings-category-chevron{opacity:1;color:var(--bm-brand)}
+.settings-main{min-width:0}
+.settings-main-heading{margin:1px 0 16px}
+.settings-main-eyebrow{font-size:10px;font-weight:750;letter-spacing:.12em;color:var(--bm-muted)}
+.settings-main-heading h2{font-size:21px;line-height:1.35;margin:4px 0 4px;font-weight:690;color:var(--bm-ink)}
+.settings-main-heading p{margin:0;color:var(--bm-muted);font-size:13px;line-height:1.5}
+.settings-layout .settings-grid{grid-template-columns:minmax(0,1fr);gap:14px}
+.settings-layout .settings-grid>.card{grid-column:1;min-width:0;padding:21px 23px}
+.settings-layout .settings-grid>.card .section-title h3{font-size:16px}
+.settings-subsection{margin-top:14px;border:1px solid var(--bm-border);border-radius:11px;overflow:hidden;background:var(--bm-surface)}
+.settings-subsection>summary{
+ display:flex;align-items:center;justify-content:space-between;gap:8px;list-style:none;
+ padding:13px 14px;min-height:48px;cursor:pointer;font-weight:600;font-size:13px;color:var(--bm-ink)
+}
+.settings-subsection>summary::-webkit-details-marker{display:none}
+.settings-subsection>summary svg{color:var(--bm-muted);transition:transform var(--bm-duration-fast)}
+.settings-subsection[open]>summary svg{transform:rotate(90deg)}
+.settings-subsection[open]>summary{border-bottom:1px solid var(--bm-border-soft)}
+.settings-subsection-body{display:grid;gap:12px;padding:14px;min-width:0}
+.settings-subsection-body .muted{margin:0}
+.settings-subsection-body .row-between{flex-wrap:wrap;gap:9px}
+.settings-layout .baby-create-section{margin-top:20px}
+.settings-layout .family-report-settings>.section-title p{margin:5px 0 0}
+.settings-layout .family-report-test{margin-top:9px;border-top:1px solid var(--bm-border-soft);padding-top:17px}
+.settings-layout .family-report-recipients,.settings-layout .family-report-history{padding-top:0}
+.settings-layout .family-report-test-actions>button{flex:1 1 150px}
+.settings-layout .family-report-settings .stack{gap:12px}
+.settings-layout .wechat-add{margin:0}
+@media(max-width:1000px){
+ .settings-layout{grid-template-columns:minmax(0,180px) minmax(0,1fr);gap:15px}
+ .settings-category{padding:9px 8px;gap:7px}
+ .settings-category-icon{flex-basis:32px;width:32px;height:32px}
+ .settings-category-chevron{display:none}
+}
+@media(max-width:800px){
+ .settings-layout{display:block;min-width:0}
+ .settings-categories{
+  position:sticky;top:calc(54px + env(safe-area-inset-top));z-index:35;
+  flex-direction:row;gap:6px;overflow-x:auto;overflow-y:hidden;
+  margin:0 -16px 17px;padding:8px 16px;
+  border:0;border-bottom:1px solid var(--bm-border);border-radius:0;
+  background:var(--bm-glass-top);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  scroll-snap-type:x proximity;overscroll-behavior-inline:contain;
+  scrollbar-width:none
+ }
+ .settings-categories::-webkit-scrollbar{display:none}
+ .settings-category{
+  flex:0 0 auto;min-height:44px;min-width:0;padding:9px 13px;
+  border-radius:9px;white-space:nowrap;scroll-snap-align:start;
+ }
+ .settings-category-icon{display:none}
+ .settings-category-label strong{font-size:13px}
+ .settings-category-label small,.settings-category-chevron{display:none}
+ .settings-main-heading{margin-bottom:12px}
+ .settings-main-heading h2{font-size:19px}
+ .settings-layout .settings-grid>.card{padding:17px 16px}
+ .settings-layout .settings-grid{gap:12px}
+}
+@media(max-width:360px){
+ .settings-category{padding-inline:11px}
+ .settings-layout .settings-grid>.card{padding:16px 13px}
+}
+
+.settings-wechat-add-action{margin:13px 0}
+.settings-wechat-add-action button{min-height:44px}
+.settings-wechat-add-panel{
+ display:grid;gap:13px;margin:12px 0;padding:16px;
+ border:1px solid var(--bm-border);border-radius:12px;background:var(--bm-surface-alt);min-width:0
+}
+.settings-wechat-add-panel .qr-panel{max-width:100%}
+.settings-layout .family-report-recipients{margin-top:2px}
+.settings-layout .family-report-history{margin-top:2px}
+@media(max-width:800px){
+ .settings-wechat-add-panel{padding:13px}
+ .settings-layout .settings-subsection-body{padding:12px}
+}
+
+/* Match page gutters: at <=480px the app uses 12px, not 16px. */
+@media(max-width:480px){
+ .settings-categories{margin-inline:-12px;padding-inline:12px}
+}
