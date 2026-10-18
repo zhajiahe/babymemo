@@ -95,17 +95,20 @@ const demoSettingsSections:{id:DemoSettingsSection;label:string;description:stri
 ];
 function DemoSettings(){
  const [section,setSection]=useState<DemoSettingsSection>('profile');
+ const [mobileDetail,setMobileDetail]=useState(false);
  const [preview,setPreview]=useState<'week'|'month'>('week');
  const selected=demoSettingsSections.find(item=>item.id===section)!;
- return <div className="settings-layout demo-settings-layout">
+ return <div className={"settings-layout demo-settings-layout"+(mobileDetail?" mobile-detail":"")}>
+  <div className="settings-mobile-overview-header"><h2>设置</h2><p>选择要管理的内容 · 示例家庭</p></div>
   <nav className="settings-categories" aria-label="设置分类">
-   {demoSettingsSections.map(item=>{const Icon=item.icon;return <button type="button" key={item.id} className={'settings-category'+(section===item.id?' is-active':'')} aria-current={section===item.id?'page':undefined} onClick={()=>setSection(item.id)}>
+   {demoSettingsSections.map(item=>{const Icon=item.icon;return <button type="button" key={item.id} className={'settings-category'+(section===item.id?' is-active':'')} aria-current={section===item.id?'page':undefined} onClick={()=>{setSection(item.id);setMobileDetail(true)}}>
     <span className="settings-category-icon"><Icon size={19} aria-hidden="true"/></span>
     <span className="settings-category-label"><strong>{item.label}</strong><small>{item.description}</small></span>
     <ChevronRight size={16} className="settings-category-chevron" aria-hidden="true"/>
    </button>})}
   </nav>
   <section className="settings-main" aria-labelledby="demo-settings-section-title">
+   <button type="button" className="settings-mobile-back" onClick={()=>setMobileDetail(false)}><ChevronLeft size={20} aria-hidden="true"/>设置</button>
    <div className="settings-main-heading"><span className="settings-main-eyebrow">SETTINGS</span><h2 id="demo-settings-section-title">{selected.label}</h2><p>{selected.description} · 虚构家庭演示</p></div>
    <div className="settings-grid">
     {section==='profile'&&<>
