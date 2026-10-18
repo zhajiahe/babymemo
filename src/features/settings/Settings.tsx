@@ -3,7 +3,7 @@ import {downloadFamilyArchive} from '../../export-download';
 import {useEffect,useState,useSyncExternalStore,type FormEvent} from 'react';
 import {Button,Card,Field,Primary,ModalDialog} from '../../components/ui';
 import {ThemeSelector} from '../../components/ThemeSelector';
-import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi,BrainCircuit,ChevronRight,CalendarHeart,HardDriveDownload,UsersRound} from 'lucide-react';
+import {Baby,Check,Plus,ShieldCheck,CloudUpload,WandSparkles,MessageCircle,RefreshCw,WifiOff,Wifi,BrainCircuit,ChevronRight,ChevronLeft,CalendarHeart,HardDriveDownload,UsersRound} from 'lucide-react';
 import {api,post,today,type BabyInfo,type State,type WechatRunStatus} from '../../lib/client';
 import {DEFAULT_OPENROUTER_MODEL,OPENROUTER_MODEL_PRESETS,openRouterModelDescription} from '../../openrouter-model.mjs';
 import {wechatStatusView,wechatStatusTime} from '../../wechat-status.mjs';
@@ -25,6 +25,7 @@ function babyDraft(baby:BabyInfo){try{return JSON.parse(localStorage.getItem('ba
 
 export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected}:{state:State;baby:BabyInfo;changed:()=>void;notify:(s:string)=>void;onBabyCreated:(id:string)=>void;onBabySelected:(id:string)=>void}){
  const [activeSection,setActiveSection]=useState<SettingsSection>('profile');
+ const [mobileDetail,setMobileDetail]=useState(false);
  const selectedSection=SETTINGS_SECTIONS.find(section=>section.id===activeSection)!;
  const [provider,setProvider]=useState<'workers-ai'|'openrouter'>(state.ai?.provider||'workers-ai');
  const [model,setModel]=useState(state.openrouter.model),[apiKey,setApiKey]=useState(''),[saving,setSaving]=useState(false);
@@ -206,15 +207,17 @@ export function Settings({state,baby,changed,notify,onBabyCreated,onBabySelected
   }finally{setTestingModel(false)}
  }
  async function inspect(id:string){setInspectedMember(id);try{const status=await api<WechatRunStatus>('/api/settings/wechat/connections/'+encodeURIComponent(id)+'/status');setRunStatuses(current=>({...current,[id]:status}))}catch{notify('暂时无法读取微信状态，请稍后重试')}}
- return <div className="settings-layout">
+ return <div className={"settings-layout"+(mobileDetail?" mobile-detail":"")}>
+ <div className="settings-mobile-overview-header"><h2>设置</h2><p>选择要管理的内容</p></div>
  <nav className="settings-categories" aria-label="设置分类">
-  {SETTINGS_SECTIONS.map(section=>{const Icon=section.icon;return <button id={'settings-nav-'+section.id} type="button" key={section.id} className={'settings-category'+(activeSection===section.id?' is-active':'')} aria-current={activeSection===section.id?'page':undefined} onClick={()=>setActiveSection(section.id)}>
+  {SETTINGS_SECTIONS.map(section=>{const Icon=section.icon;return <button id={'settings-nav-'+section.id} type="button" key={section.id} className={'settings-category'+(activeSection===section.id?' is-active':'')} aria-current={activeSection===section.id?'page':undefined} onClick={()=>{setActiveSection(section.id);setMobileDetail(true)}}>
    <span className="settings-category-icon"><Icon size={19} aria-hidden="true"/></span>
    <span className="settings-category-label"><strong>{section.label}</strong><small>{section.description}</small></span>
    <ChevronRight size={16} className="settings-category-chevron" aria-hidden="true"/>
   </button>})}
  </nav>
  <section className="settings-main" aria-labelledby="settings-section-title">
+  <button type="button" className="settings-mobile-back" onClick={()=>setMobileDetail(false)}><ChevronLeft size={20} aria-hidden="true"/>设置</button>
   <div className="settings-main-heading"><span className="settings-main-eyebrow">SETTINGS</span><h2 id="settings-section-title">{selectedSection.label}</h2><p>{selectedSection.description}</p></div>
   <div className="settings-grid">
   {activeSection==='profile'&&<>
