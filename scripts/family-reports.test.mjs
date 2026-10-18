@@ -17,7 +17,7 @@ test('reports run on recipient configured local calendar, not UTC',()=>{
  ]);
 });
 test('daylight saving spring-forward does not affect date range',()=>{
- assert.deepEqual(scheduledReportPeriods(new Date('2026-03-08T19:00:00Z'),'America/Los_Angeles',12),[]);
+ assert.deepEqual(scheduledReportPeriods(new Date('2026-03-08T18:00:00Z'),'America/Los_Angeles',12),[]);
  assert.deepEqual(scheduledReportPeriods(new Date('2026-03-08T20:00:00Z'),'America/Los_Angeles',12),[
   {kind:'week',start:'2026-03-02',end:'2026-03-08'}
  ]);
