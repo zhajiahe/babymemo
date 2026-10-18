@@ -783,6 +783,7 @@ async function browserE2e(){
         }
         await sections.getByRole('button',{name:/微信成员/}).click();
         await preview.getByRole('heading',{name:'微信操作'}).waitFor();
+        await preview.locator('.settings-mobile-back').click();
         await sections.getByRole('button',{name:/宝宝与外观/}).click();
         await preview.getByRole('group',{name:'外观主题'}).waitFor();
         await preview.setViewportSize({width:375,height:812});
