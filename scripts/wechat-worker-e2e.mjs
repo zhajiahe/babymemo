@@ -468,7 +468,7 @@ try{
   const r=await run({mode:'alarm',messages:[message],responses:[tool('delete_media',{id:savedVideoRecordId})]});
   assert.equal(r.error,undefined);
   assert.equal(r.status.lastProcessing.kind,'quote');
-  assert.equal(r.media.find(x=>x.id===savedVideoRecordId).deleted_at,null);
+  assert.equal(r.media.find(x=>x.id===savedVideoRecordId).deleted_at??null,null);
   assert.match(r.reply,/不能直接授权修改|明确说明/);
  });
  await step('a media quote without a verifiable provider reference does not guess the recent upload',async()=>{
