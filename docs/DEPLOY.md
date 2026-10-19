@@ -29,4 +29,6 @@
 
 验证 `/api/health`、`/api/bootstrap/status`，再人工检查登录、宝宝隔离、相册/视频和微信状态；浏览器编解码兼容性需要真机测试。遇到迁移冲突、登录错误或微信无回复，查看 [Actions 故障排查](github-action-deploy.md) 与 [QA 边界](qa-regression-matrix.md)，不要重建数据库。
 
+中国大陆访问若经由较远 Cloudflare 节点，可先阅读 [Cloudflare 入口加速与回滚](CF-ACCELERATION.md)；此功能为可选实验方案，部署时不应自动改写 DNS 或 Route。
+
 生产灾备见 [备份手册](BACKUP.md)。

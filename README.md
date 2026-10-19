@@ -55,6 +55,6 @@ npm run verify
 npm run test:e2e
 ```
 
-维护者入口：[工程规范](ENGINEERING.md) · [Agent 约束](AGENTS.md) · [设计规范](docs/design-system.md) · [Actions 部署](docs/github-action-deploy.md) · [Agent Runbook](docs/agent-deploy.md) · [测试与 CI](docs/qa-regression-matrix.md)。
+维护者入口：[工程规范](ENGINEERING.md) · [Agent 约束](AGENTS.md) · [设计规范](docs/design-system.md) · [Actions 部署](docs/github-action-deploy.md) · [CF 加速](docs/CF-ACCELERATION.md) · [Agent Runbook](docs/agent-deploy.md) · [测试与 CI](docs/qa-regression-matrix.md)。
 
 **数据安全**：保护 `SESSION_SECRET` 和 `DATA_KEY`，不要将真实照片、家庭资料或凭据放入测试、日志、GitHub Issue 或 PR。许可见 [LICENSE](LICENSE)。
