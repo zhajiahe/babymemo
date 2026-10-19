@@ -1,0 +1,45 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "babymemo-apac-copy",
+  "main": "scripts/apac-copy-worker.mjs",
+  "compatibility_date": "2026-10-12",
+  "workers_dev": false,
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "STATE",
+      "database_name": "babymemo-apac",
+      "database_id": "25201969-48d7-4b4f-9a64-69eabb7d58dd"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "SOURCE",
+      "bucket_name": "babymemo-media"
+    },
+    {
+      "binding": "TARGET",
+      "bucket_name": "babymemo-media-apac"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "PIPE",
+        "queue": "babymemo-apac-copy"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "babymemo-apac-copy",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 3,
+        "max_concurrency": 1,
+        "retry_delay": 30
+      }
+    ]
+  }
+}
