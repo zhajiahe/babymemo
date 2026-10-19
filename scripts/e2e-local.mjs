@@ -379,6 +379,14 @@ async function e2e() {
     const list=await json('/api/media?babyId='+babyId);
     assert.equal(list.data.items.filter(item=>item.id===id).length,1);
     assert.equal(list.data.items.find(item=>item.id===id).description,'第一次看到小猫');
+    // Cursor pagination is stable and rejects forged parameters (legacy page= stays supported).
+    const first=list.data.items[0];
+    const cursor=Buffer.from(JSON.stringify([first.day,first.created_at,first.id])).toString('base64');
+    const later=await json('/api/media?babyId='+babyId+'&cursor='+encodeURIComponent(cursor));
+    assert.equal(later.status,200);
+    assert.equal(later.data.items.some(row=>row.id===first.id),false);
+    assert.equal((await json('/api/media?babyId='+babyId+'&cursor=not-base64')).status,400);
+    assert.equal((await json('/api/media?babyId='+babyId+'&page=0')).status,200);
     const pending=await json('/api/upload/pending?babyId='+babyId);
     assert.equal(pending.data.items.some(item=>item.id===id),false);
     assert.equal((await json('/api/media/'+id,{method:'DELETE'})).status,200);

@@ -218,7 +218,7 @@ app.get('/api/media',async c=>{
   if(type){clauses.push('mime LIKE ?');bindings.push(type+'/%')}
   if(cursor){clauses.push('(day,created_at,id)<(?,?,?)');bindings.push(cursor.day,cursor.created_at,cursor.id)}
   const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,description,mime,size,thumbnail_ready,upload_state,created_at,updated_at FROM media WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC,id DESC LIMIT 37 OFFSET ?').bind(...bindings,cursor?0:page*36).all();
-  const items=rows.results.slice(0,36),hasMore=rows.results.length>36,last=items.at(-1);
+  const items=rows.results.slice(0,36),hasMore=rows.results.length>36,last=items.at(-1) as PageCursor|undefined;
   return c.json({items,hasMore,nextCursor:hasMore&&last?encodePageCursor(last):null});
 });
 // Enumerate missing private derivatives in bounded batches across the *entire*
