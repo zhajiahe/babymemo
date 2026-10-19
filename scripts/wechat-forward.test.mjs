@@ -61,7 +61,7 @@ test('a quoted historical delete instruction does not become current command',()
  assert.equal(parsed.media.length,0);
 });
 test('quote mixed with real forwarded history keeps actual forward protections',()=>{
- const parsed=parseWechatIncoming({item_list:[{type:1,text_item:{text:'总结这段聊天',ref_msg:{message_item:{type:5,video_item:{}}}},forwarded_messages:[
+ const parsed=parseWechatIncoming({item_list:[{type:1,text_item:{text:'总结这段聊天'},ref_msg:{message_item:{type:5,video_item:{}}},forwarded_messages:[
   {sender:'爸爸',item_list:[{type:1,text_item:{text:'宝宝今天会走路了'}}]}
  ]}]});
  assert.equal(parsed.forwarded,true);
@@ -86,7 +86,8 @@ test('bounded recursion and large payloads cannot create unbounded messages',()=
  let current={type:1,text_item:{text:'末尾'}};
  for(let i=0;i<70;i++)current={type:1,text_item:{text:'一层'},ref_msg:{message_item:current}};
  const result=parseWechatIncoming({item_list:[current]});
- assert.equal(result.forwarded,true);
+ assert.equal(result.forwarded,false);
+ assert.equal(result.quoted,true);
  assert.equal(result.limited,true);
  assert.ok(result.text.length<=3000);
  assert.equal(parseWechatIncoming({item_list:null}).text,'');
