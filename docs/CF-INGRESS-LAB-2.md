@@ -36,3 +36,6 @@ A separate Worker `babymemo-ip-lab` is bound to ENAM and APAC D1/R2, but it expo
 Delete only the six `bm-lab-*` DNS records and routes, the `bm-ip-lab` custom domain, and `babymemo-ip-lab` Worker. Preserve the actual BabyMemo production resources. No background jobs, cron or Secrets are installed.
 
 Sources: https://github.com/LancelotRar/best-cf-ips/blob/main/best-cf-ip-scanned-top50.txt, https://www.cloudflare.com/ips-v4, https://developers.cloudflare.com/workers/configuration/routing/routes/
+
+## Synthetic media test
+Each run also transfers a dedicated 262,144-byte ASCII test object from the ENAM R2 bucket and verifies the exact returned length; it is not a family video/photo. The benchmark weights client media time twice as heavily as the D1 and small-R2 operations when highlighting a candidate. Server-side backend time is available only as a diagnostic, never substitutes for client time. The previous round's B route now also uses the same isolated `babymemo-ip-lab` worker so that the benchmark has consistent scoped CORS. A later test will be required for multi-megabyte video Range reads and upload performance.

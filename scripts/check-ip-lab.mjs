@@ -16,13 +16,18 @@ async function check({name,host,ip}){
  const row={name,host,ip,dns:[],dnsMatch:false,d1:null,r2:null,colo:null,errors:[]};
  try{row.dns=await dns.resolve4(host);row.dnsMatch=!ip||row.dns.includes(ip)}
  catch(e){row.errors.push('DNS '+(e.code||e.name))}
- for(const kind of ['d1','r2']){
+ for(const kind of ['d1','r2','media']){
   const start=performance.now();
   try{
    const resp=await fetch('https://'+host+'/probe/'+kind+'/enam',{headers:{Origin:origin},signal:AbortSignal.timeout(11000),cache:'no-store'});
-   const payload=await resp.json().catch(()=>null);
    const cors=resp.headers.get('access-control-allow-origin')===origin;
-   row[kind]={ok:resp.ok&&payload?.ok===true&&cors&&payload.kind===kind&&payload.region==='enam',status:resp.status,ms:Math.round(performance.now()-start),cors,colo:payload?.colo||null};
+   if(kind==='media'){
+    const bytes=(await resp.arrayBuffer()).byteLength;
+    row[kind]={ok:resp.ok&&cors&&bytes===262144,status:resp.status,ms:Math.round(performance.now()-start),cors,bytes,colo:resp.headers.get('x-probe-colo')||null};
+   }else{
+    const payload=await resp.json().catch(()=>null);
+    row[kind]={ok:resp.ok&&payload?.ok===true&&cors&&payload.kind===kind&&payload.region==='enam',status:resp.status,ms:Math.round(performance.now()-start),cors,colo:payload?.colo||null};
+   }
   }catch(e){row[kind]={ok:false,error:e.name||'UNKNOWN'}}
  }
  try{
@@ -35,14 +40,14 @@ async function check({name,host,ip}){
 const results=await Promise.all(hosts.map(check));
 for(const entry of results)console.log(JSON.stringify(entry));
 const baseline=results[0];
-if(!baseline.d1?.ok||!baseline.r2?.ok)process.exitCode=1;
-const valid=results.filter(r=>r.ip&&r.d1?.ok&&r.r2?.ok);
+if(!baseline.d1?.ok||!baseline.r2?.ok||!baseline.media?.ok)process.exitCode=1;
+const valid=results.filter(r=>r.ip&&r.d1?.ok&&r.r2?.ok&&r.media?.ok);
 console.log('WORKING_CANDIDATES='+valid.length+'/'+(results.length-1));
 console.log('NOTE: GitHub runner is not a China mainland ISP; these are compatibility checks only.');
 if(process.env.GITHUB_STEP_SUMMARY){
  const summary=['## BabyMemo 优选入口第二轮：公网兼容性','',
- '| 入口 | DNS | D1 | R2 | Cloudflare 节点 |','|---|---|---|---|---|',
- ...results.map(r=>[r.name,r.dnsMatch?'OK':'NO',r.d1?.ok?'OK':r.d1?.status||'FAIL',r.r2?.ok?'OK':r.r2?.status||'FAIL',r.colo||'—'].join(' | ').replace(/^/,'| ').replace(/$/,' |')),
+ '| 入口 | DNS | D1 | R2 | 256KB 合成媒体 | Cloudflare 节点 |','|---|---|---|---|---|',
+ ...results.map(r=>[r.name,r.dnsMatch?'OK':'NO',r.d1?.ok?'OK':r.d1?.status||'FAIL',r.r2?.ok?'OK':r.r2?.status||'FAIL',r.media?.ok?'OK':r.media?.status||'FAIL',r.colo||'—'].join(' | ').replace(/^/,'| ').replace(/$/,' |')),
  '','所有请求均为公开合成测试，不使用家庭资料。GitHub Runner 的节点不代表大陆手机路由。'];
  await (await import('node:fs/promises')).appendFile(process.env.GITHUB_STEP_SUMMARY,summary.join('\n'));
 }
