@@ -3,7 +3,7 @@
   "name": "babymemo-apac-copy",
   "main": "scripts/apac-copy-worker.mjs",
   "compatibility_date": "2026-10-12",
-  "workers_dev": true,
+  "workers_dev": false,
   "observability": {
     "enabled": true
   },
@@ -23,5 +23,23 @@
       "binding": "TARGET",
       "bucket_name": "babymemo-media-apac"
     }
-  ]
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "PIPE",
+        "queue": "babymemo-apac-copy"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "babymemo-apac-copy",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 3,
+        "max_concurrency": 1,
+        "retry_delay": 30
+      }
+    ]
+  }
 }
