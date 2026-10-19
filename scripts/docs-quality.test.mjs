@@ -75,3 +75,13 @@ test('CI-gated GitHub auto-deploy retains secrets and checks schema before migra
   assert.ok(file.includes('github.event.workflow_run.conclusion == \'success\''));
   assert.doesNotMatch(file,/wrangler d1 delete|wrangler r2 bucket delete/);
 });
+
+
+test('public Cloudflare guide avoids deployment identifiers',()=>{
+  const guide=readFileSync(join(root,'docs/CF-ACCELERATION.md'),'utf8');
+  assert.doesNotMatch(guide,/\b(?:\d{1,3}\.){3}\d{1,3}\b/,'Do not publish actual IPv4 addresses in public operational docs');
+  assert.doesNotMatch(guide,/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/i,'Do not publish D1 or other UUIDs');
+  assert.doesNotMatch(guide,/\b[0-9a-f]{32}\b/i,'Do not publish infrastructure resource identifiers');
+  assert.doesNotMatch(guide,/\b(?:[a-z0-9-]+\.)*\d{8}\.(?:space|com|net|xyz)\b/i,
+    'Do not publish private instance hostnames in the generic acceleration guide');
+});
