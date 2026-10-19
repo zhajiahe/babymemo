@@ -62,7 +62,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
   const description=uploadDescription.trim();
   const mobile=window.matchMedia('(pointer:coarse)').matches;
   const policy=transferConcurrency(mobile,files.length);
-  let saved=0,failedFiles=0;
+  let saved=0,failedFiles=0,queuedDerivatives=0,updatedDerivatives=0;
   const report=(stage:'client'|'thumbnail',size:number,startedAt:number,status:'ok'|'error')=>{
    void post('/api/upload/metrics',{stage,size,durationMs:Math.round(performance.now()-startedAt),status}).catch(()=>{});
   };
@@ -73,6 +73,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
    // Serialize decoding across batches to avoid exhausting iPhone Safari memory.
    const queueThumbnail=(file:File,mime:string,id:string)=>{
     if(!mime.startsWith('image/')&&!mime.startsWith('video/'))return;
+    queuedDerivatives++;
     thumbnailTail.current=thumbnailTail.current.catch(()=>{}).then(async()=>{
      const previewStarted=performance.now();
      try{
@@ -83,7 +84,7 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
        return;
       }
       await api('/api/media/'+id+'/thumbnail',{method:'PUT',body:thumb,headers:{'Content-Type':'image/jpeg'}});
-      changed();
+      updatedDerivatives++;
       report('thumbnail',file.size,previewStarted,'ok');
      }catch{report('thumbnail',file.size,previewStarted,'error');notify('原文件已保存，但预览图暂不可用；视频可在预览中补设封面。')}
     });
@@ -176,7 +177,6 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
      saved++;
      const seconds=Math.max(0.001,(performance.now()-fileStarted)/1000);
      setProgress('已保存 '+saved+'/'+files.length+' · '+(file.size/1048576/seconds).toFixed(1)+' MiB/s');
-     changed();
      notify('已保存 '+file.name);
      queueThumbnail(file,mime,completedId);
      report('client',file.size,fileStarted,'ok');
@@ -191,7 +191,9 @@ export function Album({baby,media,mediaEdited,changed,notify,hasMore,page,setPag
    });
    if(failedFiles||results.some(x=>x.status==='rejected'))notify('有 '+(failedFiles+results.filter(x=>x.status==='rejected').length)+' 个文件未完成，可重新选择文件重试');
    if(navigator.onLine)await refreshPending();
+   // One list/state reconciliation per upload batch, and at most one after covers.
    changed();
+   if(queuedDerivatives)void thumbnailTail.current.then(()=>{if(updatedDerivatives)changed()}).catch(()=>{});
    if(!failedFiles&&!results.some(x=>x.status==='rejected')){
     setUploadDescription('');
     uploadDateTouched.current=false;

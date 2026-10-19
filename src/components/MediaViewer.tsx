@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Download, Save, X, Trash2 } from 'lucide-rea
 import {saveMediaOffline} from '../offline';
 import {createAlbumThumbnail,createVideoFrameThumbnail} from '../media-upload';
 import {api} from '../lib/client';
+import {trackExperience} from '../client-performance';
 import {mediaThumbnailUrl} from '../private-media-cache.mjs';
 import {Button,IconButton,StatusMessage,ModalDialog} from './ui';
 
@@ -37,6 +38,7 @@ export function MediaViewer({ item, index, count, neighbors=[], onNavigate, onCl
   const videoRef=useRef<HTMLVideoElement>(null);
   const touchStart = useRef<{x:number;y:number}|null>(null);
   const preloadedThumbnails=useRef<HTMLImageElement[]>([]);
+  const imageOpenAt=useRef(performance.now());
   const [day, setDay] = useState(()=>mediaDraft(item).day||item.day);
   const [description,setDescription]=useState<string>(()=>mediaDraft(item).description??item.description??'');
   const [version,setVersion]=useState(()=>mediaDraft(item).version??item.updated_at??'');
@@ -57,6 +59,7 @@ export function MediaViewer({ item, index, count, neighbors=[], onNavigate, onCl
     return () => { if (dialog?.open) dialog.close(); };
   }, []);
   useEffect(() => {
+    imageOpenAt.current=performance.now();
     const draft=mediaDraft(item);setDay(draft.day||item.day);setDescription(draft.description??item.description??'');setVersion(draft.version??item.updated_at??'');setRequestId(draft.requestId||crypto.randomUUID());setDraftId(item.id);
     setError('');setCoverMessage('');setEditing(false);
   }, [item.id]);
@@ -151,7 +154,7 @@ export function MediaViewer({ item, index, count, neighbors=[], onNavigate, onCl
             : <>
               {currentImageStatus!=='ready'&&<div className="media-poster-preview" aria-hidden="true" style={{backgroundImage:'url("'+mediaThumbnailUrl(item)+'")'}}/>}
               {currentImageStatus==='loading'&&<span className="media-loading" role="status">高清照片加载中…</span>}
-              <img key={item.id} src={src} alt="成长照片" draggable={false} className={currentImageStatus==='error'?'media-image-error':undefined} onLoad={()=>setImageStatus({id:item.id,status:'ready'})} onError={()=>setImageStatus({id:item.id,status:'error'})}/>
+              <img key={item.id} src={src} alt="成长照片" draggable={false} className={currentImageStatus==='error'?'media-image-error':undefined} onLoad={()=>{setImageStatus({id:item.id,status:'ready'});trackExperience('photo_ready',performance.now()-imageOpenAt.current)}} onError={()=>setImageStatus({id:item.id,status:'error'})}/>
               {currentImageStatus==='error'&&<span className="media-loading" role="alert">高清照片暂时无法加载，当前显示预览图</span>}
               {currentImageStatus==='ready'&&count>1&&<span className="media-swipe-hint" aria-hidden="true">左右滑动切换</span>}
             </>}
