@@ -51,3 +51,21 @@ if(process.env.GITHUB_STEP_SUMMARY){
  '','所有请求均为公开合成测试，不使用家庭资料。GitHub Runner 的节点不代表大陆手机路由。'];
  await (await import('node:fs/promises')).appendFile(process.env.GITHUB_STEP_SUMMARY,summary.join('\n'));
 }
+
+const focused=results.filter(x=>['baseline','JP-1','SG-2'].includes(x.name));
+let largeOk=0;
+for(const item of focused){
+ for(const type of ['full','range']){
+  const url='https://'+item.host+'/probe/large/'+type+'/enam';
+  const opts={headers:{Origin:origin,...(type==='range'?{Range:'bytes=0-262143'}:{})},cache:'no-store',signal:AbortSignal.timeout(25000)};
+  try{
+   const r=await fetch(url,opts);
+   const size=(await r.arrayBuffer()).byteLength;
+   const ok=r.status===(type==='range'?206:200)&&size===(type==='range'?262144:2097152)&&r.headers.get('access-control-allow-origin')===origin&&(type!=='range'||r.headers.get('content-range')==='bytes 0-262143/2097152');
+   if(ok)largeOk++;
+   console.log(JSON.stringify({mediaHost:item.host,type,status:r.status,bytes:size,ok,colo:r.headers.get('x-probe-colo')}));
+  }catch(e){console.log(JSON.stringify({mediaHost:item.host,type,ok:false,error:e.name||'UNKNOWN'}))}
+ }
+}
+console.log('LARGE_AND_RANGE_OK='+largeOk+'/6');
+if(largeOk!==6)process.exitCode=1;

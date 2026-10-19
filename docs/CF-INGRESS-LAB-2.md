@@ -39,3 +39,19 @@ Sources: https://github.com/LancelotRar/best-cf-ips/blob/main/best-cf-ip-scanned
 
 ## Synthetic media test
 Each run also transfers a dedicated 262,144-byte ASCII test object from the ENAM R2 bucket and verifies the exact returned length; it is not a family video/photo. The benchmark weights client media time twice as heavily as the D1 and small-R2 operations when highlighting a candidate. Server-side backend time is available only as a diagnostic, never substitutes for client time. The previous round's B route now also uses the same isolated `babymemo-ip-lab` worker so that the benchmark has consistent scoped CORS. A later test will be required for multi-megabyte video Range reads and upload performance.
+
+## Fourth-round photo-size and video Range experiment
+
+The user reported third-round China cellular results (2026-10-19):
+baseline LHR D1 477ms / R2 498ms / 256KB 1533ms / media P90 1859ms (0/18 failed);
+JP-1 NRT D1 312ms / R2 340ms / 256KB 555ms / media P90 623ms (0/18);
+SG-2 SIN D1 544ms / R2 592ms / 256KB 1014ms (0/18);
+US-1 LAX media 2002ms (0/18), a deterioration from earlier 904ms.
+
+**JP-1 leads on median and tail latency in the third round**, but one JP request failed in the second round (combined 1/27). No production change until replicated and full-size video and photo delivery compatibility is proven.
+
+Page https://bm-ip-lab.20250530.space/?media=1 tests baseline, JP-1, and SG-2 only. Four passes of 2MiB full GET and 256KiB byte-range GET with Range request header (24 requests, ~27MiB traffic), reporting full transfer median, P90, Range median, failure count and colo. The file is deterministic synthetic data under R2 `__benchmark__/photo-2m-v1.bin`, not a family file. Reads have no-store and per-request unique query parameters. Only ENAM production-region R2 is queried; APAC remains a separate candidate not cut over. No family login/cookie or private media endpoint is exposed.
+
+Range: the server must return 206, exactly 262,144 bytes, and `Content-Range: bytes 0-262143/2097152`. CORS is narrowly limited to the `bm-ip-lab` origin; OPTIONS preflight allows GET with Range. A simulated 2MiB payload is not a complete video-seeking or playback proof; later test actual codec and multirange support on isolated authorized application preview resources.
+
+Decision criteria: repeated independent times (evening + different time) on the same carrier with zero or negligible failures, meaningful media p90 advantage, and login/WeChat/HTTP3/upload/Range preview verification. Do not repoint the production domain before these checks.
