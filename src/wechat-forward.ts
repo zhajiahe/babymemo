@@ -13,7 +13,7 @@ export interface WechatItem {
  image_item?:{media?:WechatCDNMedia;aeskey?:string;aes_key?:string};
  video_item?:{media?:WechatCDNMedia};
  file_item?:{media?:WechatCDNMedia;file_name?:string};
- ref_msg?:{title?:string;message_item?:WechatItem};
+ ref_msg?:{title?:string;message_id?:string;msg_id?:string;message_item?:WechatItem};
  item_list?:WechatItem[];
  forwarded_messages?:WechatForwardEntry[];
  forwarded_msgs?:WechatForwardEntry[];
@@ -29,6 +29,7 @@ export interface WechatIncoming {
 export interface ParsedWechatIncoming {
  text:string; outerText:string; media:WechatItem[];
  hasVoice:boolean; missingVoice:boolean; forwarded:boolean;
+ quoted:boolean; quotedText:string; quotedMessageId:string|null; quotedMediaKind:'image'|'video'|null;
  missingMedia:number; limited:boolean;
 }
 const MAX_ITEMS=64, MAX_DEPTH=5, MAX_TEXT=3000, MAX_XML=60000;
@@ -62,11 +63,15 @@ function extractRecordXml(input:string):{lines:string[];missingMedia:number}|nul
 }
 export function parseWechatIncoming(input:unknown):ParsedWechatIncoming{
  const root=asRecord(input);
- const lines:string[]=[], media:WechatItem[]=[],outer:string[]=[];
- let count=0,missingVoice=false,hasVoice=false,forwarded=false,missingMedia=0,limited=false;
+ const lines:string[]=[],quotedLines:string[]=[],media:WechatItem[]=[],outer:string[]=[];
+ let count=0,missingVoice=false,hasVoice=false,forwarded=false,quoted=false,missingMedia=0,limited=false;
+ let quotedMessageId:string|null=null,quotedMediaKind:'image'|'video'|null=null;
  const seen=new WeakSet<object>();
- const add=(text:string,label='')=>{if(!text)return;lines.push(clip((label?label+'：':'')+text,1200))};
- function visitItem(value:unknown,depth:number,label='',isOuter=false):void{
+ const add=(value:string,label='',isQuote=false)=>{
+  if(!value)return;
+  (isQuote?quotedLines:lines).push(clip((label?label+'：':'')+value,1200));
+ };
+ function visitItem(value:unknown,depth:number,label='',isOuter=false,isQuote=false):void{
   if(depth>MAX_DEPTH||count++>=MAX_ITEMS){limited=true;return}
   const item=asRecord(value);if(!item||seen.has(item))return;
   seen.add(item);
@@ -74,52 +79,67 @@ export function parseWechatIncoming(input:unknown):ParsedWechatIncoming{
   if(type===1){
    const raw=stringValue(asRecord(item.text_item)?.text);
    const xml=extractRecordXml(raw);
-   if(xml){forwarded=true;xml.lines.forEach(s=>add(s,label));missingMedia+=xml.missingMedia}
-   else if(raw){add(raw,label);if(isOuter)outer.push(raw)}
+   if(xml){if(!isQuote)forwarded=true;xml.lines.forEach(s=>add(s,label,isQuote));missingMedia+=xml.missingMedia}
+   else if(raw){add(raw,label,isQuote);if(isOuter&&!isQuote)outer.push(raw)}
   }else if(type===3){
-   hasVoice=true;
+   if(!isQuote)hasVoice=true;
    const transcript=stringValue(asRecord(item.voice_item)?.text);
-   if(transcript)add('[语音转写] '+transcript,label);
-   else {missingVoice=true;add('[语音未附文字转写，无法读取音频内容]',label)}
+   if(transcript)add('[语音转写] '+transcript,label,isQuote);
+   else {if(!isQuote)missingVoice=true;add('[语音未附文字转写，无法读取音频内容]',label,isQuote)}
   }else if(type===2||type===5){
    const body=asRecord(type===2?item.image_item:item.video_item);
+   if(isQuote&&quotedMediaKind===null)quotedMediaKind=type===2?'image':'video';
    if(body&&asRecord(body.media)){
-    media.push(item as WechatItem);
-    add(type===2?'[图片，可保存至家庭相册]':'[视频，可保存至家庭相册]',label);
-   }else {missingMedia++;add(type===2?'[图片原件未提供]':'[视频原件未提供]',label)}
+    // A quoted attachment is historical evidence, never a new upload.
+    if(!isQuote)media.push(item as WechatItem);
+    add(type===2?(isQuote?'[引用图片]':'[图片，可保存至家庭相册]'):(isQuote?'[引用视频]':'[视频，可保存至家庭相册]'),label,isQuote);
+   }else {if(!isQuote)missingMedia++;add(type===2?'[图片原件未提供]':'[视频原件未提供]',label,isQuote)}
   }else if(type===4){
    const file=asRecord(item.file_item);
-   add('[文件'+(stringValue(file?.file_name)?'：'+clip(stringValue(file?.file_name),100):'')+'；内容不可直接读取]',label);
-   missingMedia++;
+   add('[文件'+(stringValue(file?.file_name)?'：'+clip(stringValue(file?.file_name),100):'')+'；内容不可直接读取]',label,isQuote);
+   if(!isQuote)missingMedia++;
   }
   const reference=asRecord(item.ref_msg);
   if(reference){
-   forwarded=true;
-   if(reference.message_item)visitItem(reference.message_item,depth+1,'引用');
-   else add('[引用消息只提供摘要'+(stringValue(reference.title)?'：'+clip(stringValue(reference.title),100):'')+']');
+   quoted=true;
+   if(!isQuote){
+    const refId=stringValue(reference.message_id)||stringValue(reference.msg_id);
+    // Only platform-shaped IDs may be used as lookup hints; never trust quoted text as an ID.
+    if(refId&&refId.length<=128&&/^[\w:.-]+$/.test(refId))quotedMessageId=refId;
+   }
+   if(stringValue(reference.title))add('[引用消息摘要：'+clip(stringValue(reference.title),100)+']','',true);
+   if(reference.message_item)visitItem(reference.message_item,depth+1,'引用',false,true);
+   else add('[引用消息只提供摘要'+(stringValue(reference.title)?'：'+clip(stringValue(reference.title),100):'')+']','',true);
   }
-  if(asArray(item.item_list).length){forwarded=true;for(const nested of asArray(item.item_list))visitItem(nested,depth+1,label)}
+  if(asArray(item.item_list).length){
+   if(!isQuote)forwarded=true;
+   for(const nested of asArray(item.item_list))visitItem(nested,depth+1,label,false,isQuote);
+  }
   for(const key of ['forwarded_messages','forwarded_msgs'] as const){
-   if(asArray(item[key]).length){forwarded=true;for(const entry of asArray(item[key]))visitEntry(entry,depth+1)}
+   if(asArray(item[key]).length){
+    if(!isQuote)forwarded=true;
+    for(const entry of asArray(item[key]))visitEntry(entry,depth+1,isQuote);
+   }
   }
  }
- function visitEntry(value:unknown,depth:number):void{
+ function visitEntry(value:unknown,depth:number,isQuote=false):void{
   if(depth>MAX_DEPTH||count++>=MAX_ITEMS){limited=true;return}
   const entry=asRecord(value);if(!entry||seen.has(entry))return;
   seen.add(entry);
-  forwarded=true;
+  if(!isQuote)forwarded=true;
   const label=clip(stringValue(entry.name)||stringValue(entry.sender)||stringValue(entry.nickname)||stringValue(entry.from_user_name),60);
-  if(entry.message_item)visitItem(entry.message_item,depth+1,label);
-  for(const item of asArray(entry.item_list))visitItem(item,depth+1,label);
-  for(const nested of asArray(entry.forwarded_messages))visitEntry(nested,depth+1);
+  if(entry.message_item)visitItem(entry.message_item,depth+1,label,false,isQuote);
+  for(const item of asArray(entry.item_list))visitItem(item,depth+1,label,false,isQuote);
+  for(const nested of asArray(entry.forwarded_messages))visitEntry(nested,depth+1,isQuote);
  }
  for(const item of asArray(root?.item_list))visitItem(item,0,'',true);
  for(const entry of asArray(root?.forwarded_messages))visitEntry(entry,0);
  for(const entry of asArray(root?.forwarded_msgs))visitEntry(entry,0);
- // We intentionally omit raw encrypted CDN parameters, access keys and user IDs.
- const text=clip(lines.join('\n'));
- if(lines.join('\n').length>MAX_TEXT)limited=true;
- return {text,outerText:clip(outer.join('\n'),500),media,hasVoice,missingVoice,forwarded,missingMedia,limited};
+ // Never expose AES keys, encrypted CDN parameters, access URLs or user IDs.
+ const text=clip(lines.join('\n')),quotedText=clip(quotedLines.join('\n'),1200);
+ if(lines.join('\n').length>MAX_TEXT||quotedLines.join('\n').length>1200)limited=true;
+ return {text,outerText:clip(outer.join('\n'),500),media,hasVoice,missingVoice,forwarded,quoted,quotedText,
+  quotedMessageId,quotedMediaKind,missingMedia,limited};
 }
 /** Normalized media item_list reuses the existing bounded, encrypted R2 queue. */
 export function normalizedWechatMediaEnvelope(raw:Record<string,unknown>,parsed:ParsedWechatIncoming):Record<string,unknown>{
