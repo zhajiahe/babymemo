@@ -84,6 +84,11 @@ export default function App(){
   };
  },[]);
  const refreshSequence=useRef(0);
+ const pageCursors=useRef<{growth:string[];moments:string[];album:string[]}>({growth:[''],moments:[''],album:['']});
+ const pageArg=(kind:'growth'|'moments'|'album',page:number)=>{
+  const cursor=pageCursors.current[kind][page];
+  return cursor?'&cursor='+encodeURIComponent(cursor):'&page='+page;
+ };
  const [growthFilters,setGrowthFilters]=useState<RecordFilters>(emptyFilters),[momentFilters,setMomentFilters]=useState<RecordFilters>(emptyFilters),[albumFilters,setAlbumFilters]=useState<RecordFilters>(emptyFilters);
  useEffect(()=>{localStorage.setItem('babymemo-view',active);localStorage.setItem('babymemo-baby',babyId)},[active,babyId]);
   // A new tab begins at its top, like iPhone tab navigation.
@@ -157,20 +162,20 @@ export default function App(){
   const loads:Promise<void>[]=[];
   const loadStarted=performance.now();
   if(active==='overview'||active==='growth'){
-   loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/growth?babyId='+id+'&page='+(active==='overview'?0:growthPage)+(active==='overview'?'':filterQuery(growthFilters)))
-    .then(r=>{if(!cancelled){setRecords(r.items);setHasMore(p=>({...p,growth:r.hasMore}))}}));
+   loads.push(api<{items:RecordItem[];hasMore:boolean;nextCursor?:string}>('/api/records/growth?babyId='+id+(active==='overview'?'&page=0':pageArg('growth',growthPage))+(active==='overview'?'':filterQuery(growthFilters)))
+    .then(r=>{if(!cancelled){setRecords(r.items);setHasMore(p=>({...p,growth:r.hasMore}));if(active==='growth'&&r.nextCursor)pageCursors.current.growth[growthPage+1]=r.nextCursor}}));
   }
   if(active==='overview'||active==='moments'){
-   loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/milestones?babyId='+id+'&page='+(active==='overview'?0:momentPage)+(active==='overview'?'':filterQuery(momentFilters)))
-    .then(r=>{if(!cancelled){setMilestones(r.items);setHasMore(p=>({...p,moments:r.hasMore}))}}));
+   loads.push(api<{items:RecordItem[];hasMore:boolean;nextCursor?:string}>('/api/records/milestones?babyId='+id+(active==='overview'?'&page=0':pageArg('moments',momentPage))+(active==='overview'?'':filterQuery(momentFilters)))
+    .then(r=>{if(!cancelled){setMilestones(r.items);setHasMore(p=>({...p,moments:r.hasMore}));if(active==='moments'&&r.nextCursor)pageCursors.current.moments[momentPage+1]=r.nextCursor}}));
   }
   if(active==='overview'||active==='growth'){
    loads.push(api<{items:RecordItem[];limited:boolean}>('/api/growth/history?babyId='+id)
     .then(r=>{if(!cancelled){setGrowthHistory(r.items);setHistoryLimited(r.limited)}}));
   }
   if(active==='overview'||active==='album'){
-   loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+(active==='overview'?0:albumPage)+(active==='overview'?'':filterQuery(albumFilters)))
-    .then(r=>{if(!cancelled){setMedia(r.items);setHasMore(p=>({...p,album:r.hasMore}))}}));
+   loads.push(api<{items:MediaItem[];hasMore:boolean;nextCursor?:string}>('/api/media?babyId='+id+(active==='overview'?'&page=0':pageArg('album',albumPage))+(active==='overview'?'':filterQuery(albumFilters)))
+    .then(r=>{if(!cancelled){setMedia(r.items);setHasMore(p=>({...p,album:r.hasMore}));if(active==='album'&&r.nextCursor)pageCursors.current.album[albumPage+1]=r.nextCursor}}));
   }
   void Promise.all(loads).then(()=>{if(!cancelled&&loads.length)trackExperience('view_data',performance.now()-loadStarted)}).catch(e=>{if(!cancelled)setToast(e instanceof Error?e.message:'数据读取失败')});
   return ()=>{cancelled=true};
