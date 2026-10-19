@@ -20,7 +20,9 @@ test('single-page mobile dashboard contains valid inline JavaScript, no external
  const source=html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
  assert.ok(source,'missing inline application script');
  assert.doesNotThrow(()=>new Script(source));
- assert.equal((source.match(/bm-lab-[sju]\d\.20250530\.space/g)||[]).length,6);
+ const candidateDefinitions=source.split('const candidates=[')[1]?.split('];')[0]||'';
+ assert.equal((candidateDefinitions.match(/bm-lab-[sju]\d\.20250530\.space/g)||[]).length,6);
+ assert.match(source,/const rounds=focused\?6:3/);
 });
 test('media test only returns synthetic bytes with exact origin-scoped CORS',async()=>{
  const resp=await lab.fetch(new Request('https://bm-lab-s1.20250530.space/probe/media/enam',{headers:{Origin:origin}}),makeEnv());
