@@ -7,16 +7,18 @@ import {mediaThumbnailUrl} from './private-media-cache.mjs';
 import {api,post,ApiFailure,today,type State,type Tab,type RecordItem} from './lib/client';
 import {RecordView,GrowthChart} from './features/growth/RecordView';
 import {ageLabel} from './lib/age.mjs';
-import {Album} from './features/album/Album';
-import {Settings} from './features/settings/Settings';
+import {trackExperience} from './client-performance';
+
 import {ThemeSelector} from './components/ThemeSelector';
-import { useEffect, useState, useRef, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, useRef, type FormEvent, type ReactNode } from 'react';
 import { Button, Card, Field, Logo, Notice, Pager, Primary } from './components/ui';
-import { MediaViewer, type MediaItem } from './components/MediaViewer';
+import type { MediaItem } from './components/MediaViewer';
 import { createAlbumThumbnail, createStoredThumbnail, createVideoThumbnail, fingerprintFile } from './media-upload';
 import { pickMatchingUpload, remainingPartNumbers } from './upload-plan.mjs';
 import { Baby, BookHeart, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, CloudUpload, Heart, LogOut, MessageCircle, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Play, Trash2, TrendingUp, WandSparkles, Wifi, WifiOff } from 'lucide-react';
 
+const Album=lazy(()=>import('./features/album/Album').then(m=>({default:m.Album})));
+const Settings=lazy(()=>import('./features/settings/Settings').then(m=>({default:m.Settings})));
 function Gate({onReady}:{onReady:()=>void}){
  const [mode,setMode]=useState<'loading'|'setup'|'login'|'unavailable'>('loading');
  const [ready,setReady]=useState({sessionConfigured:false,encryptionConfigured:false});
@@ -94,7 +96,7 @@ export default function App(){
  const baby=state?.babies.find(b=>b.id===babyId)||state?.babies[0];
  async function refresh(){
   const sequence=++refreshSequence.current;
-  try{const v=await api<State>('/api/state');if(sequence!==refreshSequence.current)return;setState(v);setBabyId(old=>old&&v.babies.some(x=>x.id===old)?old:(v.babies[0]?.id||''));setMode('app');setRevision(value=>value+1);}
+  try{const v=await api<State>('/api/state');if(sequence!==refreshSequence.current)return;setState(v);setBabyId(old=>old&&v.babies.some(x=>x.id===old)?old:(v.babies[0]?.id||''));setMode('app');}
   catch(e){if(sequence!==refreshSequence.current)return;if(e instanceof ApiFailure&&e.status===401){setMode('gate');setState(null);}else{setToast('连接暂时中断，已保留当前页面。请检查网络并重试。');setMode(old=>old==='loading'?'unavailable':old);}}
  }
  useEffect(()=>{refresh();const wake=()=>{if(document.visibilityState==='visible')void refresh()};window.addEventListener('focus',wake);document.addEventListener('visibilitychange',wake);return()=>{window.removeEventListener('focus',wake);document.removeEventListener('visibilitychange',wake)}},[]);
@@ -114,12 +116,14 @@ export default function App(){
    finally{checking=false}
   };
   void check();
-  const timer=window.setInterval(()=>void check(),12000);
+  const timer=window.setInterval(()=>void check(),45000);
   const wake=()=>void check();
   window.addEventListener('online',wake);
+  window.addEventListener('focus',wake);
   document.addEventListener('visibilitychange',wake);
-  return()=>{stopped=true;window.clearInterval(timer);window.removeEventListener('online',wake);document.removeEventListener('visibilitychange',wake)};
+  return()=>{stopped=true;window.clearInterval(timer);window.removeEventListener('online',wake);window.removeEventListener('focus',wake);document.removeEventListener('visibilitychange',wake)};
  },[mode,active,baby?.id]);
+ useEffect(()=>{if(mode==='app')trackExperience('app_ready',performance.now())},[mode]);
  // Resume only jobs explicitly started by the user on this device.
  useEffect(()=>{if(mode==='app'&&state)resumeThumbnailRepair(state.babies.map(item=>item.id))},[mode,state]);
  // Best-effort automatic poster repair for WeChat videos lacking CDN thumbnails.
@@ -151,6 +155,7 @@ export default function App(){
   let cancelled=false;
   const id=encodeURIComponent(baby.id);
   const loads:Promise<void>[]=[];
+  const loadStarted=performance.now();
   if(active==='overview'||active==='growth'){
    loads.push(api<{items:RecordItem[];hasMore:boolean}>('/api/records/growth?babyId='+id+'&page='+(active==='overview'?0:growthPage)+(active==='overview'?'':filterQuery(growthFilters)))
     .then(r=>{if(!cancelled){setRecords(r.items);setHasMore(p=>({...p,growth:r.hasMore}))}}));
@@ -167,7 +172,7 @@ export default function App(){
    loads.push(api<{items:MediaItem[];hasMore:boolean}>('/api/media?babyId='+id+'&page='+(active==='overview'?0:albumPage)+(active==='overview'?'':filterQuery(albumFilters)))
     .then(r=>{if(!cancelled){setMedia(r.items);setHasMore(p=>({...p,album:r.hasMore}))}}));
   }
-  void Promise.all(loads).catch(e=>{if(!cancelled)setToast(e instanceof Error?e.message:'数据读取失败')});
+  void Promise.all(loads).then(()=>{if(!cancelled&&loads.length)trackExperience('view_data',performance.now()-loadStarted)}).catch(e=>{if(!cancelled)setToast(e instanceof Error?e.message:'数据读取失败')});
   return ()=>{cancelled=true};
  },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media,revision,growthFilters,momentFilters,albumFilters]);
  function changed(){setRevision(value=>value+1);void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
@@ -223,8 +228,8 @@ export default function App(){
  </div>}
  {active==='growth'&&<RecordView key={'growth-'+baby.id} baby={baby} kind="growth" items={records} history={growthHistory} historyLimited={historyLimited} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage} filters={growthFilters} onFilters={value=>{setGrowthFilters(value);setGrowthPage(0)}}/>}
  {active==='moments'&&<RecordView key={'milestones-'+baby.id} baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage} filters={momentFilters} onFilters={value=>{setMomentFilters(value);setMomentPage(0)}}/>}
- {active==='album'&&<Album key={baby.id} baby={baby} media={media} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage} filters={albumFilters} onFilters={value=>{setAlbumFilters(value);setAlbumPage(0)}}/>}
- {active==='settings'&&<Settings key={baby.id} state={state} baby={baby} changed={changed} notify={setToast} onBabySelected={selectBaby} onBabyCreated={id=>{selectBaby(id);setActive('overview')}}/>}
+ {active==='album'&&<Suspense fallback={<div className="skeleton">正在打开相册…</div>}><Album key={baby.id} baby={baby} media={media} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage} filters={albumFilters} onFilters={value=>{setAlbumFilters(value);setAlbumPage(0)}}/></Suspense>}
+ {active==='settings'&&<Suspense fallback={<div className="skeleton">正在打开设置…</div>}><Settings key={baby.id} state={state} baby={baby} changed={changed} notify={setToast} onBabySelected={selectBaby} onBabyCreated={id=>{selectBaby(id);setActive('overview')}}/></Suspense>}
  
  </div></main>{toast&&<Notice text={toast} onClose={()=>setToast('')}/>}</div>;
 }
