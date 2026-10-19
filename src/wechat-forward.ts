@@ -106,6 +106,7 @@ export function parseWechatIncoming(input:unknown):ParsedWechatIncoming{
     // Only platform-shaped IDs may be used as lookup hints; never trust quoted text as an ID.
     if(refId&&refId.length<=128&&/^[\w:.-]+$/.test(refId))quotedMessageId=refId;
    }
+   if(stringValue(reference.title))add('[引用消息摘要：'+clip(stringValue(reference.title),100)+']','',true);
    if(reference.message_item)visitItem(reference.message_item,depth+1,'引用',false,true);
    else add('[引用消息只提供摘要'+(stringValue(reference.title)?'：'+clip(stringValue(reference.title),100):'')+']','',true);
   }
