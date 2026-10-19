@@ -13,7 +13,7 @@ export interface WechatItem {
  image_item?:{media?:WechatCDNMedia;aeskey?:string;aes_key?:string};
  video_item?:{media?:WechatCDNMedia};
  file_item?:{media?:WechatCDNMedia;file_name?:string};
- ref_msg?:{title?:string;message_item?:WechatItem};
+ ref_msg?:{title?:string;message_id?:string;msg_id?:string;message_item?:WechatItem};
  item_list?:WechatItem[];
  forwarded_messages?:WechatForwardEntry[];
  forwarded_msgs?:WechatForwardEntry[];
@@ -29,6 +29,7 @@ export interface WechatIncoming {
 export interface ParsedWechatIncoming {
  text:string; outerText:string; media:WechatItem[];
  hasVoice:boolean; missingVoice:boolean; forwarded:boolean;
+ quoted:boolean; quotedText:string; quotedMessageId:string|null; quotedMediaKind:'image'|'video'|null;
  missingMedia:number; limited:boolean;
 }
 const MAX_ITEMS=64, MAX_DEPTH=5, MAX_TEXT=3000, MAX_XML=60000;
