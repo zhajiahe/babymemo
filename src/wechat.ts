@@ -163,7 +163,22 @@ export async function handleWechatCommand(env:Env,text:string,messageId:string,t
     .bind(messageId,round,await encryptSecret(env,JSON.stringify(assistant)),new Date().toISOString()).run();
   },
   execute:async(call:any,stepOffset:number)=>{
-   if(forwarded&&/^(?:create_|update_|delete_|restore_)/.test(call.function?.name||''))return {content:'转发内容只能阅读，未修改家庭数据。',committed:false,halt:true};
+   const action=String(call.function?.name||'');
+   if(forwarded&&/^(?:create_|update_|delete_|restore_)/.test(action))return {content:'转发内容只能阅读，未修改家庭数据。',committed:false,halt:true};
+   if(quotedContext&&/^(?:create_|update_|delete_|restore_)/.test(action)){
+    // A quoted historical imperative cannot authorize a write. Check the current
+    // user's own message before accepting model-selected mutation tools.
+    if(!/(?:记录|记下|添加|新增|保存|设为|作为|用作|修改|更新|更正|调整|改成|改为|删掉|删除|恢复|撤销|补充|设置|写入|标注|编辑|替换)/.test(command))
+     return {content:'引用的历史内容不能直接授权修改。请明确说明要记录或修改什么。',committed:false,halt:true};
+    if(quoted?.quotedMediaKind&&['update_media','delete_media','update_recent_media'].includes(action)){
+     if(!quotedMedia)return {content:'无法通过微信引用定位唯一的已保存媒体；请提供相册中的记录编号或明确选择目标，未修改。',committed:false,halt:true};
+     let args:Record<string,unknown>={};
+     try{args=JSON.parse(call.function.arguments)}catch{return {content:'引用操作参数无效，未修改。',committed:false,halt:true}}
+     if(action==='update_recent_media'||typeof args.id!=='string'||!(
+      args.id===quotedMedia.id||args.id.length>=8&&quotedMedia.id.startsWith(args.id)))
+      return {content:'引用目标与所选媒体记录不一致，未修改。',committed:false,halt:true};
+    }
+   }
    const content=await runWechatPlan(env,baby,[call],{
     messageId,text:command,at,thread,stepOffset,referenceScope:messageScope,
     encryptReply:(value:string)=>encryptSecret(env,value),
