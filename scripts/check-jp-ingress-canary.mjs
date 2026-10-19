@@ -37,6 +37,11 @@ try{
  check('fixed-jp-ip',resolved.includes(ip),{resolved});
 }catch(e){check('fixed-jp-ip',false,{error:e.code||e.name})}
 
+try{
+ const prodDns=await dns.resolve4(current);
+ check('production-dns-switched-to-jp-ip',prodDns.length===1&&prodDns[0]===ip,{resolved:prodDns});
+}catch(e){check('production-dns-switched-to-jp-ip',false,{error:e.code||e.name})}
+
 for(const hostname of [current,host]){
  const tag=hostname===current?'production':'canary';
  try{
@@ -84,6 +89,29 @@ try{
  check('canary-csrf-origin-denied',response.status===403&&!response.setCookie,{
   status:response.status,issuedCookie:!!response.setCookie});
 }catch(e){check('canary-csrf-origin-denied',false,{error:e.name||'unknown'})}
+// After cutover the real hostname must behave like the canary, not only the fallback route.
+try{
+ const html=await request(current,'/');
+ check('production-app-landing',html.status===200&&/<html/i.test(html.body),{
+  status:html.status,bytes:html.body.length,contentType:html.contentType});
+ const assets=[...new Set([...html.body.matchAll(/(?:src|href)="(\\/assets\\/[^"]+)"/g)].map(x=>x[1]))].slice(0,2);
+ check('production-static-discovery',assets.length>0,{count:assets.length});
+ for(let i=0;i<assets.length;i++){
+  const res=await request(current,assets[i]);
+  check('production-static-'+i,res.status===200&&!res.contentType.includes('text/html'),{status:res.status,contentType:res.contentType});
+ }
+}catch(e){check('production-app-landing',false,{error:e.name||'unknown'})}
+for(const path of ['/api/state','/api/media']){
+ try{
+  const response=await request(current,path);
+  check('production-anonymous-denied-'+path,response.status===401&&!response.setCookie&&/no-store/i.test(response.cacheControl),{status:response.status});
+ }catch(e){check('production-anonymous-denied-'+path,false,{error:e.name||'unknown'})}
+}
+try{
+ const response=await request(current,'/api/login',{method:'POST',headers:{Origin:'https://cross-origin.invalid','Content-Type':'application/json'},body:'{}'});
+ check('production-origin-denied',response.status===403&&!response.setCookie,{status:response.status});
+}catch(e){check('production-origin-denied',false,{error:e.name||'unknown'})}
+
 console.log('SAFE_JP_CANARY_SMOKE='+rows.filter(x=>x.ok).length+'/'+rows.length);
 console.log('WARNING: Public read-only smoke only. No login, no private records, no writes, no mainland performance claim.');
 if(process.env.GITHUB_STEP_SUMMARY){
