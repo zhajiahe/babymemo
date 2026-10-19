@@ -1,51 +1,32 @@
 # Cloudflare 国内访问加速（可选）
 
-BabyMemo 默认通过 Cloudflare Workers 自定义域名接入。中国大陆不同运营商可能被 Anycast 分配到较远节点；**入口 IP 优选**可以改善某条线路的访问体验，但不保证固定进入东京或持续更快。大部分自托管用户无需启用。
+Cloudflare Workers 默认采用 Anycast。不同运营商可能被路由到距离较远的边缘节点。部分社区会尝试 **Cloudflare 优选 IP + DNS only + Workers Route**；这不是 Cloudflare 官方承诺支持的稳定部署方式，也不保证长期提速。
 
-> 本项目目前在 `baby.20250530.space` 采用社区实验性方案：Cloudflare 官方 IPv4 地址 + 灰云 DNS + Workers Route。这不是 Cloudflare 正式保证的标准接入方式。任何改动前先测试、备份当前 DNS / Route / Custom Domain 配置并备好回滚。
+本文仅提供自托管实例可复用的操作原则，**不收录任何真实家庭实例的域名、IP、资源 ID、测试日志或部署配置**。
 
-## 当前生产配置
+## 适用条件
 
-| 项目 | 配置 |
-| --- | --- |
-| 访问域名 | `baby.20250530.space` |
-| Cloudflare DNS | 灰云（DNS only）`A 172.64.229.191`，TTL 120 秒 |
-| Worker Route | `baby.20250530.space/*` → 原 `babymemo` Worker |
-| 预发布检查入口 | `bm-jp-canary.20250530.space`（同 IP，同 Worker；非独立数据环境） |
-| 存储与微信 | 保持原 ENAM D1 `babymemo`、R2 `babymemo-media`、DO / 微信连接及 Worker Secrets |
-| 证书 | Cloudflare 现有 Universal SSL 泛域名证书，变更后必须单独检查有效性 |
+先使用正常的 Workers Custom Domain。确有跨境访问性能问题，再在**独立、使用合成数据的测试环境**验证优选方案。候选 IP 必须来自 [Cloudflare 官方 IP 地址段](https://www.cloudflare.com/ips-v4)，不能使用不可信的第三方反向代理接触家庭照片或登录 Cookie。
 
-**只是网络入口切换**，不是应用、数据、照片或微信服务迁移。当前 Worker 仍保留相同身份验证和私有 R2 权限；不要在测试入口披露登录凭据。
+在同一客户端网络、不同时段、不同运营商进行对照：API 延迟、适当大小的合成媒体下载、视频 HTTP Range（`206` 与 `Content-Range`）、请求失败率，以及尾部延迟。观察 `/cdn-cgi/trace` 的 `colo` 字段即可，不需要保存或分享其 `ip` 字段。地理标记不等于实际网络延迟；固定 IP 也不会固定机房。
 
-## 验证是否值得优选
+## 仅供测试的配置结构
 
-1. 在目标中国大陆运营商的手机网络上，打开正式域名的 `/cdn-cgi/trace`，记录 `colo`、`http`；无需分享 `ip`。Cloudflare 节点不是物理位置，`colo` 也可能因线路、时间变化。
-2. **先新建隔离测试子域名**并绑定只读合成测速 Worker；候选 IP 必须属于 [Cloudflare 官方 IP 段](https://www.cloudflare.com/ips-v4)。不要直接使用第三方反代 IP 处理家庭媒体。
-3. 将原入口与候选入口在相同网络、不同时段对照：API 端到端延迟、2 MiB 合成媒体完整下载、HTTP Range（206 / `Content-Range`）、失败率与尾部延迟。少量样本的 P90 往往只是最大值，不能视为长期稳定性证明。
-4. 仅当媒体、API、错误率长期优于原入口，并且 HTTPS、登录 Cookie、上传与续传、私有媒体、视频拖动播放及微信行为验证通过，才考虑切换正式域名。
+```text
+您的测试子域名（不是正式家庭域名）
+  DNS only A → 从 Cloudflare 官方网段筛选并验证的候选 IP
+  Worker Route → 单独的、仅提供合成数据的测试 Worker
 
-历史实验及自动化校验见 [PR #113](https://github.com/zhajiahe/babymemo/pull/113) 和 [入口迁移 PR #114](https://github.com/zhajiahe/babymemo/pull/114)。其中 JP-1 候选曾在单条大陆移动网络上明显快于原入口，但也出现过超时；**优选效果不适用于所有用户或时段**。
+您的正式家庭域名
+  → 保持当前稳定的 Workers Custom Domain
+```
 
-## 正式入口运维
+先确认候选入口能完成 TLS 握手、Worker 调用、静态资源访问，并且在多次测试中明显优于基准。**绝不以公开生产数据或密码进行测速。** 使用独立测试数据验证 Cookie、安全头、跨站 Origin 拦截、上传、私有媒体权限与视频分段读取。微信回调使用模拟消息和测试凭据，勿连接真实微信账号。
 
-当前正式域名已经由 Workers **Custom Domain** 改成 **DNS-only A + Worker Route**，不是两种配置并存。更新 Worker 代码仍使用正常的 GitHub Actions / Wrangler 发布流程，不应重建 D1 / R2，也不应覆盖当前 DNS / Route；升级后必须重新检查路由。
+## 生产切换和回滚原则
 
-上线或变更后的最小检查：
+如管理员明确选择实验性生产入口，需先保存原 DNS、Workers Route、Custom Domain、证书与 Worker 绑定配置，再进行切换。**不要同时绑定冲突的 Custom Domain 和同名 Worker Route。** 切换后立刻检查 TLS、首页资源、`GET /api/health`、未登录私有 API 的 `401` 响应、跨站请求拦截以及经授权的正常功能。
 
-- `baby.20250530.space` 的 A 记录仍是 `172.64.229.191`、DNS only，且 `baby.20250530.space/*` 仍指向 `babymemo`。
-- 生产 HTTPS 证书有效；`GET /api/health` 为 200；主页 JS/CSS 可加载。
-- **未登录** `GET /api/state` / `GET /api/media` 返回 401；跨站 Origin 请求被拒绝。不要为了加速关闭鉴权、CORS 或 CSRF。
-- 真机确认登录、照片浏览、视频 Range、上传与微信连接正常。海外 CI 无法证明大陆运营商的实际网速。
-- 现有只读公网检查脚本：`node scripts/check-jp-ingress-canary.mjs`（针对本项目生产域名，勿在其他家庭实例照搬）；[GitHub Actions 执行记录](https://github.com/zhajiahe/babymemo/actions/runs/39337057309)。
+出现异常时，停止优选实验，仅撤销该正式域名的 DNS-only A 及对应 Worker Route，重新为**原 Worker**绑定原 Custom Domain；随后验证 HTTPS 和所有核心流程。**D1、R2、Durable Objects、微信连接、Secrets 都不是入口加速或回滚时应修改的对象。**
 
-## 故障回滚（恢复 Cloudflare 默认入口）
-
-出现大量 403、证书问题、连接超时、微信/媒体功能异常，或者自动部署导致路由消失时，**只恢复入口配置**：
-
-1. 在 Cloudflare 控制台核对账号与 `20250530.space` Zone，保留 `babymemo` Worker、Secrets、DO、D1、R2、微信配置。
-2. 删除 `baby.20250530.space/*` 的 **Worker Route**（不要误删 `bm-jp-canary` 路由）。
-3. 删除 `baby.20250530.space` 的灰云 `A 172.64.229.191`（不要删除其他域名的 DNS）。
-4. 重新给现有 `babymemo` Worker 绑定 **Custom Domain `baby.20250530.space`**，由 Cloudflare 自动恢复橙云占位 DNS（此前为 `AAAA 100::`）和证书路由。
-5. 检查 `/api/health`、未登录 401、正式 HTTPS 首页；在大陆手机网络下验证登录和媒体。DNS 缓存可能需要等待 TTL 刷新。
-
-切勿将 D1/R2 迁移或重建当成网络加速回滚手段。Cloudflare 官方标准路线参考：[Workers Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) 与 [Workers Routes](https://developers.cloudflare.com/workers/configuration/routing/routes/)。
+此方法适合能够接受额外维护与潜在中断风险的自托管管理员；一般部署继续使用官方的 [Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) 和 [Workers Routes](https://developers.cloudflare.com/workers/configuration/routing/routes/)。
