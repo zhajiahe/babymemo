@@ -21,6 +21,7 @@ const key=Buffer.from('000102030405060708090a0b0c0d0e0f','hex');
 const jpeg=Buffer.from([255,216,255,224,0,16,74,70,73,70,0,1,255,217]);
 let worker,log='',passed=0;
 let savedCaptionWeightRecordId='';
+let savedVideoRecordId='';
 const env={...process.env,XDG_CONFIG_HOME:join(dir,'config'),WRANGLER_SEND_METRICS:'false',CI:'true',BROWSER:'none'};
 const encrypt=bytes=>{const c=createCipheriv('aes-128-ecb',key,null);return Buffer.concat([c.update(bytes),c.final()]).toString('base64')};
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -441,7 +442,43 @@ try{
   assert.equal(r.models,0);
  });
  await step('iLink photo -> durable acceptance -> AES -> local R2/D1 -> final reply; duplicate ignored',async()=>{const r=await run({mode:'alarm',messages:[raw('photo-ok')],alarms:2,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 张照片/);assert.equal(r.media.length,1);assert.equal(r.downloads,1);assert.equal(r.sent,2);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:photo-ok').state,'done')});
- await step('9 MiB encrypted video streams through real R2 multipart',async()=>{const bytes=Buffer.alloc(9*1024*1024,1);bytes.writeUInt32BE(24,0);bytes.write('ftypisom',4);const r=await run({mode:'alarm',messages:[raw('video-ok',5)],encryptedBase64:encrypt(bytes),expectedSHA256:sha(bytes)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 段视频/);assert.equal(r.media.length,2);assert.equal(r.originalMatches,true);assert.equal(r.media.find(x=>x.mime==='video/mp4').size,bytes.length)});
+ await step('9 MiB encrypted video streams through real R2 multipart',async()=>{const bytes=Buffer.alloc(9*1024*1024,1);bytes.writeUInt32BE(24,0);bytes.write('ftypisom',4);const r=await run({mode:'alarm',messages:[raw('video-ok',5)],encryptedBase64:encrypt(bytes),expectedSHA256:sha(bytes)});assert.equal(r.error,undefined);assert.match(r.reply,/已保存.*1 段视频/);assert.equal(r.media.length,2);assert.equal(r.originalMatches,true);assert.equal(r.media.find(x=>x.mime==='video/mp4').size,bytes.length);savedVideoRecordId=r.media.find(x=>x.mime==='video/mp4').id});
+ await step('quoted WeChat video with verified source ID can update its caption without a second upload',async()=>{
+  assert.ok(savedVideoRecordId);
+  const message=textFrom('quote-video-edit','synthetic-user','synthetic-bot','把引用视频的描述改为小好在厨房玩耍');
+  message.item_list[0].ref_msg={title:'厨房小视频',message_id:'video-ok',message_item:{type:5,video_item:{media:{encrypt_query_param:'quoted-cdn',aes_key:'quoted-key'}}}};
+  const r=await run({mode:'alarm',messages:[message],responses:[
+   tool('update_media',{id:savedVideoRecordId,description:'小好在厨房玩耍'}),
+   natural('已经把视频描述改好了。')
+  ]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.status.lastProcessing.kind,'quote');
+  assert.equal(r.models,2);
+  assert.equal(r.downloads,0);
+  assert.match(r.reply,/描述改好了/);
+  assert.equal(r.media.filter(x=>x.id===savedVideoRecordId).length,1);
+  assert.equal(r.media.find(x=>x.id===savedVideoRecordId).description,'小好在厨房玩耍');
+  assert.equal(r.media.filter(x=>x.source_message_id?.includes('quote-video-edit')).length,0);
+  assert.ok(r.modelMessages[0].some(m=>m.content?.includes('verified_by_source_message_id')&&m.content.includes(savedVideoRecordId)));
+  assert.equal(r.modelMessages[0].at(-1).content,'把引用视频的描述改为小好在厨房玩耍');
+ });
+ await step('quoted instructions cannot authorize a media deletion when the current message only asks to read',async()=>{
+  const message=textFrom('quote-read-malicious','synthetic-user','synthetic-bot','帮我看看这段视频');
+  message.item_list[0].ref_msg={message_id:'video-ok',message_item:{type:5,video_item:{}}};
+  const r=await run({mode:'alarm',messages:[message],responses:[tool('delete_media',{id:savedVideoRecordId})]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.status.lastProcessing.kind,'quote');
+  assert.equal(r.media.find(x=>x.id===savedVideoRecordId).deleted_at,null);
+  assert.match(r.reply,/不能直接授权修改|明确说明/);
+ });
+ await step('a media quote without a verifiable provider reference does not guess the recent upload',async()=>{
+  const message=textFrom('quote-unresolved','synthetic-user','synthetic-bot','把引用视频的描述改为不确定内容');
+  message.item_list[0].ref_msg={title:'某条视频',message_item:{type:5,video_item:{}}};
+  const r=await run({mode:'alarm',messages:[message],responses:[tool('update_media',{id:savedVideoRecordId,description:'不确定内容'})]});
+  assert.equal(r.error,undefined);
+  assert.equal(r.media.find(x=>x.id===savedVideoRecordId).description,'小好在厨房玩耍');
+  assert.match(r.reply,/无法通过微信引用定位唯一/);
+ });
  await step('R2 commit survives failed D1 indexing; retry avoids CDN download',async()=>{const r=await run({mode:'alarm',messages:[raw('index-retry')],alarms:2,failIndexOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,3);assert.equal(r.downloads,1);assert.equal(r.originalMatches,true);assert.equal(r.messages.find(x=>x.message_id==='synthetic-bot:index-retry').photo_attempts,1)});
  await step('failed final reply retries persisted response/client ID without re-import',async()=>{const r=await run({mode:'alarm',messages:[raw('send-retry')],alarms:2,failFinalSendOnce:true,encryptedBase64:encrypt(jpeg),expectedSHA256:sha(jpeg)});assert.match(r.reply,/已保存/);assert.equal(r.media.length,4);assert.equal(r.downloads,1);assert.equal(r.sent,3);assert.equal(r.finalClientIds.length,2);assert.equal(r.finalClientIds[0],r.finalClientIds[1]);assert.equal(r.originalMatches,true)});
  await step('media placeholders exist before CDN transfer and become ready with the same ID',async()=>{
