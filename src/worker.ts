@@ -42,7 +42,7 @@ function parsePageCursor(encoded:string):PageCursor|null {
   if(!encoded||encoded.length>256)return null;
   const value:unknown=JSON.parse(atob(encoded));
   if(!Array.isArray(value)||value.length!==3||!dayOk(value[0])||
-    typeof value[1]!=='string'||!/^\\d{4}-\\d{2}-\\d{2}T/.test(value[1])||
+    typeof value[1]!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(value[1])||
     typeof value[2]!=='string'||!/^[0-9a-f-]{36}$/i.test(value[2]))return null;
   return {day:value[0],created_at:value[1],id:value[2]};
  }catch{return null}
