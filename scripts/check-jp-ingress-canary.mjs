@@ -94,7 +94,7 @@ try{
  const html=await request(current,'/');
  check('production-app-landing',html.status===200&&/<html/i.test(html.body),{
   status:html.status,bytes:html.body.length,contentType:html.contentType});
- const assets=[...new Set([...html.body.matchAll(/(?:src|href)="(\\/assets\\/[^"]+)"/g)].map(x=>x[1]))].slice(0,2);
+ const assets=[...new Set([...html.body.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map(x=>x[1]))].slice(0,2);
  check('production-static-discovery',assets.length>0,{count:assets.length});
  for(let i=0;i<assets.length;i++){
   const res=await request(current,assets[i]);
