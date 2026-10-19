@@ -36,6 +36,18 @@ const validNum=(v:unknown,min:number,max:number):boolean=>v===null||v===undefine
 const now=()=>new Date().toISOString();
 const allowedMime=(s:string)=>/^(image\/(jpeg|png|webp|heic|heif|gif)|video\/(mp4|quicktime|webm))$/.test(s);
 const thumbKey=(id:string)=>'private/thumbnails/'+id+'.jpg';
+type PageCursor={day:string;created_at:string;id:string};
+function parsePageCursor(encoded:string):PageCursor|null {
+ try {
+  if(!encoded||encoded.length>256)return null;
+  const value:unknown=JSON.parse(atob(encoded));
+  if(!Array.isArray(value)||value.length!==3||!dayOk(value[0])||
+    typeof value[1]!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(value[1])||
+    typeof value[2]!=='string'||!/^[0-9a-f-]{36}$/i.test(value[2]))return null;
+  return {day:value[0],created_at:value[1],id:value[2]};
+ }catch{return null}
+}
+const encodePageCursor=(row:PageCursor)=>btoa(JSON.stringify([row.day,row.created_at,row.id]));
 const uploadFingerprintOk=(s:unknown):s is string=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
 async function babyExists(env:Env,id:string):Promise<boolean>{return !!await env.DB.prepare('SELECT id FROM babies WHERE id=? AND archived_at IS NULL').bind(id).first();}
 async function currentBaby(env:Env):Promise<Baby|null>{return (await env.DB.prepare('SELECT id,name,birthday,birth_time,gender,time_zone,allergies,notes,avatar_key,updated_at FROM babies WHERE archived_at IS NULL ORDER BY created_at LIMIT 1').first<Baby>())??null;}
@@ -127,18 +139,22 @@ app.get('/api/records/:kind',async c=>{
   if(!table)return fail(c,404,'NOT_FOUND');
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const page=Math.min(1000,Math.max(0,Number.parseInt(c.req.query('page')||'0',10)||0));
+  const cursorParam=c.req.query('cursor')||'',cursor=cursorParam?parsePageCursor(cursorParam):null;
+  if(cursorParam&&!cursor)return fail(c,400,'INVALID_CURSOR');
   const q=(c.req.query('q')||'').trim(),start=c.req.query('startDay')||'',end=c.req.query('endDay')||'';
   if(q.length>80||start&&!dayOk(start)||end&&!dayOk(end)||start&&end&&start>end)return fail(c,400,'INVALID_SEARCH');
   const clauses=['baby_id=?','deleted_at IS NULL'],values:(string|number)[]=[babyId];
   if(start){clauses.push('day>=?');values.push(start)}if(end){clauses.push('day<=?');values.push(end)}
   if(q){clauses.push((kind==='growth'?'notes':"title||' '||description")+' LIKE ?');values.push('%'+q+'%')}
-  const r=await c.env.DB.prepare('SELECT * FROM '+table+' WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC LIMIT 40 OFFSET ?').bind(...values,page*40).all();
-  const items=r.results as Record<string,unknown>[];
+  if(cursor){clauses.push('(day,created_at,id)<(?,?,?)');values.push(cursor.day,cursor.created_at,cursor.id)}
+  const r=await c.env.DB.prepare('SELECT * FROM '+table+' WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC,id DESC LIMIT 41 OFFSET ?').bind(...values,cursor?0:page*40).all();
+  const items=(r.results as Record<string,unknown>[]).slice(0,40),hasMore=r.results.length>40;
   if(kind==='milestones'&&items.length){
    const linked=await c.env.DB.prepare('SELECT mm.milestone_id,m.id,m.day,m.title,m.mime,m.size,m.thumbnail_ready,m.updated_at FROM milestone_media mm JOIN media m ON m.id=mm.media_id WHERE mm.milestone_id IN ('+items.map(()=>'?').join(',')+') AND m.baby_id=? AND m.deleted_at IS NULL').bind(...items.map(x=>String(x.id)),babyId).all<Record<string,unknown>>();
    for(const item of items)item.media=linked.results.filter(x=>x.milestone_id===item.id);
   }
-  return c.json({items,page,hasMore:items.length===40});
+  const last=items.at(-1) as (PageCursor|undefined);
+  return c.json({items,page,hasMore,nextCursor:hasMore&&last?encodePageCursor(last):null});
 });
 app.get('/api/growth/history',async c=>{
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
@@ -192,14 +208,18 @@ app.get('/api/media/revision',async c=>{
 app.get('/api/media',async c=>{
   const babyId=c.req.query('babyId');if(!babyId||!await babyExists(c.env,babyId))return fail(c,400,'INVALID_BABY');
   const page=Math.min(1000,Math.max(0,Number.parseInt(c.req.query('page')||'0',10)||0));
+  const cursorParam=c.req.query('cursor')||'',cursor=cursorParam?parsePageCursor(cursorParam):null;
+  if(cursorParam&&!cursor)return fail(c,400,'INVALID_CURSOR');
   const query=(c.req.query('q')||'').trim(),start=c.req.query('startDay')||'',end=c.req.query('endDay')||'',type=c.req.query('type')||'';
   if(query.length>80||start&&!dayOk(start)||end&&!dayOk(end)||start&&end&&start>end||type&&!['image','video'].includes(type))return fail(c,400,'INVALID_SEARCH');
   const clauses=['baby_id=?','deleted_at IS NULL'],bindings:(string|number)[]=[babyId];
   if(query){clauses.push('(title LIKE ? OR description LIKE ?)');bindings.push('%'+query+'%','%'+query+'%')}
   if(start){clauses.push('day>=?');bindings.push(start)}if(end){clauses.push('day<=?');bindings.push(end)}
   if(type){clauses.push('mime LIKE ?');bindings.push(type+'/%')}
-  const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,description,mime,size,thumbnail_ready,upload_state,created_at,updated_at FROM media WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC LIMIT 36 OFFSET ?').bind(...bindings,page*36).all();
-  return c.json({items:rows.results,hasMore:rows.results.length===36});
+  if(cursor){clauses.push('(day,created_at,id)<(?,?,?)');bindings.push(cursor.day,cursor.created_at,cursor.id)}
+  const rows=await c.env.DB.prepare('SELECT id,baby_id,day,title,description,mime,size,thumbnail_ready,upload_state,created_at,updated_at FROM media WHERE '+clauses.join(' AND ')+' ORDER BY day DESC,created_at DESC,id DESC LIMIT 37 OFFSET ?').bind(...bindings,cursor?0:page*36).all();
+  const items=rows.results.slice(0,36),hasMore=rows.results.length>36,last=items.at(-1) as PageCursor|undefined;
+  return c.json({items,hasMore,nextCursor:hasMore&&last?encodePageCursor(last):null});
 });
 // Enumerate missing private derivatives in bounded batches across the *entire*
 // album. Cursor advances even if a browser cannot decode a particular HEIC.
@@ -233,6 +253,17 @@ app.post('/api/upload/metrics',async c=>{
       startedAt:performance.now()-v.durationMs,status:v.status});
     return c.json({ok:true});
   }catch{return fail(c,400,'INVALID_UPLOAD_METRIC')}
+});
+// Only coarse, enumerated and non-identifying real-user performance durations.
+app.post('/api/performance/metrics',async c=>{
+ try{
+  const v=await json(c.req.raw,256);
+  if(!v||!['app_ready','view_data','photo_ready'].includes(v.metric)||
+   typeof v.durationMs!=='number'||!Number.isFinite(v.durationMs)||v.durationMs<0||v.durationMs>600000)
+   return fail(c,400,'INVALID_PERFORMANCE_METRIC');
+  console.log(JSON.stringify({event:'CLIENT_EXPERIENCE_TIMING',metric:v.metric,durationMs:Math.round(v.durationMs)}));
+  return c.json({ok:true});
+ }catch{return fail(c,400,'INVALID_PERFORMANCE_METRIC')}
 });
 // Small-file fast path: one authenticated same-origin request, private R2
 // storage, stable client UUID for retries and no Multipart start/finish RTTs.
