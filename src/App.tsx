@@ -180,10 +180,11 @@ export default function App(){
   void Promise.all(loads).then(()=>{if(!cancelled&&loads.length)trackExperience('view_data',performance.now()-loadStarted)}).catch(e=>{if(!cancelled)setToast(e instanceof Error?e.message:'数据读取失败')});
   return ()=>{cancelled=true};
  },[active,baby?.id,growthPage,momentPage,albumPage,state?.counts.growth,state?.counts.milestones,state?.counts.media,revision,growthFilters,momentFilters,albumFilters]);
- function changed(){setRevision(value=>value+1);void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
+ function changed(){pageCursors.current={growth:[''],moments:[''],album:['']};setRevision(value=>value+1);void refresh();setGrowthPage(0);setMomentPage(0);setAlbumPage(0);}
  function selectBaby(id:string){
   // A newly created baby is valid before /api/state refresh includes the new ID.
   if(!id||id===babyId)return;
+  pageCursors.current={growth:[''],moments:[''],album:['']};
   setBabyId(id);setGrowthFilters(emptyFilters);setMomentFilters(emptyFilters);setAlbumFilters(emptyFilters);
   setMedia([]);setRecords([]);setMilestones([]);setGrowthHistory([]);setHistoryLimited(false);
   setHasMore({growth:false,moments:false,album:false});
@@ -231,9 +232,9 @@ export default function App(){
    <button type="button" className="home-add-moment" onClick={()=>setActive('moments')}><Plus size={16}/> 记录新瞬间</button>
   </section>
  </div>}
- {active==='growth'&&<RecordView key={'growth-'+baby.id} baby={baby} kind="growth" items={records} history={growthHistory} historyLimited={historyLimited} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage} filters={growthFilters} onFilters={value=>{setGrowthFilters(value);setGrowthPage(0)}}/>}
- {active==='moments'&&<RecordView key={'milestones-'+baby.id} baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage} filters={momentFilters} onFilters={value=>{setMomentFilters(value);setMomentPage(0)}}/>}
- {active==='album'&&<Suspense fallback={<div className="skeleton">正在打开相册…</div>}><Album key={baby.id} baby={baby} media={media} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage} filters={albumFilters} onFilters={value=>{setAlbumFilters(value);setAlbumPage(0)}}/></Suspense>}
+ {active==='growth'&&<RecordView key={'growth-'+baby.id} baby={baby} kind="growth" items={records} history={growthHistory} historyLimited={historyLimited} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.growth} page={growthPage} setPage={setGrowthPage} filters={growthFilters} onFilters={value=>{pageCursors.current.growth=[''];setGrowthFilters(value);setGrowthPage(0)}}/>}
+ {active==='moments'&&<RecordView key={'milestones-'+baby.id} baby={baby} kind="milestones" items={milestones} busy={busy} setBusy={setBusy} changed={changed} notify={setToast} hasMore={hasMore.moments} page={momentPage} setPage={setMomentPage} filters={momentFilters} onFilters={value=>{pageCursors.current.moments=[''];setMomentFilters(value);setMomentPage(0)}}/>}
+ {active==='album'&&<Suspense fallback={<div className="skeleton">正在打开相册…</div>}><Album key={baby.id} baby={baby} media={media} mediaEdited={(id,value)=>setMedia(items=>items.map(item=>item.id===id?{...item,...value}:item))} changed={changed} notify={setToast} hasMore={hasMore.album} page={albumPage} setPage={setAlbumPage} filters={albumFilters} onFilters={value=>{pageCursors.current.album=[''];setAlbumFilters(value);setAlbumPage(0)}}/></Suspense>}
  {active==='settings'&&<Suspense fallback={<div className="skeleton">正在打开设置…</div>}><Settings key={baby.id} state={state} baby={baby} changed={changed} notify={setToast} onBabySelected={selectBaby} onBabyCreated={id=>{selectBaby(id);setActive('overview')}}/></Suspense>}
  
  </div></main>{toast&&<Notice text={toast} onClose={()=>setToast('')}/>}</div>;
