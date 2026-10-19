@@ -55,3 +55,27 @@ Page https://bm-ip-lab.20250530.space/?media=1 tests baseline, JP-1, and SG-2 on
 Range: the server must return 206, exactly 262,144 bytes, and `Content-Range: bytes 0-262143/2097152`. CORS is narrowly limited to the `bm-ip-lab` origin; OPTIONS preflight allows GET with Range. A simulated 2MiB payload is not a complete video-seeking or playback proof; later test actual codec and multirange support on isolated authorized application preview resources.
 
 Decision criteria: repeated independent times (evening + different time) on the same carrier with zero or negligible failures, meaningful media p90 advantage, and login/WeChat/HTTP3/upload/Range preview verification. Do not repoint the production domain before these checks.
+
+## Fourth-round results and promotion gate (2026-10-19)
+
+Same China mainland mobile network, four rounds per synthetic media operation:
+
+| Ingress | Edge | 2 MiB median / observed max | Range 256 KiB median / observed max | Failures |
+| --- | --- | --- | --- | --- |
+| Automatic | AMS | 1802 / 3292 ms | 1644 / 1938 ms | 0/8 |
+| JP-1 (172.64.229.191) | NRT | **751 / 2124 ms** | **412 / 461 ms** | 0/8 |
+| SG-2 (104.18.41.37) | SIN | 5527 / 7171 ms | 1079 / 1349 ms | 0/8 |
+
+JP-1 reduced the observed 2 MiB median by 58% and video Range median by 75%, compared with the auto entry. With only 4 samples per operation, the reported P90 is just that sample's maximum, **not a reliable 90th-percentile estimate**. Across the preceding second and third rounds plus this one, JP-1 had 1 failed synthetic request out of 35; auto baseline had 0 failures out of 35. This is not a production SLA.
+
+**Decision:** promote JP-1 only into a disposable full-application *compatibility test*, not to the production hostname. Reject SG-2 / US-1 for production given their unstable or degraded large media transfer.
+
+Required gates before any production DNS change:
+
+- Test the actual BabyMemo Worker with *synthetic* disposable D1/R2 and test-only credentials. Verify signed-in secure HttpOnly SameSite cookies, Origin/CSRF checks, anonymous access denial and logout.
+- Verify private image/content access, direct and multipart/resumable uploads, thumbnail generation, real media byte-range seeking including 206/416, and that media stays private.
+- Exercise WeChat signature/callback flows using synthetic fixtures. Do NOT bind actual WeChat account, bot tokens or live webhook to the experimental domain.
+- Test TLS/SNI, DNS/IPv6, HTTP/2/3, and Cloudflare Worker Route compatibility. DNS-only IP steering may break without notice.
+- Test at multiple times/operators; require sustained wins in median, tail latency and availability plus a rollback procedure. Do not point the experimental host at the production Worker or real family D1/R2.
+
+Existing disposable local E2E (scripts/e2e-local.mjs) covers login, uploads, private media and Range logic, but does **not** validate the public JP-1 routing path.
