@@ -27,3 +27,35 @@ No D1/R2/DO secrets were copied or changed. Only the new DNS record and zone-lev
 ## Explicit exclusions
 
 No ENAM-to-APAC D1 or R2 migration, no real family data duplication, no main-domain switch, no WeChat account changes, no untrusted third-party reverse proxy, no automatic production DNS update.
+
+## Production cutover record — 2026-10-20
+
+The user confirmed that the JP-1 canary loaded quickly on their mainland phone. We then switched the **production domain only** to the fixed Cloudflare JP-1 IP. Application Worker, ENAM D1/R2, secrets, Durable Objects and WeChat workflows are unchanged.
+
+### Cloudflare production state verified via API
+
+- DNS: baby.20250530.space -> A 172.64.229.191, DNS-only, TTL 120.
+- Worker Route: baby.20250530.space/* -> babymemo.
+- The previous managed Custom Domain on baby.20250530.space was detached. Its original proxied placeholder was AAAA 100::.
+- Production D1 id stays 1ab91d42-ce54-49aa-bfc9-3e38eb058a73; R2 bucket stays babymemo-media.
+- Active Universal SSL certificate covers *.20250530.space.
+- Independent JP-1 canary remains reachable for comparison and emergency fallback.
+
+First attempt: Cloudflare rejected a DNS comment exceeding 100 characters (HTTP 400 / 9313); the orchestrator restored Custom Domain and removed the temporary Route successfully. Second attempt with a short comment completed and API verification passed.
+
+### Post-switch external smoke
+
+- GitHub Actions https://github.com/zhajiahe/babymemo/actions/runs/39337057309 : **21/21 passed**.
+- Public production DNS resolves exactly to 172.64.229.191; HTTPS health 200; homepage 200; Javascript bundles 200.
+- Anonymous private API requests return 401 and cross-site login POST returns 403; no production login or write was attempted.
+- The CI runner is outside China and does not confirm client-side mainland latency; have the user check the permanent hostname on the same mobile network.
+
+### Rollback if any client-side issue appears
+
+1. Leave the production Worker, D1, R2 and WeChat settings untouched.
+2. Delete only Worker Route baby.20250530.space/* (not the canary).
+3. Delete only DNS-only A record on baby.20250530.space pointing at 172.64.229.191.
+4. Reattach Custom Domain baby.20250530.space to Worker babymemo in zone 20250530.space, restoring managed proxied AAAA 100::.
+5. Verify active TLS and 200 /api/health, 401 unauthenticated /api/state, then user Safari.
+
+Important: fixed DNS-only Cloudflare IP plus Worker Route is a community technique, not a guaranteed official setup. Revalidate after any Worker deploy. Full authenticated Safari, album, video, upload, and WeChat checks remain for the owner; all automated tests are safe read-only.
