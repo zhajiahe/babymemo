@@ -1,0 +1,66 @@
+/* Dedicated 10-foot interface: isolated from the desktop/mobile design system. */
+.tv-root{position:fixed;inset:0;overflow:auto;background:radial-gradient(ellipse at 78% -15%,#365149 0%,#172322 38%,#101717 75%);color:#f5f2e8;font-family:system-ui,-apple-system,Arial,sans-serif;box-sizing:border-box;font-size:20px}
+.tv-root *,.tv-activate *{box-sizing:border-box}
+.tv-root button{font:inherit;cursor:pointer;color:inherit;transition:transform .15s ease,background .15s ease,outline-color .15s ease}
+.tv-root button:focus-visible,.tv-activate button:focus-visible,.tv-activate input:focus-visible{outline:4px solid #f5ca7c;outline-offset:5px;transform:scale(1.035);z-index:2}
+.tv-center{min-height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:60px;text-align:center}
+.tv-center h1{font-size:clamp(38px,4vw,75px);line-height:1.13;margin:22px 0}
+.tv-center p{color:#c3ccc5;line-height:1.6;max-width:840px}
+.tv-symbol{font-size:68px;color:#f1bf70}
+.tv-pair-card{display:flex;align-items:center;gap:40px;padding:28px 54px;background:#f7f6ee;border-radius:24px;color:#142522;margin:36px 0}
+.tv-pair-card .tv-qr{width:230px;height:230px;object-fit:contain;background:#fff;border-radius:12px}
+.tv-qr-loading{display:grid;place-items:center;font-size:15px}
+.tv-pair-card div:last-child{display:flex;flex-direction:column;align-items:start;gap:12px}
+.tv-pair-card strong{font-size:38px;letter-spacing:.12em}
+.tv-pair-card small{color:#57645f;font-size:15px}
+.tv-action{background:#d8b478!important;border:0;border-radius:999px;padding:17px 34px!important;color:#182c26!important;font-weight:700!important}
+.tv-action:disabled{opacity:.45;cursor:default}
+.tv-header{display:flex;align-items:center;justify-content:space-between;gap:30px;padding:48px 5.2vw 32px;border-bottom:1px solid #ffffff19}
+.tv-brand{font-weight:800;letter-spacing:.02em;color:#f0c78a;font-size:24px}
+.tv-header h1{font-size:38px;margin:10px 0 0;letter-spacing:-.04em}
+.tv-header h1 small{font-size:21px;font-weight:400;color:#a8b9b0}
+.tv-header-actions{display:flex;align-items:center;gap:15px;flex-wrap:wrap}
+.tv-chip{padding:12px 24px;border-radius:999px;background:#ffffff15;border:1px solid #ffffff24}
+.tv-chip:hover,.tv-chip:focus-visible,.tv-chip.tv-active{background:#d3b17c;color:#142522}
+.tv-gallery{padding:38px 5.2vw 8vw}
+.tv-section-title{display:flex;align-items:end;justify-content:space-between;margin-bottom:36px;gap:20px}
+.tv-section-title span,.tv-eyebrow{font-size:17px;color:#e2c18c;letter-spacing:.1em}
+.tv-section-title h2{font-size:38px;margin:8px 0 0;font-weight:550;letter-spacing:-.04em}
+.tv-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:21px}
+.tv-photo{min-width:0;aspect-ratio:3/3.3;position:relative;display:block;text-align:left;padding:0!important;background:#273832;border:0;border-radius:14px;overflow:hidden}
+.tv-photo:focus-visible{outline-offset:4px}
+.tv-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.tv-photo-caption{position:absolute;bottom:0;left:0;right:0;padding:44px 18px 17px;background:linear-gradient(transparent,rgba(3,11,9,.94));display:flex;flex-direction:column;gap:7px;min-height:45%}
+.tv-photo-caption time{font-size:16px;color:#d6d7c5}
+.tv-photo-caption strong{font-size:18px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:520}
+.tv-video-label{position:absolute;right:14px;top:14px;background:#101d1bca;border-radius:30px;padding:8px 12px;font-size:15px}
+.tv-more{display:block;margin:48px auto}
+.tv-empty{color:#afbdb4;text-align:center;margin:50px}
+.tv-stage{height:calc(100vh - 175px);min-height:430px;display:flex;gap:0;padding:0}
+.tv-stage-media{flex:1;min-width:0;display:grid;place-items:center;padding:24px;background:#050908}
+.tv-stage-media img,.tv-stage-media video{max-width:100%;max-height:100%;object-fit:contain}
+.tv-story{flex:0 0 30%;padding:5vh 3vw;display:flex;flex-direction:column;justify-content:center;overflow:auto}
+.tv-story h2{font-size:42px;margin:18px 0}
+.tv-story p{font-size:24px;line-height:1.75;white-space:pre-wrap;color:#e6e6da;overflow-wrap:anywhere}
+.tv-stage-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+.tv-stage-actions .tv-chip{font-size:17px}
+.tv-footer{position:relative;padding:24px 5vw;font-size:16px;color:#829d90;text-align:center}
+.tv-error{margin:15px auto;text-align:center;color:#ffcaad;font-size:17px}
+.tv-error button{background:none;border:0;color:inherit;text-decoration:underline}
+.tv-activate{min-height:100vh;display:grid;place-items:center;background:#eef0eb;padding:24px;color:#1e322d;font-family:system-ui,-apple-system,sans-serif}
+.tv-activate-card{background:#fff;border-radius:24px;box-shadow:0 10px 40px #1a28201a;padding:35px;width:min(100%,550px)}
+.tv-activate h1{margin:8px 0;font-size:32px}
+.tv-activate h2{font-size:21px;margin:35px 0 14px}
+.tv-activate p{line-height:1.65;color:#4a5b52}
+.tv-activate label{display:block;font-size:15px;margin:18px 0}
+.tv-activate input{display:block;width:100%;font:inherit;font-size:21px;padding:13px;margin:10px 0;border:1px solid #b6c9bb;border-radius:12px}
+.tv-activate button{background:#295343;border:0;border-radius:10px;color:#fff;padding:13px 16px;font:inherit;cursor:pointer}
+.tv-activate button:disabled{opacity:.5}
+.tv-activate .tv-brand{color:#527d65}
+.tv-activate .tv-done{background:#eaf5ed;border-radius:10px;padding:12px;color:#225a36}
+.tv-device{border-top:1px solid #d9e3db;padding:14px 0;display:flex;align-items:center;justify-content:space-between;gap:15px}
+.tv-device button{background:#f4e4e4;color:#9a3c3c}
+.tv-activate .tv-error{color:#a33434}
+@media(max-width:1200px){.tv-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.tv-stage .tv-story{flex-basis:36%}.tv-header{padding-top:24px}}
+@media(max-width:700px){.tv-root{font-size:16px}.tv-header{padding:18px;align-items:start;flex-direction:column}.tv-header h1{font-size:25px}.tv-gallery{padding:22px}.tv-section-title h2{font-size:25px}.tv-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.tv-photo-caption strong{font-size:14px}.tv-stage{height:auto;min-height:calc(100vh - 150px);flex-direction:column}.tv-stage-media{min-height:42vh}.tv-story{padding:20px!important}.tv-story h2{font-size:28px}.tv-story p{font-size:19px}.tv-pair-card{flex-direction:column;padding:20px}.tv-pair-card strong{font-size:25px}.tv-center{padding:20px}.tv-footer{padding:15px;font-size:12px}}
+@media(prefers-reduced-motion:reduce){.tv-root button{transition:none}}
