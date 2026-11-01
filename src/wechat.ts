@@ -17,10 +17,11 @@ import {runWechatPlan,quickCommand,isCommittedMutationReply} from './wechat-orch
 import {wechatSystemPrompt,wechatFinalMessages} from './wechat-prompt.mjs';
 import {runWechatAgentLoop} from './wechat-agent-loop.mjs';
 import {getWechatConnection} from './wechat-connections';
+import {retryPendingFamilyReportsForConnection} from './family-reports';
 import {DurableMediaQueue,mediaTaskId} from './wechat-media-queue.mjs';
 import {WECHAT_LISTEN_TIMEOUT_MS,nextWechatPollDelay,isWechatIdleTimeout,type PollOutcome} from './wechat-poll-budget';
 import {PILOT_LEASE_MS,PILOT_WATCHDOG_MS,PILOT_STALE_PAUSE_MS,PILOT_MAX_RESPONSE_CHARS,
- assertWechatPollResponse,isActivePilotLease,isPilotConnectionId,isPilotCompletion,
+ assertWechatPollResponse,assertWechatSendResponse,isActivePilotLease,isPilotConnectionId,isPilotCompletion,
  trustedWechatBase,type PilotCompletion,type PilotLease} from './wechat-pilot';
 
 const API_BASE='https://ilinkai.weixin.qq.com';
@@ -49,7 +50,8 @@ async function ilink(base:string,path:string,data?:unknown,token?:string,timeout
     }
     if(!r.ok)throw Error(r.status===401||r.status===403?'WECHAT_AUTH_EXPIRED':'WECHAT_HTTP_'+r.status);
     const o=wireJSON.parse(await r.text()) as Json;
-    assertWechatPollResponse(o);
+    if(path==='ilink/bot/sendmessage')assertWechatSendResponse(o);
+    else assertWechatPollResponse(o);
     return o;
   }finally{clearTimeout(timer);}
 }
@@ -625,6 +627,10 @@ export class WechatSession {
         }
         await ilink(base,'ilink/bot/sendmessage',{msg:{from_user_id:'',to_user_id:userId,client_id:clientId,message_type:2,message_state:2,context_token:raw.context_token,item_list:[{type:1,text_item:{text:reply.slice(0,1800)}}]},base_info:{channel_version:'2.4.10',bot_agent:'BabyMemo/0.1'}},token);
         await this.env.DB.prepare("UPDATE wechat_messages SET state='done' WHERE message_id=?").bind(unique).run();
+        // Newly refreshed context unlocks pending scheduled reports immediately.
+        // This runs only after the ordinary reply has been acknowledged.
+        await retryPendingFamilyReportsForConnection(this.env,connectionId)
+         .catch(()=>console.error(JSON.stringify({event:'FAMILY_REPORT_CONTEXT_RETRY_FAILED'})));
         await this.ctx.storage.put('lastMessage',new Date().toISOString());
         await this.ctx.storage.put('lastProcessing',{kind:forwarded?'forward':hasMedia?'media':parsed.quoted?'quote':hasVoice?'voice':'text',durationMs:Date.now()-processingStarted,at:new Date().toISOString()});
       }
