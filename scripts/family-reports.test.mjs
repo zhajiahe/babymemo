@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {scheduledReportPeriods,reportPeriod} from '../src/family-report-schedule.mjs';
 
 test('weekly report is the current local Monday-Sunday, monthly report is last complete month',()=>{
@@ -21,4 +22,16 @@ test('daylight saving spring-forward does not affect date range',()=>{
  assert.deepEqual(scheduledReportPeriods(new Date('2026-03-08T20:00:00Z'),'America/Los_Angeles',12),[
   {kind:'week',start:'2026-03-02',end:'2026-03-08'}
  ]);
+});
+
+test('a new inbound WeChat context releases only eligible queued reports',()=>{
+ const reports=readFileSync(new URL('../src/family-reports.ts',import.meta.url),'utf8');
+ const wechat=readFileSync(new URL('../src/wechat.ts',import.meta.url),'utf8');
+ assert.match(wechat,/retryPendingFamilyReportsForConnection\\(this\\.env,connectionId\\)/);
+ assert.match(reports,/d\\.state IN \\('pending','retry','waiting_context'\\)/);
+ assert.match(reports,/r\\.created_at>=\\?/);
+ assert.match(reports,/await deliver\\(env,report,connectionId\\)/);
+ assert.match(reports,/row\\.state==='sent'/);
+ assert.match(reports,/row\\.state==='waiting_context'/);
+ assert.match(reports,/WECHAT_CONTEXT_RESTRICTED/);
 });
