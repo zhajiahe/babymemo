@@ -27,11 +27,11 @@ test('daylight saving spring-forward does not affect date range',()=>{
 test('a new inbound WeChat context releases only eligible queued reports',()=>{
  const reports=readFileSync(new URL('../src/family-reports.ts',import.meta.url),'utf8');
  const wechat=readFileSync(new URL('../src/wechat.ts',import.meta.url),'utf8');
- assert.match(wechat,/retryPendingFamilyReportsForConnection\\(this\\.env,connectionId\\)/);
- assert.match(reports,/d\\.state IN \\('pending','retry','waiting_context'\\)/);
- assert.match(reports,/r\\.created_at>=\\?/);
- assert.match(reports,/await deliver\\(env,report,connectionId\\)/);
- assert.match(reports,/row\\.state==='sent'/);
- assert.match(reports,/row\\.state==='waiting_context'/);
+ assert.match(wechat,/retryPendingFamilyReportsForConnection\(this\.env,connectionId\)/);
+ assert.match(reports,/d\.state IN \('pending','retry','waiting_context'\)/);
+ assert.match(reports,/r\.created_at>=\?/);
+ assert.match(reports,/await deliver\(env,report,connectionId\)/);
+ assert.match(reports,/row\.state==='sent'/);
+ assert.match(reports,/row\.state==='waiting_context'/);
  assert.match(reports,/WECHAT_CONTEXT_RESTRICTED/);
 });
