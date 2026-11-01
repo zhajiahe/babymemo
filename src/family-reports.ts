@@ -133,8 +133,8 @@ export async function sendFamilyReportTest(env:Env,kind:unknown,connectionId:unk
  await sendWechatFamilyReport(env,connectionId,'【测试消息 · 不计入正式报告】\n'+body,crypto.randomUUID());
  return {accepted:true,kind,periodStart:period.start,periodEnd:period.end};
 }
-async function deliver(env:Env,report:Report){
- const members=await env.DB.prepare('SELECT id,context_cipher,context_updated_at FROM wechat_connections WHERE enabled=1 AND report_subscribed=1').all<Recipient>();
+async function deliver(env:Env,report:Report,recipientId:string|null=null){
+ const members=await env.DB.prepare('SELECT id,context_cipher,context_updated_at FROM wechat_connections WHERE enabled=1 AND report_subscribed=1 AND (? IS NULL OR id=?)').bind(recipientId,recipientId).all<Recipient>();
  for(const member of members.results){
   await env.DB.prepare("INSERT OR IGNORE INTO family_report_deliveries(kind,period_start,connection_id,client_id,state,updated_at) VALUES(?,?,?,?,'pending',?)").bind(report.kind,report.period_start,member.id,crypto.randomUUID(),now()).run();
   const row=await env.DB.prepare('SELECT client_id,state,attempts,updated_at FROM family_report_deliveries WHERE kind=? AND period_start=? AND connection_id=?').bind(report.kind,report.period_start,member.id).first<Delivery>();
@@ -155,11 +155,24 @@ async function deliver(env:Env,report:Report){
    await sendWechatFamilyReport(env,member.id,report.body,row.client_id);
    await env.DB.prepare("UPDATE family_report_deliveries SET state='sent',error_code=NULL,updated_at=? WHERE kind=? AND period_start=? AND connection_id=?").bind(now(),report.kind,report.period_start,member.id).run();
   }catch(e){
-   const reason=errorCode(e),wait=['WECHAT_SEND_REJECTED','WECHAT_CONTEXT_REQUIRED','WECHAT_STALE_TOKEN','WECHAT_PROTOCOL_ERROR'].includes(reason);
+   const reason=errorCode(e),wait=['WECHAT_SEND_REJECTED','WECHAT_CONTEXT_REQUIRED','WECHAT_STALE_TOKEN','WECHAT_PROTOCOL_ERROR','WECHAT_CONTEXT_RESTRICTED'].includes(reason);
    await env.DB.prepare('UPDATE family_report_deliveries SET state=?,error_code=?,updated_at=? WHERE kind=? AND period_start=? AND connection_id=?').bind(row.attempts+1>=3?'failed':wait?'waiting_context':'retry',reason,now(),report.kind,report.period_start,member.id).run();
   }
  }
 }
+// A new inbound context can release this recipient's queued reports now,
+// rather than after the next hourly Cron. Never regenerate reports here.
+export async function retryPendingFamilyReportsForConnection(env:Env,connectionId:string):Promise<void>{
+ const cutoff=new Date(Date.now()-36*3600000).toISOString();
+ const rows=await env.DB.prepare("SELECT r.* FROM family_reports r JOIN family_report_deliveries d ON r.kind=d.kind AND r.period_start=d.period_start WHERE d.connection_id=? AND d.state IN ('pending','retry','waiting_context') AND r.created_at>=? ORDER BY r.created_at ASC LIMIT 4")
+  .bind(connectionId,cutoff).all<Report>();
+ if(!rows.results.length)return;
+ const conf=await familyReportConfig(env);
+ for(const report of rows.results){
+  if(report.kind==='week'?conf.weekly:conf.monthly)await deliver(env,report,connectionId);
+ }
+}
+
 export async function runFamilyReportCron(env:Env,at=new Date()):Promise<void>{
  const conf=await familyReportConfig(env);
  // A message without a valid conversation cannot remain "waiting" forever.
