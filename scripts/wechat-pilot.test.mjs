@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {PILOT_LISTEN_TIMEOUT_MS,PILOT_LEASE_MS,PILOT_WATCHDOG_MS,PILOT_STALE_PAUSE_MS,
  PILOT_MAX_RESPONSE_CHARS,isPilotConnectionId,isActivePilotLease,isPilotCompletion,
- assertWechatPollResponse,trustedWechatBase} from '../src/wechat-pilot.ts';
+ assertWechatPollResponse,assertWechatSendResponse,trustedWechatBase} from '../src/wechat-pilot.ts';
 
 test('Cron pilot is bounded and watchdog resumes legacy polling after a missed cron',()=>{
  assert.equal(PILOT_LISTEN_TIMEOUT_MS,35000);
@@ -29,6 +29,13 @@ test('Stale token is not a generic protocol error; negative acknowledgements nev
  assert.throws(()=>assertWechatPollResponse({errcode:-14}),/WECHAT_STALE_TOKEN/);
  assert.throws(()=>assertWechatPollResponse({ret:9}),/WECHAT_PROTOCOL_ERROR/);
  assert.throws(()=>assertWechatPollResponse([]),/WECHAT_PROTOCOL_ERROR/);
+});
+test('Outbound context restrictions are distinguishable from generic protocol failures',()=>{
+ assert.doesNotThrow(()=>assertWechatSendResponse({ret:0}));
+ assert.throws(()=>assertWechatSendResponse({ret:-2}),/WECHAT_CONTEXT_RESTRICTED/);
+ assert.throws(()=>assertWechatSendResponse({errcode:-2}),/WECHAT_CONTEXT_RESTRICTED/);
+ assert.throws(()=>assertWechatSendResponse({ret:9}),/WECHAT_PROTOCOL_ERROR/);
+ assert.throws(()=>assertWechatPollResponse({ret:-2}),/WECHAT_PROTOCOL_ERROR/);
 });
 test('External replies are bounded and only known transport error classes are accepted',()=>{
  assert.equal(isPilotCompletion({kind:'response',raw:'{}'}),true);

@@ -31,6 +31,17 @@ export function trustedWechatBase(value:string):string {
    !/^ilinkai(?:[a-z0-9-]*\.)?weixin\.qq\.com$/i.test(u.hostname))throw Error('WECHAT_UNTRUSTED_BASE');
  return u.origin;
 }
+// iLink uses -2 for an outbound conversation that is not currently permitted.
+// Keep the reason distinct from transport/protocol failures so a fresh inbound
+// context can release a queued scheduled delivery without blind retries.
+export function assertWechatSendResponse(response:unknown):asserts response is Record<string,unknown> {
+ if(response&&typeof response==='object'&&!Array.isArray(response)){
+  const data=response as Record<string,unknown>;
+  if(data.ret===-2||data.errcode===-2)throw Error('WECHAT_CONTEXT_RESTRICTED');
+ }
+ assertWechatPollResponse(response);
+}
+
 export function assertWechatPollResponse(response:unknown):asserts response is Record<string,unknown> {
  if(!response||typeof response!=='object'||Array.isArray(response))throw Error('WECHAT_PROTOCOL_ERROR');
  const data=response as Record<string,unknown>;
