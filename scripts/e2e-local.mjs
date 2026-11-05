@@ -158,6 +158,35 @@ async function e2e() {
     assert.equal(state.status,200);
     assert.equal(state.data.babies[0].id,babyId);
   });
+  await step('TV pairing is one-time, read-only and revocable without exposing family password',async()=>{
+    assert.equal((await json('/api/tv/catalog',{anonymous:true})).status,401);
+    const pair=await json('/api/tv/pair/start',{method:'POST',body:{},anonymous:true});
+    assert.equal(pair.status,200,JSON.stringify(pair.data));
+    assert.match(pair.data.code,/^[A-F0-9]{10}$/);
+    assert.equal((await json('/api/tv/pair/poll',{method:'POST',anonymous:true,body:{id:pair.data.id,verifier:pair.data.verifier}})).data.status,'pending');
+    assert.equal((await json('/api/tv/pair/approve',{method:'POST',anonymous:true,body:{code:pair.data.code}})).status,401);
+    const invalid=await json('/api/tv/pair/poll',{method:'POST',anonymous:true,body:{id:pair.data.id,verifier:'0'.repeat(64)}});
+    assert.equal(invalid.status,410);
+    assert.equal((await json('/api/tv/pair/approve',{method:'POST',body:{code:pair.data.code}})).status,200);
+    const ok=await json('/api/tv/pair/poll',{method:'POST',anonymous:true,body:{id:pair.data.id,verifier:pair.data.verifier}});
+    assert.equal(ok.status,200,JSON.stringify(ok.data));
+    assert.equal(ok.data.status,'approved');
+    const tvCookie=ok.headers.get('set-cookie')?.split(';')[0]??'';
+    assert.match(tvCookie,/^babymemo_tv=/);
+    assert.equal((await json('/api/tv/pair/poll',{method:'POST',anonymous:true,body:{id:pair.data.id,verifier:pair.data.verifier}})).status,410,'pair cannot be reused');
+    const withTv=(path,opts={})=>json(path,{anonymous:true,headers:{Cookie:tvCookie},...opts});
+    assert.equal((await withTv('/api/tv/catalog')).status,200);
+    assert.equal((await withTv('/api/media?babyId='+babyId)).status,200);
+    assert.equal((await withTv('/api/state')).status,401,'TV cannot fetch owner settings');
+    assert.equal((await withTv('/api/export/manifest')).status,401,'TV cannot export');
+    assert.equal((await withTv('/api/records/growth',{method:'POST',body:{babyId}})).status,401,'TV cannot modify records');
+    assert.equal((await withTv('/api/tv/devices')).status,401,'TV cannot manage other devices');
+    const devices=await json('/api/tv/devices');
+    assert.equal(devices.status,200);
+    assert.equal(devices.data.items.length,1);
+    assert.equal((await json('/api/tv/devices/'+devices.data.items[0].id+'/revoke',{method:'POST',body:{}})).status,200);
+    assert.equal((await withTv('/api/tv/catalog')).status,401,'revoked TV cookie must immediately stop reading');
+  });
   await step('logout, invalid login, valid login, protected state',async()=>{
     const out=await json('/api/logout',{method:'POST',body:{}});
     assert.equal(out.status,200);

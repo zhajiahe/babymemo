@@ -1,11 +1,14 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import {TvApp,TvActivate} from './TvApp';
 import './theme';
 import './design-system.css';
 import './styles.css';
 import './editorial.css';
 import {startOffline} from './offline';
-startOffline();
+const page=window.location.pathname.replace(/\/$/,'');
+const isTvPage=page==='/tv'||page==='/tv/activate';
+if(!isTvPage)startOffline();
 const element=document.getElementById('root');
-if(element)createRoot(element).render(<StrictMode><App/></StrictMode>);
+if(element)createRoot(element).render(<StrictMode>{page==='/tv'?<TvApp/>:page==='/tv/activate'?<TvActivate/>:<App/>}</StrictMode>);

@@ -21,6 +21,7 @@ export { WechatSession } from './wechat';
 import {runWechatCronPolling} from './wechat-cron-pilot';
 import {reconcileStaleWechatMedia} from './wechat-media-reconcile';
 import {familyReportSettings,saveFamilyReportConfig,runFamilyReportCron,sendFamilyReportTest} from './family-reports';
+import {tvRoutes,authorizedTv,tvPublicRequest} from './tv-api';
 
 const app = new Hono<ApplicationEnv>();
 const fail = (c: any, status:number, error:string) => c.json({error},status);
@@ -57,7 +58,7 @@ app.use('/api/*',async(c,next)=>{
   c.header('Referrer-Policy','no-referrer');
   if(['POST','PATCH','PUT','DELETE'].includes(c.req.method)&&!sameOrigin(c))return fail(c,403,'ORIGIN_REJECTED');
   const path=c.req.path;
-  if(!['/api/health','/api/bootstrap/status','/api/bootstrap','/api/login'].includes(path)&&!await authenticated(c))return fail(c,401,'LOGIN_REQUIRED');
+  if(!['/api/health','/api/bootstrap/status','/api/bootstrap','/api/login'].includes(path)&&!tvPublicRequest(path,c.req.method)&&!await authenticated(c)&&!await authorizedTv(c))return fail(c,401,'LOGIN_REQUIRED');
   if(['POST','PATCH','DELETE'].includes(c.req.method)){
    try{const previous=await previousMutation(c);if(previous)return c.json(previous)}catch(e){return fail(c,409,e instanceof Error?e.message:'REQUEST_ID_CONFLICT')}
   }
@@ -736,6 +737,7 @@ app.post('/api/settings/wechat/default-baby',async c=>{
     return c.json({ok:true,defaultBabyId:v.babyId});
   }catch{return fail(c,400,'INVALID_BABY')}
 });
+app.route('/api/tv',tvRoutes);
 app.route('/api',webManagement);
 app.onError((e,c)=>{
   console.error(JSON.stringify({level:'error',code:'UNHANDLED_REQUEST',path:c.req.path})); 
@@ -761,6 +763,8 @@ export default {
       .catch(()=>console.error(JSON.stringify({level:'error',event:'BOT_DEDUP_RETENTION_FAILED'}))));
     ctx.waitUntil(env.DB.prepare('DELETE FROM wechat_agent_rounds WHERE created_at<?').bind(new Date(Date.now()-90*86400000).toISOString()).run()
       .catch(()=>console.error(JSON.stringify({level:'error',event:'AGENT_ROUND_RETENTION_FAILED'}))));
+    ctx.waitUntil(env.DB.prepare('DELETE FROM tv_pair_requests WHERE expires_at<?').bind(Date.now()).run().catch(()=>console.error(JSON.stringify({event:'TV_PAIR_RETENTION_FAILED'}))));
+    ctx.waitUntil(env.DB.prepare('DELETE FROM tv_pair_attempts WHERE expires_at<?').bind(Date.now()).run().catch(()=>console.error(JSON.stringify({event:'TV_ATTEMPT_RETENTION_FAILED'}))));
     ctx.waitUntil(env.DB.prepare('DELETE FROM wechat_pairings WHERE expires_at<?').bind(Date.now()).run()
       .catch(()=>console.error(JSON.stringify({level:'error',event:'PAIRING_RETENTION_FAILED'}))));
     ctx.waitUntil(purgeDeleted(env).catch(()=>console.error(JSON.stringify({level:'error',event:'TRASH_PURGE_FAILED'}))));

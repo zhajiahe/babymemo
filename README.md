@@ -36,6 +36,8 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zhajiahe/babymemo)
 
+**电视展示端**：Android TV / CleanYourTV 可安装 BabyMemo TV，遥控器查看相册并通过手机安全配对；见 [电视安装指南](docs/TV.md)。
+
 ## 安装与使用
 
 按 [部署指南](docs/DEPLOY.md) 安装，在 HTTPS 首页创建家庭管理员和首位宝宝。空实例应先初始化或限制公开访问。
